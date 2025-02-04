@@ -1,0 +1,47 @@
+{% extends "receipt_parser/base.html" %}
+
+{% block title %}My Receipts - PriceAdjustPro{% endblock %}
+
+{% block content %}
+<div class="receipt-container">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>My Receipts</h2>
+        <a href="{% url 'upload_receipt' %}" class="btn btn-primary">Upload New Receipt</a>
+    </div>
+
+    {% if receipts %}
+        <div class="list-group">
+            {% for receipt in receipts %}
+                <a href="{% url 'receipt_detail' receipt.id %}" class="list-group-item list-group-item-action">
+                    <div class="d-flex w-100 justify-content-between">
+                        <h5 class="mb-1">
+                            {{ receipt.store_location }}
+                            {% if receipt.store_number %}
+                                #{{ receipt.store_number }}
+                            {% endif %}
+                        </h5>
+                        <small>{{ receipt.transaction_date|date:"M d, Y" }}</small>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <p class="mb-1">Total: ${{ receipt.total|default:"N/A" }}</p>
+                            <small>{{ receipt.items.count }} items</small>
+                        </div>
+                        {% if not receipt.parsed_successfully %}
+                            <span class="badge bg-warning">Parse Warning</span>
+                        {% endif %}
+                    </div>
+                </a>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="card">
+            <div class="card-body text-center">
+                <h5 class="card-title">No Receipts Yet</h5>
+                <p class="card-text">Upload your first Costco receipt to get started!</p>
+                <a href="{% url 'upload_receipt' %}" class="btn btn-primary">Upload Receipt</a>
+            </div>
+        </div>
+    {% endif %}
+</div>
+{% endblock %} 

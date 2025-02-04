@@ -1,0 +1,37 @@
+{% extends "receipt_parser/base.html" %}
+
+{% block title %}Upload Receipt - PriceAdjustPro{% endblock %}
+
+{% block content %}
+<div class="receipt-container">
+    <h2 class="mb-4">Upload Costco Receipt</h2>
+    
+    <div class="card">
+        <div class="card-body">
+            <form method="post" enctype="multipart/form-data">
+                {% csrf_token %}
+                <div class="mb-3">
+                    <label for="receipt_file" class="form-label">Choose PDF Receipt</label>
+                    <input type="file" class="form-control" id="receipt_file" name="receipt_file" accept=".pdf" required>
+                    <div class="form-text">Please upload a PDF file of your Costco receipt.</div>
+                </div>
+                <button type="submit" class="btn btn-primary">Upload & Process</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="mt-4">
+        <h4>Instructions:</h4>
+        <ol>
+            <li>Scan or download your Costco receipt as a PDF.</li>
+            <li>Make sure the text in the PDF is clear and readable.</li>
+            <li>Click "Choose File" to select your receipt PDF.</li>
+            <li>Click "Upload & Process" to analyze your receipt.</li>
+        </ol>
+        <p class="text-muted">
+            Note: The system works best with text-based PDFs. If you're scanning a paper receipt,
+            make sure the scan is clear and straight.
+        </p>
+    </div>
+</div>
+{% endblock %} 

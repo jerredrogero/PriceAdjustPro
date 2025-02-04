@@ -1,0 +1,120 @@
+{% extends "receipt_parser/base.html" %}
+
+{% block title %}Receipt Details - PriceAdjustPro{% endblock %}
+
+{% block content %}
+<div class="receipt-container">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>Receipt Details</h2>
+        <a href="{% url 'receipt_list' %}" class="btn btn-outline-primary">Back to Receipts</a>
+    </div>
+
+    {% if not receipt.parsed_successfully %}
+        <div class="alert alert-warning">
+            <strong>Warning:</strong> This receipt had parsing issues.
+            {% if receipt.parse_error %}
+                <br>Error: {{ receipt.parse_error }}
+            {% endif %}
+        </div>
+    {% endif %}
+
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="card-title mb-0">
+                {{ receipt.store_location }}
+                {% if receipt.store_number %}
+                    #{{ receipt.store_number }}
+                {% endif %}
+            </h5>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <p><strong>Date:</strong> {{ receipt.transaction_date|date:"F d, Y" }}</p>
+                    <p><strong>Time:</strong> {{ receipt.transaction_date|time:"g:i A" }}</p>
+                </div>
+                <div class="col-md-6">
+                    <p><strong>Items:</strong> {{ receipt.items.count }}</p>
+                    {% if receipt.instant_savings %}
+                        <p><strong>Instant Savings:</strong> ${{ receipt.instant_savings }}</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h5 class="card-title mb-0">Items</h5>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>Item</th>
+                            <th>Price</th>
+                            <th>Qty</th>
+                            <th class="text-end">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in receipt.items.all %}
+                            <tr>
+                                <td>
+                                    {{ item.description }}
+                                    {% if item.item_code %}
+                                        <br><small class="text-muted">#{{ item.item_code }}</small>
+                                    {% endif %}
+                                </td>
+                                <td>${{ item.price }}</td>
+                                <td>{{ item.quantity }}</td>
+                                <td class="text-end">
+                                    ${{ item.total_price }}
+                                    {% if item.discount %}
+                                        <br><small class="text-success">-${{ item.discount }}</small>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot class="table-group-divider">
+                        <tr>
+                            <td colspan="3" class="text-end"><strong>Subtotal:</strong></td>
+                            <td class="text-end">${{ receipt.subtotal|default:"N/A" }}</td>
+                        </tr>
+                        {% if receipt.instant_savings %}
+                            <tr>
+                                <td colspan="3" class="text-end"><strong>Instant Savings:</strong></td>
+                                <td class="text-end text-success">-${{ receipt.instant_savings }}</td>
+                            </tr>
+                        {% endif %}
+                        <tr>
+                            <td colspan="3" class="text-end"><strong>Tax:</strong></td>
+                            <td class="text-end">${{ receipt.tax|default:"N/A" }}</td>
+                        </tr>
+                        {% if receipt.ebt_amount %}
+                            <tr>
+                                <td colspan="3" class="text-end"><strong>EBT Amount:</strong></td>
+                                <td class="text-end">${{ receipt.ebt_amount }}</td>
+                            </tr>
+                        {% endif %}
+                        <tr class="table-active">
+                            <td colspan="3" class="text-end"><strong>Total:</strong></td>
+                            <td class="text-end"><strong>${{ receipt.total|default:"N/A" }}</strong></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    {% if receipt.file %}
+        <div class="text-center mt-4">
+            <a href="{{ receipt.file.url }}" class="btn btn-outline-secondary" target="_blank">
+                View Original PDF
+            </a>
+        </div>
+    {% endif %}
+</div>
+{% endblock %} 
