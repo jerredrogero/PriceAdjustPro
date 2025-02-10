@@ -15,7 +15,7 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
-from django.urls import path, include
+from django.urls import path, include, re_path
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib.auth import views as auth_views
@@ -23,6 +23,7 @@ from django.shortcuts import redirect
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth import authenticate, login, logout
+from django.views.generic import TemplateView
 import json
 
 from receipt_parser.urls import urls_api as receipt_api_urls
@@ -61,22 +62,22 @@ def api_user(request):
         })
     return JsonResponse({'error': 'Not authenticated'}, status=401)
 
-urlpatterns = [
-    path('', home_redirect, name='home'),
-    path('admin/', admin.site.urls),
-    
-    # Traditional URLs
-    path('receipts/', include('receipt_parser.urls')),
-    path('login/', auth_views.LoginView.as_view(template_name='receipt_parser/login.html'), name='login'),
-    path('logout/', auth_views.LogoutView.as_view(next_page='login'), name='logout'),
-    
-    # API URLs
-    path('api/auth/login/', api_login, name='api_login'),
-    path('api/auth/logout/', api_logout, name='api_logout'),
-    path('api/auth/user/', api_user, name='api_user'),
-    path('api/', include(receipt_api_urls())),  # Mount receipt_parser API endpoints under /api/
+# API URLs - these should come first
+api_urlpatterns = [
+    path('auth/login/', api_login, name='api_login'),
+    path('auth/logout/', api_logout, name='api_logout'),
+    path('auth/user/', api_user, name='api_user'),
 ]
 
-# Serve media files in development
+urlpatterns = [
+    path('admin/', admin.site.urls),
+    path('api/', include(api_urlpatterns)),
+    path('api/', include(receipt_api_urls())),
+    
+    # Serve React App - this should be last to catch all other URLs
+    re_path(r'^.*', TemplateView.as_view(template_name='index.html')),
+] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+
+# Serve static files during development
 if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+    urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)

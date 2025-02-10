@@ -1,0 +1,41 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block extrahead %}
+{{ block.super }}
+<script>
+    // Ensure CSRF token is included in all AJAX requests
+    document.addEventListener('DOMContentLoaded', function() {
+        // Get CSRF token from cookie
+        function getCookie(name) {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+
+        // Add CSRF token to all forms
+        const csrftoken = getCookie('csrftoken');
+        if (csrftoken) {
+            const forms = document.querySelectorAll('form');
+            forms.forEach(form => {
+                if (!form.querySelector('input[name="csrfmiddlewaretoken"]')) {
+                    const input = document.createElement('input');
+                    input.type = 'hidden';
+                    input.name = 'csrfmiddlewaretoken';
+                    input.value = csrftoken;
+                    form.appendChild(input);
+                }
+            });
+        }
+    });
+</script>
+{% endblock %} 

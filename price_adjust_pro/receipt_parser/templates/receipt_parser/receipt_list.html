@@ -12,7 +12,7 @@
     {% if receipts %}
         <div class="list-group">
             {% for receipt in receipts %}
-                <a href="{% url 'receipt_detail' receipt.id %}" class="list-group-item list-group-item-action">
+                <a href="{% url 'receipt_detail' transaction_number=receipt.transaction_number %}" class="list-group-item list-group-item-action">
                     <div class="d-flex w-100 justify-content-between">
                         <h5 class="mb-1">
                             {{ receipt.store_location }}
