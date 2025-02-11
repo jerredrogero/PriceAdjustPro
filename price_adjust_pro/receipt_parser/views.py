@@ -172,6 +172,7 @@ def upload_receipt(request):
                             check_for_price_adjustments(line_item, receipt)
                         except Exception as e:
                             logger.error(f"Line item error: {str(e)}")
+                            continue
                 
                 messages.success(request, 'Receipt uploaded successfully.')
                 return JsonResponse({

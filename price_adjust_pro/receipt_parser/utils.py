@@ -68,7 +68,8 @@ def parse_receipt(text: str) -> Dict:
     """
     Parse receipt text using Google's Gemini API.
     """
-    prompt = """You are a specialized Costco receipt parser. Extract and return these fields from the receipt:
+    try:
+        prompt = """You are a specialized Costco receipt parser. Extract and return these fields from the receipt:
 
 store_location: Store name and location (e.g. "Costco Athens #1621")
 store_number: Store number only (e.g. "1621")
@@ -122,7 +123,6 @@ total_items_sold: 8
 Parse this receipt:
 {text}"""
 
-    try:
         api_key = settings.GEMINI_API_KEY
         if not api_key:
             raise Exception("Gemini API key not configured")

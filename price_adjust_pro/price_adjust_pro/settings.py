@@ -66,8 +66,8 @@ TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
         'DIRS': [
-            os.path.join(BASE_DIR.parent, 'frontend/build'),
             os.path.join(BASE_DIR, 'receipt_parser/templates'),
+            os.path.join(BASE_DIR.parent, 'frontend/build'),
         ],
         'APP_DIRS': True,
         'OPTIONS': {
