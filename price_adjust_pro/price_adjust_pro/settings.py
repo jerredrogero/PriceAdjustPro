@@ -21,6 +21,9 @@ load_dotenv()
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# React App settings
+REACT_APP_DIR = os.path.join(BASE_DIR.parent, 'frontend')
+REACT_APP_BUILD_PATH = os.path.join(REACT_APP_DIR, 'build')
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
@@ -187,10 +190,6 @@ STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 # Media files (Uploaded files)
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
-
-# React App settings
-REACT_APP_DIR = os.path.join(BASE_DIR.parent, 'frontend')
-REACT_APP_BUILD_PATH = os.path.join(REACT_APP_DIR, 'build')
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
