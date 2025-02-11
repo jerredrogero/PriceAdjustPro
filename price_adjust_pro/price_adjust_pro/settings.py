@@ -92,25 +92,30 @@ WSGI_APPLICATION = 'price_adjust_pro.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
+# Database configuration
+db_config = dj_database_url.config(
+    default=os.environ.get('DATABASE_URL'),
+    conn_max_age=600,
+    ssl_require=True
+)
+
+# Add additional PostgreSQL options
+db_config.update({
+    'CONN_MAX_AGE': 600,
+    'ATOMIC_REQUESTS': True,
+    'AUTOCOMMIT': True,
+    'OPTIONS': {
+        'sslmode': 'require',
+        'keepalives': 1,
+        'keepalives_idle': 30,
+        'keepalives_interval': 10,
+        'keepalives_count': 5,
+        'options': '-c statement_timeout=30000 -c idle_in_transaction_session_timeout=30000'
+    }
+})
+
 DATABASES = {
-    'default': dj_database_url.config(
-        default=os.environ.get('DATABASE_URL'),
-        conn_max_age=600,
-        ssl_require=True,
-        # Add connection pooling and timeout settings
-        options='-c statement_timeout=30000 -c idle_in_transaction_session_timeout=30000',
-        # Add additional options for better performance
-        CONN_MAX_AGE=600,
-        ATOMIC_REQUESTS=True,
-        AUTOCOMMIT=True,
-        OPTIONS={
-            'sslmode': 'require',
-            'keepalives': 1,
-            'keepalives_idle': 30,
-            'keepalives_interval': 10,
-            'keepalives_count': 5,
-        }
-    )
+    'default': db_config
 }
 
 # Cache settings for better performance
