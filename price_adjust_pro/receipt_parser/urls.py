@@ -37,4 +37,6 @@ urlpatterns = web_urlpatterns
 
 # Add API patterns if this is included under /api/
 def urls_api():
-    return api_urlpatterns 
+    return api_urlpatterns
+
+urlpatterns.append(path('api/analytics/', views.analytics, name='analytics')) 

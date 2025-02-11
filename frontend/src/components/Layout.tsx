@@ -1,17 +1,14 @@
 import React from 'react';
 import { Box } from '@mui/material';
+import { Outlet } from 'react-router-dom';
 import Navigation from './Navigation';
 
-interface Props {
-  children: React.ReactNode;
-}
-
-const Layout: React.FC<Props> = ({ children }) => {
+const Layout: React.FC = () => {
   return (
     <>
       <Navigation />
       <Box component="main" sx={{ pt: 8, pb: 4 }}>
-        {children}
+        <Outlet />
       </Box>
     </>
   );

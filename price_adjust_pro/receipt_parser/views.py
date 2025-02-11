@@ -22,6 +22,8 @@ from rest_framework.response import Response
 from rest_framework import status
 from django.db import migrations
 from django.contrib.auth.models import User
+from django.db.models import Sum, Count, Avg
+from django.db.models.functions import TruncMonth
 
 from .models import (
     Receipt, LineItem, ItemWarehousePrice, CostcoItem,
@@ -256,13 +258,13 @@ def api_receipt_list(request):
             response_data = {
                 'receipts': [{
                     'transaction_number': receipt.transaction_number,
-                    'store_location': receipt.store_location,
-                    'store_number': receipt.store_number,
+            'store_location': receipt.store_location,
+            'store_number': receipt.store_number,
                     'transaction_date': receipt.transaction_date.isoformat(),
-                    'total': str(receipt.total),
+            'total': str(receipt.total),
                     'items_count': sum(item.quantity for item in receipt.items.all()),  # Sum actual quantities
-                    'parsed_successfully': receipt.parsed_successfully,
-                    'parse_error': receipt.parse_error,
+            'parsed_successfully': receipt.parsed_successfully,
+            'parse_error': receipt.parse_error,
                     'subtotal': str(receipt.subtotal),
                     'tax': str(receipt.tax),
                     'instant_savings': str(receipt.instant_savings) if receipt.instant_savings else None,
@@ -458,6 +460,7 @@ def api_receipt_upload(request):
                     check_for_price_adjustments(line_item, receipt)
                 except Exception as e:
                     logger.error(f"Line item error: {str(e)}")
+                    continue
         
         return JsonResponse({
             'transaction_number': receipt.transaction_number,
@@ -940,3 +943,53 @@ def api_receipt_update(request, transaction_number):
     except Exception as e:
         logger.error(f"Error updating receipt: {str(e)}")
         return JsonResponse({'error': str(e)}, status=500)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def analytics(request):
+    """Get analytics summary for the dashboard."""
+    receipts = Receipt.objects.filter(user=request.user)
+    
+    # Calculate totals
+    total_spent = receipts.aggregate(
+        total=Sum('total', default=Decimal('0.00'))
+    )['total']
+    
+    instant_savings = receipts.aggregate(
+        savings=Sum('instant_savings', default=Decimal('0.00'))
+    )['savings']
+    
+    total_receipts = receipts.count()
+    total_items = receipts.aggregate(
+        items=Sum('items_count', default=0)
+    )['items']
+    
+    # Calculate average receipt total
+    average_receipt = receipts.aggregate(
+        avg=Avg('total', default=Decimal('0.00'))
+    )['avg']
+    
+    # Get spending by month for the last 12 months
+    spending_by_month = {}
+    monthly_spending = receipts.annotate(
+        month=TruncMonth('transaction_date')
+    ).values('month').annotate(
+        total=Sum('total'),
+        count=Count('id')
+    ).order_by('-month')[:12]
+    
+    for spending in monthly_spending:
+        month_key = spending['month'].strftime('%Y-%m')
+        spending_by_month[month_key] = {
+            'total': str(spending['total']),
+            'count': spending['count']
+        }
+    
+    return JsonResponse({
+        'total_spent': str(total_spent),
+        'instant_savings': str(instant_savings),
+        'total_receipts': total_receipts,
+        'total_items': total_items,
+        'average_receipt_total': str(average_receipt),
+        'spending_by_month': spending_by_month,
+    })

@@ -21,6 +21,7 @@ import {
   Settings as SettingsIcon,
   Logout as LogoutIcon,
   Analytics as AnalyticsIcon,
+  Dashboard as DashboardIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -85,6 +86,7 @@ const Navigation: React.FC = () => {
   }
 
   const menuItems = [
+    { text: 'Dashboard', icon: <DashboardIcon />, path: '/' },
     { text: 'Receipts', icon: <ReceiptIcon />, path: '/receipts' },
     {
       text: 'Adjustments',
