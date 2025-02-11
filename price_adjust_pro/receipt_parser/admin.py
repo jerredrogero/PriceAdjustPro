@@ -5,7 +5,9 @@ from django.views.decorators.csrf import csrf_protect
 from django.db import models
 from django.forms import TextInput, Textarea
 from django.utils.html import format_html
-from django.db.models import Count, Sum, Avg
+from django.db.models import Count, Sum, Avg, F, Window
+from django.db.models.functions import ExtractYear, ExtractMonth, TruncDate
+from django.contrib.postgres.search import SearchVector, SearchQuery, SearchRank
 from .models import (
     Receipt, LineItem, CostcoItem, CostcoWarehouse,
     ItemPriceHistory, ItemWarehousePrice, PriceAdjustmentAlert
@@ -70,7 +72,26 @@ class ReceiptAdmin(BaseModelAdmin):
     raw_id_fields = ('user',)
 
     def get_queryset(self, request):
-        return super().get_queryset(request).select_related('user').prefetch_related('items')
+        # Optimize for PostgreSQL
+        return super().get_queryset(request)\
+            .select_related('user')\
+            .prefetch_related('items')\
+            .annotate(
+                items_total=Count('items'),
+                total_savings=Sum('items__instant_savings'),
+                year=ExtractYear('transaction_date'),
+                month=ExtractMonth('transaction_date')
+            )
+
+    def get_search_results(self, request, queryset, search_term):
+        if search_term:
+            search_query = SearchQuery(search_term)
+            search_vector = SearchVector('store_location', 'store_city', 'items__description')
+            queryset = queryset.annotate(
+                search=search_vector,
+                rank=SearchRank(search_vector, search_query)
+            ).filter(search=search_query).order_by('-rank')
+        return queryset, True
 
     def items_count(self, obj):
         return obj.items.count()
@@ -104,9 +125,25 @@ class PriceAdjustmentAlertAdmin(BaseModelAdmin):
     date_hierarchy = 'purchase_date'
     list_per_page = 50
     raw_id_fields = ('user',)
+    actions = ['mark_as_expired', 'mark_as_dismissed']
+
+    def mark_as_expired(self, request, queryset):
+        updated = queryset.update(is_active=False, is_expired=True)
+        self.message_user(request, f'{updated} alerts marked as expired.')
+    mark_as_expired.short_description = "Mark selected alerts as expired"
+    
+    def mark_as_dismissed(self, request, queryset):
+        updated = queryset.update(is_dismissed=True)
+        self.message_user(request, f'{updated} alerts marked as dismissed.')
+    mark_as_dismissed.short_description = "Mark selected alerts as dismissed"
 
     def get_queryset(self, request):
-        return super().get_queryset(request).select_related('user')
+        return super().get_queryset(request)\
+            .select_related('user')\
+            .annotate(
+                potential_savings=F('original_price') - F('lower_price'),
+                days_active=TruncDate('created_at') - TruncDate(F('purchase_date'))
+            )
 
     def price_difference_display(self, obj):
         return format_html('<span style="color: green">${:.2f}</span>', obj.price_difference)
@@ -137,7 +174,12 @@ class LineItemAdmin(BaseModelAdmin):
     show_full_result_count = False
 
     def get_queryset(self, request):
-        return super().get_queryset(request).select_related('receipt')
+        return super().get_queryset(request)\
+            .select_related('receipt')\
+            .annotate(
+                price_with_savings=F('price') - F('instant_savings'),
+                total_with_savings=F('price_with_savings') * F('quantity')
+            )
 
     def instant_savings_display(self, obj):
         if obj.instant_savings:
@@ -161,9 +203,15 @@ class CostcoItemAdmin(BaseModelAdmin):
     list_per_page = 100
 
     def get_queryset(self, request):
-        return super().get_queryset(request).annotate(
-            price_history_count=Count('price_history')
-        )
+        return super().get_queryset(request)\
+            .annotate(
+                price_history_count=Count('price_history'),
+                avg_price=Avg('warehouse_prices__price'),
+                price_volatility=Window(
+                    expression=Avg('price_history__new_price'),
+                    order_by=F('price_history__date_changed').desc()
+                )
+            )
 
     def price_history_count(self, obj):
         return obj.price_history_count
@@ -202,7 +250,12 @@ class ItemPriceHistoryAdmin(BaseModelAdmin):
     show_full_result_count = False
 
     def get_queryset(self, request):
-        return super().get_queryset(request).select_related('item', 'warehouse')
+        return super().get_queryset(request)\
+            .select_related('item', 'warehouse')\
+            .annotate(
+                price_change=F('new_price') - F('old_price'),
+                change_percentage=(F('new_price') - F('old_price')) / F('old_price') * 100
+            )
 
     def price_change_display(self, obj):
         if obj.old_price and obj.new_price:
@@ -234,7 +287,12 @@ class ItemWarehousePriceAdmin(BaseModelAdmin):
     show_full_result_count = False
 
     def get_queryset(self, request):
-        return super().get_queryset(request).select_related('item', 'warehouse')
+        return super().get_queryset(request)\
+            .select_related('item', 'warehouse')\
+            .annotate(
+                days_since_update=TruncDate('updated_at') - TruncDate('created_at'),
+                price_vs_avg=(F('price') - Avg('item__warehouse_prices__price')) / Avg('item__warehouse_prices__price') * 100
+            )
 
     def item_link(self, obj):
         return format_html('<a href="/admin/receipt_parser/costcoitem/{}/">{} - {}</a>', 
