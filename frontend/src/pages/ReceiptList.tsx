@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link as RouterLink } from 'react-router-dom';
+import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import {
   Container,
   Typography,
@@ -17,10 +17,31 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  Tooltip,
+  Paper,
+  Fade,
 } from '@mui/material';
-import { Receipt as ReceiptIcon, Delete as DeleteIcon } from '@mui/icons-material';
+import {
+  Receipt as ReceiptIcon,
+  Delete as DeleteIcon,
+  Store as StoreIcon,
+  DateRange as DateIcon,
+  Warning as WarningIcon,
+  Visibility as ViewIcon,
+} from '@mui/icons-material';
 import { format } from 'date-fns';
 import api from '../api/axios';
+
+interface ReceiptItem {
+  id: number;
+  item_code: string;
+  description: string;
+  price: string;
+  quantity: number;
+  total_price: string;
+  instant_savings: string | null;
+  original_price: string | null;
+}
 
 interface Receipt {
   transaction_number: string;
@@ -30,6 +51,10 @@ interface Receipt {
   total: string;
   items_count: number;
   parsed_successfully: boolean;
+  items: ReceiptItem[];
+  subtotal: string;
+  tax: string;
+  instant_savings: string | null;
 }
 
 interface ApiResponse {
@@ -57,51 +82,120 @@ const EmptyState = () => (
 
 const ReceiptCard = ({ 
   receipt,
-  onDelete
+  onDelete,
+  navigate
 }: { 
   receipt: Receipt;
   onDelete: (receipt: Receipt) => void;
+  navigate: (path: string) => void;
 }) => (
   <Card>
     <CardActionArea component={RouterLink} to={`/receipts/${receipt.transaction_number}`}>
       <CardContent>
-        <Typography variant="h6" gutterBottom>
-          {receipt.store_location}
-        </Typography>
-        <Typography color="text.secondary" gutterBottom>
-          {format(new Date(receipt.transaction_date), 'MMM d, yyyy')}
-        </Typography>
-        <Typography variant="h5" gutterBottom>
-          ${receipt.total}
-        </Typography>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <StoreIcon color="primary" />
+            <Box>
+              <Typography variant="h6" component="div">
+                Receipt #{receipt.transaction_number.slice(-4)}
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                {receipt.store_location}
+              </Typography>
+            </Box>
+          </Box>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Tooltip title="Delete Receipt">
+              <IconButton
+                onClick={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  onDelete(receipt);
+                }}
+                color="error"
+                sx={{
+                  backgroundColor: 'action.hover',
+                  '&:hover': {
+                    backgroundColor: 'error.main',
+                    color: 'error.contrastText',
+                  },
+                }}
+              >
+                <DeleteIcon />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="View Details">
+              <IconButton
+                onClick={() => navigate(`/receipt/${receipt.transaction_number}`)}
+                color="primary"
+                sx={{
+                  backgroundColor: 'action.hover',
+                  '&:hover': {
+                    backgroundColor: 'primary.main',
+                    color: 'primary.contrastText',
+                  },
+                }}
+              >
+                <ViewIcon />
+              </IconButton>
+            </Tooltip>
+          </Box>
+        </Box>
+
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 2 }}>
+          <DateIcon sx={{ color: 'text.secondary', fontSize: 20 }} />
+          <Typography color="text.secondary">
+            {new Date(receipt.transaction_date).toLocaleDateString(undefined, {
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric',
+            })}
+          </Typography>
+        </Box>
+
+        <Box sx={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center',
+          backgroundColor: 'primary.main',
+          color: 'primary.contrastText',
+          p: 1.5,
+          borderRadius: 2,
+          mt: 2,
+        }}>
+          <Typography variant="h6" component="div">
+            ${receipt.total}
+          </Typography>
           <Chip
             label={`${receipt.items_count} items`}
             size="small"
-            color="primary"
-            variant="outlined"
-          />
-          {!receipt.parsed_successfully && (
-            <Chip
-              label="Parse Warning"
-              size="small"
-              color="warning"
-            />
-          )}
-        </Box>
-        <Box sx={{ position: 'absolute', top: 8, right: 8 }}>
-          <IconButton 
-            onClick={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              onDelete(receipt);
+            sx={{ 
+              backgroundColor: 'rgba(255, 255, 255, 0.2)',
+              color: 'inherit',
+              '.MuiChip-label': {
+                fontWeight: 500,
+              },
             }}
-            color="error"
-            size="small"
-          >
-            <DeleteIcon fontSize="small" />
-          </IconButton>
+          />
         </Box>
+
+        {!receipt.parsed_successfully && (
+          <Alert
+            severity="warning"
+            icon={<WarningIcon />}
+            sx={{ 
+              mt: 2,
+              borderRadius: 2,
+              '& .MuiAlert-icon': {
+                color: 'warning.dark',
+              },
+            }}
+          >
+            <Typography variant="body2">
+              Parse warning
+            </Typography>
+          </Alert>
+        )}
       </CardContent>
     </CardActionArea>
   </Card>
@@ -114,6 +208,7 @@ const ReceiptList: React.FC = () => {
   const [debugInfo, setDebugInfo] = useState('');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedReceipt, setSelectedReceipt] = useState<Receipt | null>(null);
+  const navigate = useNavigate();
 
   const handleDeleteClick = (receipt: Receipt) => {
     setSelectedReceipt(receipt);
@@ -138,48 +233,28 @@ const ReceiptList: React.FC = () => {
     let mounted = true;
 
     const fetchReceipts = async () => {
+      setLoading(true);
       try {
-        setLoading(true);
-        setError('');
-        setDebugInfo('');
-
         const response = await api.get('/api/receipts/');
-        const data = response.data;
-
-        // Debug logging
-        console.log('API Response:', data);
-        setDebugInfo(JSON.stringify(data, null, 2));
-
-        if (!mounted) return;
-
-        if (!data || typeof data !== 'object') {
-          console.error('Invalid response format:', data);
-          setReceipts([]);
-          return;
-        }
-
-        const receiptsList = Array.isArray(data.receipts) ? data.receipts : [];
-        const validReceipts = receiptsList.filter((item: any): item is Receipt => {
-          if (!item || typeof item !== 'object') return false;
-          const r = item as Partial<Receipt>;
-          return (
-            typeof r.transaction_number === 'string' &&
-            typeof r.store_location === 'string' &&
-            typeof r.store_number === 'string' &&
-            typeof r.transaction_date === 'string' &&
-            typeof r.total === 'string' &&
-            typeof r.items_count === 'number' &&
-            typeof r.parsed_successfully === 'boolean'
-          );
-        });
-
+        console.log('API Response:', response.data); // Debug logging
+        
         if (mounted) {
-          setReceipts(validReceipts);
+          if (response.data && Array.isArray(response.data.receipts)) {
+            setReceipts(response.data.receipts);
+            setError('');
+            setDebugInfo('');
+          } else {
+            console.error('Invalid response format:', response.data);
+            setError('Invalid response format from server');
+            setDebugInfo(JSON.stringify(response.data, null, 2));
+            setReceipts([]);
+          }
         }
       } catch (err) {
         console.error('Error fetching receipts:', err);
         if (mounted) {
-          setError(err instanceof Error ? err.message : 'Failed to load receipts');
+          setError('Failed to load receipts');
+          setDebugInfo(err instanceof Error ? err.message : String(err));
           setReceipts([]);
         }
       } finally {
@@ -249,12 +324,28 @@ const ReceiptList: React.FC = () => {
         <EmptyState />
       ) : (
         <Grid container spacing={3}>
-          {receipts.map((receipt) => (
+          {receipts.map((receipt, index) => (
             <Grid item xs={12} sm={6} md={4} key={receipt.transaction_number}>
-              <ReceiptCard 
-                receipt={receipt}
-                onDelete={handleDeleteClick}
-              />
+              <Fade in timeout={300} style={{ transitionDelay: `${index * 100}ms` }}>
+                <Paper 
+                  elevation={2}
+                  sx={{
+                    height: '100%',
+                    borderRadius: 3,
+                    transition: 'all 0.3s ease-in-out',
+                    '&:hover': {
+                      transform: 'translateY(-4px)',
+                      boxShadow: 6,
+                    },
+                  }}
+                >
+                  <ReceiptCard 
+                    receipt={receipt}
+                    onDelete={handleDeleteClick}
+                    navigate={navigate}
+                  />
+                </Paper>
+              </Fade>
             </Grid>
           ))}
         </Grid>

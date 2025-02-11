@@ -282,14 +282,6 @@ const ReceiptDetail: React.FC = () => {
                     <Typography>{item.description}</Typography>
                     <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                       #{item.item_code}
-                      {item.is_taxable && (
-                        <Chip 
-                          label="Taxable" 
-                          size="small" 
-                          color="default" 
-                          sx={{ height: 20, fontSize: '0.7rem' }} 
-                        />
-                      )}
                     </Typography>
                   </TableCell>
                   <TableCell align="right">${item.price}</TableCell>

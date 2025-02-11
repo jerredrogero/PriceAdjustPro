@@ -9,6 +9,7 @@ from django.core.files.base import ContentFile
 from django.conf import settings
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
+from django.urls import reverse
 import os
 import logging
 import json
@@ -20,6 +21,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 from django.db import migrations
+from django.contrib.auth.models import User
 
 from .models import (
     Receipt, LineItem, ItemWarehousePrice, CostcoItem,
@@ -27,7 +29,7 @@ from .models import (
 )
 from .utils import (
     process_receipt_pdf, extract_text_from_pdf, parse_receipt,
-    update_price_database
+    update_price_database, check_for_price_adjustments
 )
 from .serializers import ReceiptSerializer
 
@@ -45,8 +47,9 @@ def upload_receipt(request):
             
         try:
             # Save the uploaded file
+            timestamp = timezone.now().strftime("%Y%m%d%H%M%S")
             file_path = default_storage.save(
-                f'receipts/{request.user.id}/{receipt_file.name}',
+                f'receipts/{request.user.id}/{timestamp}_{receipt_file.name}',
                 ContentFile(receipt_file.read())
             )
             
@@ -61,6 +64,7 @@ def upload_receipt(request):
             
             # Check if receipt already exists
             existing_receipt = Receipt.objects.filter(
+                user=request.user,
                 transaction_number=parsed_data.get('transaction_number')
             ).first()
 
@@ -82,17 +86,19 @@ def upload_receipt(request):
                     existing_receipt.items.all().delete()
                     
                     # Create new line items
-                    if parsed_data.get('parsed_successfully') and parsed_data.get('items'):
+                    if parsed_data.get('items'):
                         for item_data in parsed_data['items']:
                             try:
                                 line_item = LineItem.objects.create(
                                     receipt=existing_receipt,
                                     item_code=item_data.get('item_code', '000000'),
                                     description=item_data.get('description', 'Unknown Item'),
-                                    price=item_data.get('price', Decimal('0.00')),
+                                    price=Decimal(str(item_data.get('price', '0.00'))),
                                     quantity=item_data.get('quantity', 1),
                                     discount=item_data.get('discount'),
-                                    is_taxable=item_data.get('is_taxable', False)
+                                    is_taxable=item_data.get('is_taxable', False),
+                                    instant_savings=Decimal(str(item_data['instant_savings'])) if item_data.get('instant_savings') else None,
+                                    original_price=Decimal(str(item_data['original_price'])) if item_data.get('original_price') else None
                                 )
                                 # Check for potential price adjustments
                                 check_for_price_adjustments(line_item, existing_receipt)
@@ -102,7 +108,23 @@ def upload_receipt(request):
                     update_price_database(parsed_data, user=request.user)
                     messages.success(request, 'Receipt updated successfully')
                     default_storage.delete(file_path)
-                    return redirect('receipt_detail', transaction_number=existing_receipt.transaction_number)
+                    return JsonResponse({
+                        'transaction_number': existing_receipt.transaction_number,
+                        'message': 'Receipt updated successfully',
+                        'items': [
+                            {
+                                'item_code': item.item_code,
+                                'description': item.description,
+                                'price': str(item.price),
+                                'quantity': item.quantity,
+                                'discount': str(item.discount) if item.discount else None
+                            }
+                            for item in existing_receipt.items.all()
+                        ],
+                        'parse_error': parsed_data.get('parse_error'),
+                        'parsed_successfully': parsed_data.get('parsed_successfully', False),
+                        'is_duplicate': True
+                    })
                 except Exception as e:
                     logger.error(f"Error processing duplicate receipt: {str(e)}")
                     messages.error(request, f'Error processing receipt data: {str(e)}')
@@ -122,6 +144,7 @@ def upload_receipt(request):
                     transaction_date=parsed_data.get('transaction_date', timezone.now()),
                     subtotal=parsed_data.get('subtotal', Decimal('0.00')),
                     total=parsed_data.get('total', Decimal('0.00')),
+                    tax=parsed_data.get('tax', Decimal('0.00')),
                     ebt_amount=parsed_data.get('ebt_amount'),
                     instant_savings=parsed_data.get('instant_savings'),
                     parsed_successfully=parsed_data.get('parsed_successfully', False),
@@ -129,17 +152,19 @@ def upload_receipt(request):
                 )
                 
                 # Create LineItem objects only if we have valid items
-                if parsed_data.get('parsed_successfully') and parsed_data.get('items'):
+                if parsed_data.get('items'):
                     for item_data in parsed_data['items']:
                         try:
                             line_item = LineItem.objects.create(
                                 receipt=receipt,
                                 item_code=item_data.get('item_code', '000000'),
                                 description=item_data.get('description', 'Unknown Item'),
-                                price=item_data.get('price', Decimal('0.00')),
+                                price=Decimal(str(item_data.get('price', '0.00'))),
                                 quantity=item_data.get('quantity', 1),
                                 discount=item_data.get('discount'),
-                                is_taxable=item_data.get('is_taxable', False)
+                                is_taxable=item_data.get('is_taxable', False),
+                                instant_savings=Decimal(str(item_data['instant_savings'])) if item_data.get('instant_savings') else None,
+                                original_price=Decimal(str(item_data['original_price'])) if item_data.get('original_price') else None
                             )
                             # Check for potential price adjustments
                             check_for_price_adjustments(line_item, receipt)
@@ -147,7 +172,23 @@ def upload_receipt(request):
                             logger.error(f"Line item error: {str(e)}")
                 
                 messages.success(request, 'Receipt uploaded successfully.')
-                return redirect('receipt_detail', transaction_number=receipt.transaction_number)
+                return JsonResponse({
+                    'transaction_number': receipt.transaction_number,
+                    'message': 'Receipt processed successfully',
+                    'items': [
+                        {
+                            'item_code': item.item_code,
+                            'description': item.description,
+                            'price': str(item.price),
+                            'quantity': item.quantity,
+                            'discount': str(item.discount) if item.discount else None
+                        }
+                        for item in receipt.items.all()
+                    ],
+                    'parse_error': parsed_data.get('parse_error'),
+                    'parsed_successfully': parsed_data.get('parsed_successfully', False),
+                    'is_duplicate': False
+                })
                 
             except Exception as e:
                 logger.error(f"Error creating receipt: {str(e)}")
@@ -197,28 +238,57 @@ def receipt_detail(request, transaction_number):
 @login_required
 def api_receipt_list(request):
     if request.method == 'GET':
-        receipts = Receipt.objects.filter(user=request.user).order_by('-transaction_date')
-        
-        # Get active price adjustments count
-        adjustments_count = PriceAdjustmentAlert.objects.filter(
-            user=request.user,
-            is_active=True,
-            is_dismissed=False
-        ).count()
-        
-        return JsonResponse({
-            'receipts': [{
-                'transaction_number': receipt.transaction_number,
-                'store_location': receipt.store_location,
-                'store_number': receipt.store_number,
-                'transaction_date': receipt.transaction_date.isoformat(),
-                'total': str(receipt.total),
-                'items_count': receipt.items.count(),
-                'parsed_successfully': receipt.parsed_successfully,
-                'parse_error': receipt.parse_error,
-            } for receipt in receipts],
-            'price_adjustments_count': adjustments_count
-        }, safe=False)
+        try:
+            # Get all receipts for the user, ordered by date
+            receipts = Receipt.objects.filter(user=request.user).order_by('-transaction_date').prefetch_related('items')
+            
+            # Debug logging
+            logger.info(f"Found {receipts.count()} receipts for user {request.user.username}")
+            
+            # Get active price adjustments count
+            adjustments_count = PriceAdjustmentAlert.objects.filter(
+                user=request.user,
+                is_active=True,
+                is_dismissed=False
+            ).count()
+            
+            # Build response data
+            response_data = {
+                'receipts': [{
+                    'transaction_number': receipt.transaction_number,
+                    'store_location': receipt.store_location,
+                    'store_number': receipt.store_number,
+                    'transaction_date': receipt.transaction_date.isoformat(),
+                    'total': str(receipt.total),
+                    'items_count': sum(item.quantity for item in receipt.items.all()),  # Sum actual quantities
+                    'parsed_successfully': receipt.parsed_successfully,
+                    'parse_error': receipt.parse_error,
+                    'subtotal': str(receipt.subtotal),
+                    'tax': str(receipt.tax),
+                    'instant_savings': str(receipt.instant_savings) if receipt.instant_savings else None,
+                    'items': [{  # Include item details
+                        'id': item.id,
+                        'item_code': item.item_code,
+                        'description': item.description,
+                        'price': str(item.price),
+                        'quantity': item.quantity,
+                        'total_price': str(item.total_price),
+                        'instant_savings': str(item.instant_savings) if item.instant_savings else None,
+                        'original_price': str(item.original_price) if item.original_price else None,
+                    } for item in receipt.items.all()]
+                } for receipt in receipts],
+                'price_adjustments_count': adjustments_count
+            }
+            
+            # Debug logging
+            logger.info(f"Returning {len(response_data['receipts'])} receipts in response")
+            
+            return JsonResponse(response_data)
+            
+        except Exception as e:
+            logger.error(f"Error in api_receipt_list: {str(e)}")
+            return JsonResponse({'error': str(e)}, status=500)
+            
     return JsonResponse({'error': 'Method not allowed'}, status=405)
 
 @login_required
@@ -230,8 +300,10 @@ def api_receipt_detail(request, transaction_number):
         'description': item.description,
         'price': str(item.price),
         'quantity': item.quantity,
-        'discount': str(item.discount) if item.discount else None,
         'total_price': str(item.total_price),
+        'is_taxable': item.is_taxable,
+        'instant_savings': str(item.instant_savings) if item.instant_savings else None,
+        'original_price': str(item.original_price) if item.original_price else None
     } for item in receipt.items.all()]
     
     return JsonResponse({
@@ -267,8 +339,9 @@ def api_receipt_upload(request):
         
     try:
         # Save the uploaded file
+        timestamp = timezone.now().strftime("%Y%m%d%H%M%S")
         file_path = default_storage.save(
-            f'receipts/{request.user.id}/{receipt_file.name}',
+            f'receipts/{request.user.id}/{timestamp}_{receipt_file.name}',
             ContentFile(receipt_file.read())
         )
         
@@ -278,8 +351,9 @@ def api_receipt_upload(request):
         # Process the receipt
         parsed_data = process_receipt_pdf(full_path, user=request.user)
 
-        # Check if receipt already exists
+        # Check if receipt already exists for this user
         existing_receipt = Receipt.objects.filter(
+            user=request.user,
             transaction_number=parsed_data.get('transaction_number')
         ).first()
 
@@ -300,31 +374,53 @@ def api_receipt_upload(request):
                 existing_receipt.items.all().delete()
                 
                 # Create new line items
-                if parsed_data.get('parsed_successfully') and parsed_data.get('items'):
+                if parsed_data.get('items'):
                     for item_data in parsed_data['items']:
                         try:
                             line_item = LineItem.objects.create(
                                 receipt=existing_receipt,
                                 item_code=item_data.get('item_code', '000000'),
                                 description=item_data.get('description', 'Unknown Item'),
-                                price=item_data.get('price', Decimal('0.00')),
+                                price=Decimal(str(item_data.get('price', '0.00'))),
                                 quantity=item_data.get('quantity', 1),
                                 discount=item_data.get('discount'),
-                                is_taxable=item_data.get('is_taxable', False)
+                                is_taxable=item_data.get('is_taxable', False),
+                                instant_savings=Decimal(str(item_data['instant_savings'])) if item_data.get('instant_savings') else None,
+                                original_price=Decimal(str(item_data['original_price'])) if item_data.get('original_price') else None
                             )
                             # Check for potential price adjustments
                             check_for_price_adjustments(line_item, existing_receipt)
                         except Exception as e:
                             logger.error(f"Line item error: {str(e)}")
+                            continue
                 
                 update_price_database(parsed_data, user=request.user)
-                messages.success(request, 'Receipt updated successfully')
                 default_storage.delete(file_path)
-                return redirect('receipt_detail', transaction_number=existing_receipt.transaction_number)
+                return JsonResponse({
+                    'transaction_number': existing_receipt.transaction_number,
+                    'message': 'Receipt updated successfully',
+                    'items': [
+                        {
+                            'item_code': item.item_code,
+                            'description': item.description,
+                            'price': str(item.price),
+                            'quantity': item.quantity,
+                            'discount': str(item.discount) if item.discount else None
+                        }
+                        for item in existing_receipt.items.all()
+                    ],
+                    'parse_error': parsed_data.get('parse_error'),
+                    'parsed_successfully': parsed_data.get('parsed_successfully', False),
+                    'is_duplicate': True
+                })
             except Exception as e:
                 logger.error(f"Error processing duplicate receipt: {str(e)}")
                 default_storage.delete(file_path)
-                return JsonResponse({'error': str(e)}, status=500)
+                return JsonResponse({
+                    'error': str(e),
+                    'transaction_number': existing_receipt.transaction_number,
+                    'is_duplicate': True
+                }, status=200)  # Return 200 even for duplicates
         
         # Create Receipt object with default values if parsing failed
         receipt = Receipt.objects.create(
@@ -336,6 +432,7 @@ def api_receipt_upload(request):
             transaction_date=parsed_data.get('transaction_date', timezone.now()),
             subtotal=parsed_data.get('subtotal', Decimal('0.00')),
             total=parsed_data.get('total', Decimal('0.00')),
+            tax=parsed_data.get('tax', Decimal('0.00')),
             ebt_amount=parsed_data.get('ebt_amount'),
             instant_savings=parsed_data.get('instant_savings'),
             parsed_successfully=parsed_data.get('parsed_successfully', False),
@@ -343,17 +440,19 @@ def api_receipt_upload(request):
         )
         
         # Create LineItem objects only if we have valid items
-        if parsed_data.get('parsed_successfully') and parsed_data.get('items'):
+        if parsed_data.get('items'):
             for item_data in parsed_data['items']:
                 try:
                     line_item = LineItem.objects.create(
                         receipt=receipt,
                         item_code=item_data.get('item_code', '000000'),
                         description=item_data.get('description', 'Unknown Item'),
-                        price=item_data.get('price', Decimal('0.00')),
+                        price=Decimal(str(item_data.get('price', '0.00'))),
                         quantity=item_data.get('quantity', 1),
                         discount=item_data.get('discount'),
-                        is_taxable=item_data.get('is_taxable', False)
+                        is_taxable=item_data.get('is_taxable', False),
+                        instant_savings=Decimal(str(item_data['instant_savings'])) if item_data.get('instant_savings') else None,
+                        original_price=Decimal(str(item_data['original_price'])) if item_data.get('original_price') else None
                     )
                     # Check for potential price adjustments
                     check_for_price_adjustments(line_item, receipt)
@@ -362,7 +461,17 @@ def api_receipt_upload(request):
         
         return JsonResponse({
             'transaction_number': receipt.transaction_number,
-            'message': 'Receipt uploaded successfully',
+            'message': 'Receipt processed successfully',
+            'items': [
+                {
+                    'item_code': item.item_code,
+                    'description': item.description,
+                    'price': str(item.price),
+                    'quantity': item.quantity,
+                    'discount': str(item.discount) if item.discount else None
+                }
+                for item in receipt.items.all()
+            ],
             'parse_error': parsed_data.get('parse_error'),
             'parsed_successfully': parsed_data.get('parsed_successfully', False),
             'is_duplicate': False
@@ -373,7 +482,10 @@ def api_receipt_upload(request):
         # Clean up the uploaded file if it exists
         if 'file_path' in locals():
             default_storage.delete(file_path)
-        return JsonResponse({'error': str(e)}, status=500)
+        return JsonResponse({
+            'error': str(e),
+            'is_duplicate': 'UNIQUE constraint failed' in str(e)
+        }, status=200)  # Return 200 even for duplicates
 
 @csrf_exempt
 @login_required
@@ -426,7 +538,56 @@ def delete_receipt(request, transaction_number):
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
+@csrf_exempt
+def api_register(request):
+    """API endpoint for user registration."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+    try:
+        data = json.loads(request.body)
+        username = data.get('username')
+        email = data.get('email')
+        password1 = data.get('password1')
+        password2 = data.get('password2')
+
+        # Validate required fields
+        if not all([username, email, password1, password2]):
+            return JsonResponse({'error': 'All fields are required'}, status=400)
+
+        # Check if passwords match
+        if password1 != password2:
+            return JsonResponse({'error': 'Passwords do not match'}, status=400)
+
+        # Check if username exists
+        if User.objects.filter(username=username).exists():
+            return JsonResponse({'error': 'Username already exists'}, status=400)
+
+        # Create user
+        user = User.objects.create_user(
+            username=username,
+            email=email,
+            password=password1
+        )
+
+        # Log the user in
+        login(request, user)
+
+        return JsonResponse({
+            'message': 'Account created successfully',
+            'user': {
+                'id': user.id,
+                'username': user.username,
+                'email': user.email
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"Registration error: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)
+
 def register(request):
+    """Web view for user registration."""
     if request.method == 'POST':
         form = UserCreationForm(request.POST)
         if form.is_valid():
@@ -624,130 +785,158 @@ def api_dismiss_price_adjustment(request, item_code):
         logger.error(f"Error dismissing price adjustment: {str(e)}")
         return JsonResponse({'error': str(e)}, status=500)
 
-@api_view(['POST'])
-@authentication_classes([SessionAuthentication, BasicAuthentication])
-@permission_classes([IsAuthenticated])
-def upload_receipt(request):
+@login_required
+def api_user_analytics(request):
+    """Get analytics data about user's purchasing habits."""
     try:
-        if 'receipt_file' not in request.FILES:
-            return Response({'error': 'No file uploaded'}, status=status.HTTP_400_BAD_REQUEST)
-            
-        receipt_file = request.FILES['receipt_file']
-        
-        # Validate file type
-        if not receipt_file.name.lower().endswith('.pdf'):
-            return Response({'error': 'Please upload a PDF file'}, status=status.HTTP_400_BAD_REQUEST)
-            
-        # Save and process the file
-        file_path = default_storage.save(
-            f'receipts/{request.user.id}/{receipt_file.name}',
-            ContentFile(receipt_file.read())
-        )
-        
-        # Get the full path and process the receipt
-        full_path = default_storage.path(file_path)
-        parsed_data = process_receipt_pdf(full_path, user=request.user)
-        
-        # Check for existing receipt
-        existing_receipt = Receipt.objects.filter(
-            transaction_number=parsed_data.get('transaction_number')
-        ).first()
-        
-        if existing_receipt:
-            try:
-                # Update existing receipt with new data
-                existing_receipt.store_location = parsed_data.get('store_location', existing_receipt.store_location)
-                existing_receipt.store_number = parsed_data.get('store_number', existing_receipt.store_number)
-                existing_receipt.transaction_date = parsed_data.get('transaction_date', existing_receipt.transaction_date)
-                existing_receipt.total = parsed_data.get('total', existing_receipt.total)
-                existing_receipt.subtotal = parsed_data.get('subtotal', existing_receipt.subtotal)
-                existing_receipt.tax = parsed_data.get('tax', existing_receipt.tax)
-                existing_receipt.parsed_successfully = parsed_data.get('parsed_successfully', existing_receipt.parsed_successfully)
-                existing_receipt.parse_error = parsed_data.get('parse_error', existing_receipt.parse_error)
-                existing_receipt.save()
-                
-                # Clear existing line items
-                existing_receipt.items.all().delete()
-                
-                # Create new line items
-                if parsed_data.get('parsed_successfully') and parsed_data.get('items'):
-                    for item_data in parsed_data['items']:
-                        try:
-                            line_item = LineItem.objects.create(
-                                receipt=existing_receipt,
-                                item_code=item_data.get('item_code', '000000'),
-                                description=item_data.get('description', 'Unknown Item'),
-                                price=item_data.get('price', Decimal('0.00')),
-                                quantity=item_data.get('quantity', 1),
-                                discount=item_data.get('discount'),
-                                is_taxable=item_data.get('is_taxable', False)
-                            )
-                        except Exception as e:
-                            logger.error(f"Line item error: {str(e)}")
-                
-                update_price_database(parsed_data, user=request.user)
-                messages.success(request, 'Receipt updated successfully')
-                default_storage.delete(file_path)
-                return redirect('receipt_detail', transaction_number=existing_receipt.transaction_number)
-            except Exception as e:
-                logger.error(f"Error processing duplicate receipt: {str(e)}")
-                default_storage.delete(file_path)
-                return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
-        # Prepare receipt data for serialization
-        receipt_data = {
-            'user': request.user.id,
-            'file': file_path,
-            'transaction_number': parsed_data.get('transaction_number'),
-            'store_location': parsed_data.get('store_location', 'Unknown'),
-            'store_number': parsed_data.get('store_number', ''),
-            'transaction_date': parsed_data.get('transaction_date', timezone.now()),
-            'subtotal': parsed_data.get('subtotal', Decimal('0.00')),
-            'total': parsed_data.get('total', Decimal('0.00')),
-            'ebt_amount': parsed_data.get('ebt_amount'),
-            'instant_savings': parsed_data.get('instant_savings'),
-            'parsed_successfully': parsed_data.get('parsed_successfully', False),
-            'parse_error': parsed_data.get('parse_error')
+        # Get all user's receipts
+        receipts = Receipt.objects.filter(
+            user=request.user,
+            parsed_successfully=True
+        ).prefetch_related('items')
+
+        # Initialize analytics data
+        analytics = {
+            'total_spent': Decimal('0.00'),
+            'total_saved': Decimal('0.00'),
+            'total_receipts': 0,
+            'total_items': 0,
+            'average_receipt_total': Decimal('0.00'),
+            'most_purchased_items': [],
+            'spending_by_month': {},
+            'most_visited_stores': {},
+            'tax_paid': Decimal('0.00'),
+            'total_ebt_used': Decimal('0.00'),
+            'instant_savings': Decimal('0.00'),
         }
+
+        # Process each receipt
+        for receipt in receipts:
+            analytics['total_receipts'] += 1
+            analytics['total_spent'] += receipt.total or Decimal('0.00')
+            analytics['tax_paid'] += receipt.tax or Decimal('0.00')
+            analytics['total_ebt_used'] += receipt.ebt_amount or Decimal('0.00')
+            analytics['instant_savings'] += receipt.instant_savings or Decimal('0.00')
+
+            # Track spending by month
+            month_key = receipt.transaction_date.strftime('%Y-%m')
+            if month_key not in analytics['spending_by_month']:
+                analytics['spending_by_month'][month_key] = {
+                    'total': Decimal('0.00'),
+                    'count': 0
+                }
+            analytics['spending_by_month'][month_key]['total'] += receipt.total or Decimal('0.00')
+            analytics['spending_by_month'][month_key]['count'] += 1
+
+            # Track store visits
+            store_key = f"{receipt.store_location} #{receipt.store_number}"
+            analytics['most_visited_stores'][store_key] = analytics['most_visited_stores'].get(store_key, 0) + 1
+
+            # Process items
+            analytics['total_items'] += receipt.items.count()
+
+        # Calculate average receipt total
+        if analytics['total_receipts'] > 0:
+            analytics['average_receipt_total'] = analytics['total_spent'] / analytics['total_receipts']
+
+        # Get most purchased items
+        most_purchased = {}
+        for receipt in receipts:
+            for item in receipt.items.all():
+                if item.item_code not in most_purchased:
+                    most_purchased[item.item_code] = {
+                        'description': item.description,
+                        'count': 0,
+                        'total_spent': Decimal('0.00')
+                    }
+                most_purchased[item.item_code]['count'] += item.quantity
+                most_purchased[item.item_code]['total_spent'] += item.total_price
+
+        # Sort and get top items
+        analytics['most_purchased_items'] = sorted(
+            [
+                {
+                    'item_code': k,
+                    'description': v['description'],
+                    'count': v['count'],
+                    'total_spent': str(v['total_spent'])
+                }
+                for k, v in most_purchased.items()
+            ],
+            key=lambda x: x['count'],
+            reverse=True
+        )[:10]
+
+        # Convert decimal values to strings for JSON serialization
+        analytics['total_spent'] = str(analytics['total_spent'])
+        analytics['average_receipt_total'] = str(analytics['average_receipt_total'])
+        analytics['tax_paid'] = str(analytics['tax_paid'])
+        analytics['total_ebt_used'] = str(analytics['total_ebt_used'])
+        analytics['instant_savings'] = str(analytics['instant_savings'])
         
-        # Create receipt using serializer
-        serializer = ReceiptSerializer(data=receipt_data)
-        if serializer.is_valid():
-            receipt = serializer.save()
-            
-            # Create line items if parsing was successful
-            if parsed_data.get('parsed_successfully') and parsed_data.get('items'):
-                for item_data in parsed_data['items']:
-                    try:
-                        line_item = LineItem.objects.create(
-                            receipt=receipt,
-                            item_code=item_data.get('item_code', '000000'),
-                            description=item_data.get('description', 'Unknown Item'),
-                            price=item_data.get('price', Decimal('0.00')),
-                            quantity=item_data.get('quantity', 1),
-                            discount=item_data.get('discount'),
-                            is_taxable=item_data.get('is_taxable', False)
-                        )
-                        # Check for potential price adjustments
-                        check_for_price_adjustments(line_item, receipt)
-                    except Exception as e:
-                        logger.error(f"Line item error: {str(e)}")
-            
-            return Response({
-                'transaction_number': receipt.transaction_number,
-                'message': 'Receipt uploaded successfully',
-                'parse_error': parsed_data.get('parse_error'),
-                'parsed_successfully': parsed_data.get('parsed_successfully', False),
-                'is_duplicate': False
-            }, status=status.HTTP_201_CREATED)
-        
-        # If serializer validation failed, clean up and return errors
-        default_storage.delete(file_path)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-            
+        # Convert spending by month decimals to strings
+        for month in analytics['spending_by_month']:
+            analytics['spending_by_month'][month]['total'] = str(
+                analytics['spending_by_month'][month]['total']
+            )
+
+        # Sort store visits
+        analytics['most_visited_stores'] = sorted(
+            [
+                {'store': k, 'visits': v}
+                for k, v in analytics['most_visited_stores'].items()
+            ],
+            key=lambda x: x['visits'],
+            reverse=True
+        )
+
+        return JsonResponse(analytics)
+
     except Exception as e:
-        logger.error(f"Upload error: {str(e)}")
-        # Clean up the uploaded file if it exists
-        if 'file_path' in locals():
-            default_storage.delete(file_path)
-        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        logger.error(f"Error generating analytics: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+@login_required
+def api_receipt_update(request, transaction_number):
+    """Update a receipt after review."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+        
+    try:
+        receipt = get_object_or_404(Receipt, transaction_number=transaction_number, user=request.user)
+        data = json.loads(request.body)
+        
+        # Validate total items count
+        total_quantity = sum(item.get('quantity', 1) for item in data.get('items', []))
+        if total_quantity != data.get('total_items_sold', 0):
+            return JsonResponse({
+                'error': f'Total quantity ({total_quantity}) must match receipt total ({data["total_items_sold"]})'
+            }, status=400)
+        
+        # Update items
+        receipt.items.all().delete()  # Remove existing items
+        for item_data in data.get('items', []):
+            LineItem.objects.create(
+                receipt=receipt,
+                item_code=item_data.get('item_code', '000000'),
+                description=item_data.get('description', 'Unknown Item'),
+                price=Decimal(str(item_data.get('price', '0.00'))),
+                quantity=item_data.get('quantity', 1),
+                is_taxable=item_data.get('is_taxable', False),
+                instant_savings=Decimal(str(item_data['instant_savings'])) if item_data.get('instant_savings') else None,
+                original_price=Decimal(str(item_data['original_price'])) if item_data.get('original_price') else None
+            )
+        
+        # Update price database
+        update_price_database({
+            'store_location': receipt.store_location,
+            'store_number': receipt.store_number,
+            'transaction_date': receipt.transaction_date,
+            'items': data.get('items', [])
+        }, user=request.user)
+        
+        return JsonResponse({'message': 'Receipt updated successfully'})
+        
+    except Exception as e:
+        logger.error(f"Error updating receipt: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)

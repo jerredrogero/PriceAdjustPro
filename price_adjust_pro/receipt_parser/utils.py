@@ -1,6 +1,6 @@
 import re
 from datetime import datetime, timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Dict, Optional
 import json
 import os
@@ -8,6 +8,7 @@ from django.conf import settings
 import google.generativeai as genai
 from django.utils import timezone
 import base64
+from django.urls import reverse
 from .models import (
     CostcoItem, CostcoWarehouse, ItemWarehousePrice,
     PriceAdjustmentAlert, Receipt, LineItem
@@ -29,12 +30,24 @@ def extract_text_from_pdf(pdf_path: str) -> str:
         model = genai.GenerativeModel('gemini-2.0-flash')
         
         # Create the prompt for text extraction
-        prompt = """This is a Costco receipt. Please extract all the text from this receipt, preserving the exact format and numbers. Include all item details, prices, dates, and totals. Output the text exactly as it appears, maintaining line breaks and spacing. Be sure to include:
-1. Store location and number
-2. Transaction date and number
-3. All items with their codes, descriptions, prices, and quantities
-4. Subtotal, tax, and total amounts
-5. Any instant savings or discounts"""
+        prompt = """This is a Costco receipt. Please extract all the text from this receipt, preserving the exact format and numbers. Pay special attention to:
+
+1. Item lines starting with 'E' followed by an item code and description
+2. Discount lines that follow items, which:
+   - End with a minus sign (e.g. "3.00-")
+   - Contain a forward slash followed by the item code (e.g. "/1726362")
+   - Show the instant savings amount
+3. Store location and number
+4. Transaction date and number
+5. Subtotal, tax, and total amounts
+6. Total instant savings amount
+
+Example format to look for:
+E 1347776 KS WD FL HNY 12.99 3
+346014 /1347776 3.00-
+E 1726362 POUCH 13.89 3
+
+Output the text exactly as it appears, maintaining line breaks and spacing."""
         
         # Create the image data
         image_data = {
@@ -62,15 +75,35 @@ store_number: Store number only (e.g. "1621")
 transaction_date: Date and time (format EXACTLY as MM/DD/YYYY HH:MM, e.g. 12/27/2024 16:54)
 transaction_number: The 13-digit number after the date/time (e.g. 1621206176706)
 items: List each item with:
-- item_code
-- description
-- price
-- quantity
-- is_taxable (Y/N)
+- item_code: The first number on the line
+- description: The item description
+- price: The final price shown
+- is_taxable: Y/N (look for Y after the price)
+- instant_savings: The amount from the discount line that follows (e.g. "346014 /1726362 3.00-"), null if no discount line
+- original_price: Calculate by adding price + instant_savings, null if no instant savings
+
+IMPORTANT: Look for discount lines that follow item lines. These lines:
+1. End with a minus sign (e.g. "3.00-")
+2. Contain a forward slash followed by the item code (e.g. "/1726362")
+3. The amount is the instant savings for the previous item
+
+Example receipt text:
+E 1347776 KS WD FL HNY 12.99 3
+346014 /1347776 3.00-
+E 1726362 POUCH 13.89 3
+
+For each item:
+1. Look for a discount line immediately following it
+2. If found, extract the amount before the minus sign as instant_savings
+3. Add instant_savings to the price to get original_price
+
+Format each item line as: "item_code, description, price, is_taxable, instant_savings, original_price"
+
 subtotal: Total before tax
 tax: Tax amount
 total: Final total
-instant_savings: Total savings amount if present
+instant_savings: Total of all discount lines (amounts ending in minus)
+total_items_sold: The number from "Items Sold: X" line
 
 Format each field on a new line with a colon separator like this:
 store_location: Costco Athens #1621
@@ -78,12 +111,13 @@ store_number: 1621
 transaction_date: 12/27/2024 16:54
 transaction_number: 1621206176706
 items:
-- 1347776, KS WD FL HNY ORG PB, 12.99, 1, N
-- 1726362, POUCH, 13.89, 1, N
+- 1347776, KS WD FL HNY, 12.99, N, 3.00, 15.99
+- 1726362, POUCH, 13.89, N, null, null
 subtotal: 59.15
 tax: 1.28
 total: 60.43
 instant_savings: 7.00
+total_items_sold: 8
 
 Parse this receipt:
 {text}"""
@@ -115,6 +149,7 @@ Parse this receipt:
             'tax': Decimal('0.00'),
             'total': Decimal('0.00'),
             'instant_savings': None,
+            'total_items_sold': 0,
             'parse_error': None,
             'parsed_successfully': True
         }
@@ -133,16 +168,26 @@ Parse this receipt:
                 if line.startswith('-'):
                     # Parse item line
                     item_parts = line.replace('-', '').strip().split(',')
-                    if len(item_parts) >= 5:
-                        item = {
-                            'item_code': item_parts[0].strip(),
-                            'description': item_parts[1].strip(),
-                            'price': Decimal(item_parts[2].strip()),
-                            'quantity': int(item_parts[3].strip()),
-                            'is_taxable': item_parts[4].strip().upper() == 'Y',
-                            'discount': None
-                        }
-                        parsed_data['items'].append(item)
+                    if len(item_parts) >= 6:
+                        try:
+                            price = Decimal(item_parts[2].strip())
+                            instant_savings = item_parts[4].strip()
+                            original_price = item_parts[5].strip()
+                            
+                            # Each line is one item
+                            item = {
+                                'item_code': item_parts[0].strip(),
+                                'description': item_parts[1].strip(),
+                                'price': price,
+                                'quantity': 1,  # Each line represents one item
+                                'is_taxable': item_parts[3].strip().upper() == 'Y',
+                                'instant_savings': Decimal(instant_savings) if instant_savings != 'null' else None,
+                                'original_price': Decimal(original_price) if original_price != 'null' else None
+                            }
+                            parsed_data['items'].append(item)
+                        except (ValueError, IndexError, InvalidOperation) as e:
+                            print(f"Error parsing item line: {str(e)}")
+                            continue
                 else:
                     current_section = None
                     
@@ -157,7 +202,7 @@ Parse this receipt:
                             parsed_data[key] = None
                         else:
                             parsed_data[key] = Decimal(value)
-                    except:
+                    except InvalidOperation:
                         if key in ['subtotal', 'tax', 'total']:
                             parsed_data[key] = Decimal('0.00')
                         else:
@@ -171,6 +216,11 @@ Parse this receipt:
                         print(f"Date parsing error: {str(e)}")
                         parsed_data['parse_error'] = "Failed to parse transaction date"
                         parsed_data['parsed_successfully'] = False
+                elif key == 'total_items_sold':
+                    try:
+                        parsed_data[key] = int(value)
+                    except ValueError:
+                        parsed_data[key] = 0
                 else:
                     parsed_data[key] = value
 
@@ -181,12 +231,22 @@ Parse this receipt:
         # Ensure transaction number is present
         if not parsed_data.get('transaction_number'):
             # Try to extract from text directly as fallback
-            matches = re.findall(r'\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2}\s+(\d{13})', text)
+            matches = re.findall(r'Whse:\s*\d+\s*Trm:\s*(\d+)\s*Trn:\s*(\d+)', text)
             if matches:
-                parsed_data['transaction_number'] = matches[0]
+                trm, trn = matches[0]
+                store_number = parsed_data.get('store_number', '0000')
+                parsed_data['transaction_number'] = f"{store_number}{trm}{trn}"
             else:
                 parsed_data['parse_error'] = "Failed to extract transaction number"
                 parsed_data['parsed_successfully'] = False
+
+        # Validate item count against total_items_sold
+        actual_item_count = len(parsed_data['items'])
+        expected_item_count = parsed_data.get('total_items_sold', 0)
+        
+        if expected_item_count > 0 and actual_item_count != expected_item_count:
+            parsed_data['parse_error'] = f"Item count mismatch: found {actual_item_count} items but receipt shows {expected_item_count} items sold"
+            parsed_data['parsed_successfully'] = False
 
         return parsed_data
 
@@ -202,66 +262,63 @@ Parse this receipt:
             'tax': Decimal('0.00'),
             'total': Decimal('0.00'),
             'instant_savings': None,
+            'total_items_sold': 0,
             'parse_error': f"Failed to parse receipt: {str(e)}",
             'parsed_successfully': False
         }
 
 def check_for_price_adjustments(item: LineItem, receipt: Receipt) -> None:
     """
-    Check if there are any potential price adjustments for a line item.
-    Creates PriceAdjustmentAlert if a lower price is found.
+    When an item with instant savings is found, alert other users who bought 
+    the same item at full price in the last 30 days.
     """
     try:
-        # Only check items with valid item codes
-        if not item.item_code:
+        # Only check items that are currently on sale
+        if not item.item_code or not item.instant_savings:
             return
 
         # Get the date 30 days ago
         thirty_days_ago = timezone.now() - timedelta(days=30)
 
-        # Find any lower prices for this item in the last 30 days
-        lower_prices = ItemWarehousePrice.objects.filter(
-            item__item_code=item.item_code,
-            last_seen__gte=thirty_days_ago,
-            price__lt=item.price  # Find lower prices
-        ).select_related('warehouse').order_by('price')
+        # Find users who bought this item at full price in the last 30 days
+        full_price_purchases = LineItem.objects.filter(
+            item_code=item.item_code,
+            receipt__transaction_date__gte=thirty_days_ago,
+            instant_savings__isnull=True,  # Only full price purchases
+            receipt__user__isnull=False  # Ensure there's a user
+        ).select_related('receipt')
 
-        if lower_prices.exists():
-            lowest_price = lower_prices.first()
-            price_difference = item.price - lowest_price.price
-            
-            # Only create alert if the difference is significant (e.g., > $0.50)
-            if price_difference >= Decimal('0.50'):
-                # Extract city from warehouse location
-                warehouse_location = lowest_price.warehouse.location
-                city = ' '.join(warehouse_location.split()[1:-1]) if warehouse_location else ''
+        # Create alerts for users who bought at full price
+        for purchase in full_price_purchases:
+            # Don't alert the same user who found the sale
+            if purchase.receipt.user == receipt.user:
+                continue
 
-                # Create or update the alert
-                alert, created = PriceAdjustmentAlert.objects.get_or_create(
-                    user=receipt.user,
-                    item_code=item.item_code,
-                    original_price=item.price,
-                    purchase_date=receipt.transaction_date,
-                    defaults={
-                        'item_description': item.description,
-                        'lower_price': lowest_price.price,
-                        'original_store_city': receipt.store_city,
-                        'original_store_number': receipt.store_number,
-                        'cheaper_store_city': city,
-                        'cheaper_store_number': lowest_price.warehouse.store_number,
-                        'is_active': True,
-                        'is_dismissed': False
-                    }
-                )
+            # Create or update alert
+            alert, created = PriceAdjustmentAlert.objects.get_or_create(
+                user=purchase.receipt.user,
+                item_code=item.item_code,
+                original_price=purchase.price,  # Their purchase price
+                purchase_date=purchase.receipt.transaction_date,
+                defaults={
+                    'item_description': item.description,
+                    'lower_price': item.price,  # The sale price
+                    'original_store_city': purchase.receipt.store_city,
+                    'original_store_number': purchase.receipt.store_number,
+                    'cheaper_store_city': receipt.store_city,  # Where the sale was found
+                    'cheaper_store_number': receipt.store_number,
+                    'is_active': True,
+                    'is_dismissed': False
+                }
+            )
 
-                if not created:
-                    # Update the alert if we found an even lower price
-                    if lowest_price.price < alert.lower_price:
-                        alert.lower_price = lowest_price.price
-                        alert.cheaper_store_city = city
-                        alert.cheaper_store_number = lowest_price.warehouse.store_number
-                        alert.is_dismissed = False  # Re-activate if user dismissed it before
-                        alert.save()
+            if not created and item.price < alert.lower_price:
+                # Update the alert if we found an even lower sale price
+                alert.lower_price = item.price
+                alert.cheaper_store_city = receipt.store_city
+                alert.cheaper_store_number = receipt.store_number
+                alert.is_dismissed = False  # Re-activate if user dismissed it before
+                alert.save()
 
     except Exception as e:
         print(f"Error checking price adjustments for {item.description}: {str(e)}")
@@ -329,13 +386,39 @@ def process_receipt_pdf(pdf_path: str, user=None) -> Dict:
         print("Extracted text from PDF:", text)
         parsed_data = parse_receipt(text)
         
-        # Update price database if parsing was successful and we have a user
-        if parsed_data['parsed_successfully'] and user:
+        # Strict validation of item count
+        actual_item_count = len(parsed_data.get('items', []))
+        expected_item_count = parsed_data.get('total_items_sold', 0)
+        
+        if expected_item_count > 0:  # Only validate if we found the total items count
+            if actual_item_count != expected_item_count:
+                return {
+                    'store_location': parsed_data.get('store_location', 'Costco Warehouse'),
+                    'store_number': parsed_data.get('store_number', '0000'),
+                    'transaction_date': parsed_data.get('transaction_date', timezone.now()),
+                    'transaction_number': parsed_data.get('transaction_number'),
+                    'items': parsed_data.get('items', []),
+                    'subtotal': parsed_data.get('subtotal', Decimal('0.00')),
+                    'tax': parsed_data.get('tax', Decimal('0.00')),
+                    'total': parsed_data.get('total', Decimal('0.00')),
+                    'instant_savings': parsed_data.get('instant_savings'),
+                    'total_items_sold': expected_item_count,
+                    'needs_review': True,  # Flag for frontend to show edit UI
+                    'review_reason': f'Item count mismatch: Found {actual_item_count} items but receipt shows {expected_item_count} items sold. Please review and adjust quantities.',
+                    'parse_error': None,
+                    'parsed_successfully': False
+                }
+        
+        # Add metadata for editing to each item
+        for item in parsed_data.get('items', []):
+            item['editable'] = True  # Flag that this item can be edited
+            item['original_description'] = item['description']  # Keep original for reference
+            item['original_quantity'] = item['quantity']  # Keep original for reference
+            item['needs_quantity_review'] = True  # Flag for frontend to highlight quantity field
+        
+        # Only update price database if user confirms quantities
+        if parsed_data['parsed_successfully'] and user and not parsed_data.get('needs_review'):
             update_price_database(parsed_data, user=user)
-            
-        parsed_data['parsed_successfully'] = len(parsed_data.get('items', [])) > 0
-        if not parsed_data['parsed_successfully']:
-            parsed_data['parse_error'] = 'No items found in receipt'
             
         return parsed_data
     except Exception as e:
@@ -350,6 +433,7 @@ def process_receipt_pdf(pdf_path: str, user=None) -> Dict:
             'total': Decimal('0.00'),
             'ebt_amount': None,
             'instant_savings': None,
+            'needs_review': False,
             'parse_error': f"Failed to process PDF: {str(e)}",
             'parsed_successfully': False
         } 

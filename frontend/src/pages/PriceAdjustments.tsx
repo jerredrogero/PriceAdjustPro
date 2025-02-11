@@ -7,15 +7,13 @@ import {
   Grid,
   Card,
   CardContent,
-  Button,
   Chip,
   LinearProgress,
   Alert,
-  IconButton,
-  Tooltip,
+  Button,
+  useTheme,
 } from '@mui/material';
 import {
-  Close as CloseIcon,
   LocationOn as LocationIcon,
   CalendarToday as CalendarIcon,
   Timer as TimerIcon,
@@ -42,6 +40,7 @@ interface ApiResponse {
 }
 
 const PriceAdjustments: React.FC = () => {
+  const theme = useTheme();
   const [adjustments, setAdjustments] = useState<PriceAdjustment[]>([]);
   const [totalSavings, setTotalSavings] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -66,43 +65,55 @@ const PriceAdjustments: React.FC = () => {
     }
   };
 
-  const handleDismiss = async (itemCode: string) => {
-    try {
-      const response = await fetch(`/api/price-adjustments/${itemCode}/dismiss/`, {
-        method: 'POST',
-      });
-      
-      if (!response.ok) throw new Error('Failed to dismiss adjustment');
-      
-      setAdjustments(prev => prev.filter(adj => adj.item_code !== itemCode));
-      setTotalSavings(prev => prev - adjustments.find(adj => adj.item_code === itemCode)!.price_difference);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to dismiss adjustment');
-    }
-  };
-
   if (loading) return <LinearProgress />;
   if (error) return <Alert severity="error">{error}</Alert>;
   if (adjustments.length === 0) {
     return (
       <Container maxWidth="md" sx={{ mt: 4 }}>
-        <Alert severity="info">
-          No price adjustments available at this time. We'll notify you when we find better prices!
-        </Alert>
+        <Paper sx={{ p: 4, textAlign: 'center' }}>
+          <Typography variant="h5" gutterBottom>
+            Price Adjustment Policy
+          </Typography>
+          <Typography color="text.secondary" paragraph>
+            Costco offers price adjustments within 30 days of purchase. If an item you bought goes on sale within 30 days, you can request a refund for the difference.
+          </Typography>
+          <Alert severity="info">
+            No price adjustments available at this time. We'll notify you when we find better prices!
+          </Alert>
+        </Paper>
       </Container>
     );
   }
 
   return (
     <Container maxWidth="lg" sx={{ py: 4 }}>
-      <Box sx={{ mb: 4 }}>
+      <Paper sx={{ p: 4, mb: 4 }}>
         <Typography variant="h4" gutterBottom>
-          Price Adjustments Available
+          Price Adjustment Opportunities
         </Typography>
-        <Typography variant="subtitle1" color="text.secondary">
-          Total potential savings: <Chip label={`$${totalSavings.toFixed(2)}`} color="success" />
+        <Typography color="text.secondary" paragraph>
+          Costco offers price adjustments within 30 days of purchase. When an item you bought goes on sale within 30 days, 
+          you can request a refund for the difference. Below are your current opportunities for price adjustments.
         </Typography>
-      </Box>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mt: 2 }}>
+          <Typography variant="h6">
+            Total Potential Savings:
+          </Typography>
+          <Chip
+            label={`$${totalSavings.toFixed(2)}`}
+            color="success"
+            sx={{ 
+              fontWeight: 'bold',
+              fontSize: '1.2rem',
+              height: 'auto',
+              padding: '12px 16px',
+              '& .MuiChip-label': {
+                padding: '0',
+              },
+            }}
+          />
+        </Box>
+      </Paper>
 
       <Grid container spacing={3}>
         {adjustments.map((adjustment) => (
@@ -136,10 +147,10 @@ const PriceAdjustments: React.FC = () => {
 
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
                       <Typography variant="body1">
-                        Current Price: ${adjustment.current_price.toFixed(2)}
+                        Original Price: ${adjustment.current_price.toFixed(2)}
                       </Typography>
                       <Typography variant="body1" color="success.main" sx={{ fontWeight: 'bold' }}>
-                        Lower Price: ${adjustment.lower_price.toFixed(2)}
+                        Sale Price: ${adjustment.lower_price.toFixed(2)}
                       </Typography>
                       <Chip
                         label={`Save $${adjustment.price_difference.toFixed(2)}`}
@@ -156,17 +167,7 @@ const PriceAdjustments: React.FC = () => {
                     </Box>
                   </Box>
 
-                  <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
-                    <Tooltip title="Dismiss this alert">
-                      <IconButton
-                        onClick={() => handleDismiss(adjustment.item_code)}
-                        size="small"
-                        color="default"
-                      >
-                        <CloseIcon />
-                      </IconButton>
-                    </Tooltip>
-                    
+                  <Box sx={{ textAlign: 'right' }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                       <TimerIcon color="warning" />
                       <Typography variant="body2" color="warning.main">

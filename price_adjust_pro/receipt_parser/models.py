@@ -9,7 +9,6 @@ from django.core.validators import RegexValidator
 class Receipt(models.Model):
     transaction_number = models.CharField(
         max_length=50,
-        unique=True,  # Required for foreign key reference
         validators=[RegexValidator(
             regex=r'^\d+$',
             message='Transaction number must be numeric'
@@ -51,7 +50,7 @@ class Receipt(models.Model):
 
     class Meta:
         ordering = ['-transaction_date']
-        unique_together = ['user', 'transaction_number']  # Unique per user
+        unique_together = ['user', 'transaction_number']  # Make transaction number unique per user
         constraints = [
             models.UniqueConstraint(
                 fields=['user', 'transaction_number'],
@@ -61,25 +60,30 @@ class Receipt(models.Model):
 
 class LineItem(models.Model):
     receipt = models.ForeignKey(Receipt, on_delete=models.CASCADE, related_name='items')
-    item_code = models.CharField(max_length=20)
+    item_code = models.CharField(max_length=50)
     description = models.CharField(max_length=255)
     price = models.DecimalField(max_digits=10, decimal_places=2)
-    quantity = models.PositiveIntegerField(default=1)
+    quantity = models.IntegerField(default=1)
     discount = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     is_taxable = models.BooleanField(default=False)
-    
-    def __str__(self):
-        return f"{self.description} ({self.item_code})"
+    instant_savings = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    original_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)  # Price before instant savings
 
-    class Meta:
-        ordering = ['id']
+    def __str__(self):
+        return f"{self.description} - ${self.price}"
 
     @property
     def total_price(self):
-        base_price = self.price * self.quantity
-        if self.discount:
-            return base_price - self.discount
-        return base_price
+        return self.price * self.quantity
+
+    def save(self, *args, **kwargs):
+        # If we have instant savings, store the original price
+        if self.instant_savings and not self.original_price:
+            self.original_price = self.price + self.instant_savings
+        super().save(*args, **kwargs)
+
+    class Meta:
+        ordering = ['id']
 
 class CostcoItem(models.Model):
     item_code = models.CharField(max_length=50, primary_key=True)

@@ -15,6 +15,7 @@ import {
   Chip,
   LinearProgress,
   Alert,
+  Divider,
 } from '@mui/material';
 import {
   ArrowBack as ArrowBackIcon,
@@ -24,13 +25,15 @@ import { format } from 'date-fns';
 import api from '../api/axios';
 
 interface ReceiptItem {
+  id?: number;
   item_code: string;
   description: string;
   quantity: number;
   price: string;
   total_price: string;
   is_taxable: boolean;
-  discount: string | null;
+  instant_savings: string | null;
+  original_price: string | null;
 }
 
 interface Receipt {
@@ -45,6 +48,8 @@ interface Receipt {
   parsed_successfully: boolean;
   parse_error: string | null;
   file: string | null;
+  instant_savings?: string;
+  ebt_amount?: string;
 }
 
 const ReceiptDetail: React.FC = () => {
@@ -131,8 +136,8 @@ const ReceiptDetail: React.FC = () => {
               <TableCell>Description</TableCell>
               <TableCell align="right">Quantity</TableCell>
               <TableCell align="right">Price</TableCell>
+              <TableCell align="right">Sale</TableCell>
               <TableCell align="right">Total</TableCell>
-              <TableCell align="center">Status</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -141,28 +146,94 @@ const ReceiptDetail: React.FC = () => {
                 <TableCell>{item.item_code}</TableCell>
                 <TableCell>{item.description}</TableCell>
                 <TableCell align="right">{item.quantity}</TableCell>
-                <TableCell align="right">${item.price}</TableCell>
-                <TableCell align="right">${item.total_price}</TableCell>
-                <TableCell align="center">
-                  {item.is_taxable && (
-                    <Chip
-                      label="Taxable"
-                      color="default"
-                      size="small"
-                      sx={{ mr: 1 }}
-                    />
-                  )}
-                  {item.discount && (
-                    <Chip
-                      icon={<PriceIcon />}
-                      label={`-$${item.discount}`}
-                      color="success"
-                      size="small"
-                    />
+                <TableCell align="right">
+                  ${item.price}
+                  {item.original_price && (
+                    <Typography variant="caption" color="text.secondary" display="block">
+                      Was: ${item.original_price}
+                    </Typography>
                   )}
                 </TableCell>
+                <TableCell align="right">
+                  {item.instant_savings ? (
+                    <Chip
+                      label={`Save $${item.instant_savings}`}
+                      color="success"
+                      size="small"
+                      sx={{ fontWeight: 'medium' }}
+                    />
+                  ) : (
+                    <Typography variant="body2" color="text.secondary">
+                      -
+                    </Typography>
+                  )}
+                </TableCell>
+                <TableCell align="right">${item.total_price}</TableCell>
               </TableRow>
             ))}
+
+            <TableRow>
+              <TableCell colSpan={6}>
+                <Divider sx={{ my: 2 }} />
+              </TableCell>
+            </TableRow>
+
+            <TableRow>
+              <TableCell colSpan={4} align="right">
+                <Typography variant="subtitle1">Subtotal</Typography>
+              </TableCell>
+              <TableCell align="right" colSpan={2}>
+                <Typography variant="subtitle1">${receipt.subtotal}</Typography>
+              </TableCell>
+            </TableRow>
+
+            {receipt.instant_savings && (
+              <TableRow>
+                <TableCell colSpan={4} align="right">
+                  <Typography variant="subtitle1" color="success.main">
+                    Total Instant Savings
+                  </Typography>
+                </TableCell>
+                <TableCell align="right" colSpan={2}>
+                  <Typography variant="subtitle1" color="success.main">
+                    -${receipt.instant_savings}
+                  </Typography>
+                </TableCell>
+              </TableRow>
+            )}
+
+            <TableRow>
+              <TableCell colSpan={4} align="right">
+                <Typography variant="subtitle1">Tax</Typography>
+              </TableCell>
+              <TableCell align="right" colSpan={2}>
+                <Typography variant="subtitle1">${receipt.tax}</Typography>
+              </TableCell>
+            </TableRow>
+
+            {receipt.ebt_amount && (
+              <TableRow>
+                <TableCell colSpan={4} align="right">
+                  <Typography variant="subtitle1" color="info.main">
+                    EBT Amount
+                  </Typography>
+                </TableCell>
+                <TableCell align="right" colSpan={2}>
+                  <Typography variant="subtitle1" color="info.main">
+                    ${receipt.ebt_amount}
+                  </Typography>
+                </TableCell>
+              </TableRow>
+            )}
+
+            <TableRow>
+              <TableCell colSpan={4} align="right">
+                <Typography variant="h6" color="primary.main">Total</Typography>
+              </TableCell>
+              <TableCell align="right" colSpan={2}>
+                <Typography variant="h6" color="primary.main">${receipt.total}</Typography>
+              </TableCell>
+            </TableRow>
           </TableBody>
         </Table>
       </TableContainer>

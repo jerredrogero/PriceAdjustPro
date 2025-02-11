@@ -20,6 +20,7 @@ import {
   CloudUpload as UploadIcon,
   Settings as SettingsIcon,
   Logout as LogoutIcon,
+  Analytics as AnalyticsIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -91,6 +92,7 @@ const Navigation: React.FC = () => {
       path: '/adjustments',
       badge: adjustmentCount,
     },
+    { text: 'Analytics', icon: <AnalyticsIcon />, path: '/analytics' },
     { text: 'Upload', icon: <UploadIcon />, path: '/upload' },
     { text: 'Settings', icon: <SettingsIcon />, path: '/settings' },
   ];

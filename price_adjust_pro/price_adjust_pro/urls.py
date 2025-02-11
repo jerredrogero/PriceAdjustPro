@@ -20,11 +20,12 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib.auth import views as auth_views
 from django.shortcuts import redirect
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth import authenticate, login, logout
 from django.views.generic import TemplateView
 import json
+from django.contrib.staticfiles.views import serve
 
 from receipt_parser.urls import urls_api as receipt_api_urls
 
@@ -54,6 +55,51 @@ def api_logout(request):
         return JsonResponse({'message': 'Logged out successfully'})
     return JsonResponse({'error': 'Method not allowed'}, status=405)
 
+@csrf_exempt
+def api_register(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            from django.contrib.auth.models import User
+            
+            # Validate required fields
+            username = data.get('username')
+            email = data.get('email')
+            password1 = data.get('password1')
+            password2 = data.get('password2')
+            
+            if not all([username, email, password1, password2]):
+                return JsonResponse({'error': 'All fields are required'}, status=400)
+            
+            if password1 != password2:
+                return JsonResponse({'error': 'Passwords do not match'}, status=400)
+            
+            if User.objects.filter(username=username).exists():
+                return JsonResponse({'error': 'Username already exists'}, status=400)
+            
+            # Create user
+            user = User.objects.create_user(
+                username=username,
+                email=email,
+                password=password1
+            )
+            
+            # Log the user in
+            login(request, user)
+            
+            return JsonResponse({
+                'message': 'Account created successfully',
+                'user': {
+                    'id': user.id,
+                    'username': user.username,
+                    'email': user.email
+                }
+            })
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+    
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
 def api_user(request):
     if request.user.is_authenticated:
         return JsonResponse({
@@ -66,13 +112,13 @@ def api_user(request):
 api_urlpatterns = [
     path('auth/login/', api_login, name='api_login'),
     path('auth/logout/', api_logout, name='api_logout'),
+    path('auth/register/', api_register, name='api_register'),
     path('auth/user/', api_user, name='api_user'),
-]
+] + receipt_api_urls()
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include(api_urlpatterns)),
-    path('api/', include(receipt_api_urls())),
     
     # Serve React App - this should be last to catch all other URLs
     re_path(r'^.*', TemplateView.as_view(template_name='index.html')),
@@ -81,3 +127,11 @@ urlpatterns = [
 # Serve static files during development
 if settings.DEBUG:
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
+
+def return_404(request):
+    return HttpResponse(status=404)
+urlpatterns += [
+    re_path(r'^favicon\.ico$', return_404),
+    re_path(r'^logo192\.png$', return_404),
+]
+

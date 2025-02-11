@@ -38,14 +38,19 @@ const Register: React.FC = () => {
 
     try {
       // Register the user
-      await api.post('/api/auth/register/', {
+      const response = await api.post('/api/auth/register/', {
         username,
         email,
         password1,
         password2,
       });
 
-      // Log them in
+      if (response.data.error) {
+        setError(response.data.error);
+        return;
+      }
+
+      // Log them in after successful registration
       await login(username, password1);
       navigate('/');
     } catch (err: any) {

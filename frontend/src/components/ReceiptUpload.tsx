@@ -35,10 +35,29 @@ import {
   Info as InfoIcon,
 } from '@mui/icons-material';
 import api from '../api/axios';
+import ReceiptReview from './ReceiptReview';
+import { LineItem } from '../types';
 
 interface UploadError {
   file: string;
   error: string;
+}
+
+interface UploadResponse {
+  transaction_number: string;
+  store_location: string;
+  store_number: string;
+  transaction_date: string;
+  subtotal: string;
+  tax: string;
+  total: string;
+  items: LineItem[];
+  needs_review: boolean;
+  review_reason?: string;
+  total_items_sold: number;
+  parsed_successfully: boolean;
+  parse_error?: string | null;
+  instant_savings?: string | null;
 }
 
 const ReceiptUpload: React.FC = () => {
@@ -51,6 +70,7 @@ const ReceiptUpload: React.FC = () => {
   const [duplicateDialogOpen, setDuplicateDialogOpen] = useState(false);
   const [currentFile, setCurrentFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reviewData, setReviewData] = useState<UploadResponse | null>(null);
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     const pdfFiles = acceptedFiles.filter(file => file.name.toLowerCase().endsWith('.pdf'));
@@ -79,7 +99,7 @@ const ReceiptUpload: React.FC = () => {
     setUploading(true);
     setErrors([]);
     
-    for (const file of selectedFiles) {
+    const uploadPromises = selectedFiles.map(async (file) => {
       const formData = new FormData();
       formData.append('receipt_file', file);
 
@@ -99,19 +119,38 @@ const ReceiptUpload: React.FC = () => {
           }
         });
 
-        if (response.data.parse_error) {
-          setErrors(prev => [...prev, { file: file.name, error: response.data.parse_error }]);
+        const data = response.data;
+        
+        if (data.parse_error) {
+          setErrors(prev => [...prev, { file: file.name, error: data.parse_error }]);
+        }
+        
+        if (data.error && !data.is_duplicate) {
+          setErrors(prev => [...prev, { file: file.name, error: data.error }]);
+        }
+        
+        // Remove file from list if:
+        // 1. It was successfully processed (parsed_successfully)
+        // 2. It's a duplicate (is_duplicate)
+        // 3. It had a parse error but was still processed
+        if (data.parsed_successfully || data.is_duplicate || data.parse_error) {
+          removeFile(file.name);
         }
       } catch (err: any) {
         handleUploadError(err);
+        removeFile(file.name);
       }
-    }
+    });
 
-    setUploading(false);
-    
-    // Only navigate if there were no errors
-    if (errors.length === 0 && !duplicateDialogOpen) {
-      navigate('/receipts');
+    try {
+      await Promise.all(uploadPromises);
+      if (selectedFiles.length === 0) {  // Only navigate if all files were processed
+        navigate('/receipts');
+      }
+    } catch (err) {
+      console.error('Upload failed:', err);
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -143,6 +182,16 @@ const ReceiptUpload: React.FC = () => {
       setError('Authentication error - please login again');
     } else {
       setError(error.response?.data?.error || 'Upload failed');
+    }
+  };
+
+  const handleReviewSave = async (updatedReceipt: any) => {
+    try {
+      await api.post(`/api/receipts/${updatedReceipt.transaction_number}/update/`, updatedReceipt);
+      setReviewData(null);
+      navigate('/receipts');
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Failed to save changes');
     }
   };
 
@@ -336,6 +385,15 @@ const ReceiptUpload: React.FC = () => {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {reviewData && (
+        <ReceiptReview
+          receipt={reviewData}
+          open={!!reviewData}
+          onClose={() => setReviewData(null)}
+          onSave={handleReviewSave}
+        />
+      )}
     </Container>
   );
 };

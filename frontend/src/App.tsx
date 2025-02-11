@@ -11,6 +11,7 @@ import PriceAdjustments from './pages/PriceAdjustments';
 import Settings from './pages/Settings';
 import Login from './pages/Login';
 import Register from './pages/Register';
+import Analytics from './pages/Analytics';
 import PrivateRoute from './components/PrivateRoute';
 import ReceiptUpload from './components/ReceiptUpload';
 
@@ -25,6 +26,7 @@ const App: React.FC = () => {
           <Route path="/receipts" element={<PrivateRoute><ReceiptList /></PrivateRoute>} />
           <Route path="/receipts/:id" element={<PrivateRoute><ReceiptDetail /></PrivateRoute>} />
           <Route path="/adjustments" element={<PrivateRoute><PriceAdjustments /></PrivateRoute>} />
+          <Route path="/analytics" element={<PrivateRoute><Analytics /></PrivateRoute>} />
           <Route path="/settings" element={<PrivateRoute><Settings /></PrivateRoute>} />
           <Route path="/upload" element={<ReceiptUpload />} />
         </Routes>
