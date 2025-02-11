@@ -7,8 +7,9 @@ pip install -r requirements.txt
 
 # Build React frontend
 cd frontend
+export NODE_OPTIONS="--max-old-space-size=4096"
 npm install
-npm run build
+CI=false npm run build
 cd ..
 
 # Collect static files
