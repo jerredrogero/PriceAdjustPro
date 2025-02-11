@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: priceadjustpro
+    env: python
+    region: oregon
+    buildCommand: ./build.sh
+    startCommand: cd price_adjust_pro && gunicorn price_adjust_pro.wsgi:application
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: NODE_VERSION
+        value: 18.0.0
+      - key: DEBUG
+        value: False
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: priceadjustpro-db
+          property: connectionString
+      - key: ALLOWED_HOSTS
+        value: .onrender.com
+      - key: CORS_ALLOWED_ORIGINS
+        value: https://priceadjustpro.onrender.com
+      - key: GEMINI_API_KEY
+        sync: false  # This will prompt you to enter the value during deployment
+
+databases:
+  - name: priceadjustpro-db
+    region: oregon
+    plan: free
