@@ -916,29 +916,69 @@ def api_receipt_update(request, transaction_number):
                 'error': f'Total quantity ({total_quantity}) must match receipt total ({data["total_items_sold"]})'
             }, status=400)
         
+        # Update receipt fields
+        receipt.store_location = data.get('store_location', receipt.store_location)
+        receipt.store_number = data.get('store_number', receipt.store_number)
+        receipt.subtotal = Decimal(str(data.get('subtotal', receipt.subtotal)))
+        receipt.tax = Decimal(str(data.get('tax', receipt.tax)))
+        receipt.total = Decimal(str(data.get('total', receipt.total)))
+        receipt.save()
+        
         # Update items
         receipt.items.all().delete()  # Remove existing items
         for item_data in data.get('items', []):
-            LineItem.objects.create(
-                receipt=receipt,
-                item_code=item_data.get('item_code', '000000'),
-                description=item_data.get('description', 'Unknown Item'),
-                price=Decimal(str(item_data.get('price', '0.00'))),
-                quantity=item_data.get('quantity', 1),
-                is_taxable=item_data.get('is_taxable', False),
-                instant_savings=Decimal(str(item_data['instant_savings'])) if item_data.get('instant_savings') else None,
-                original_price=Decimal(str(item_data['original_price'])) if item_data.get('original_price') else None
-            )
+            try:
+                line_item = LineItem.objects.create(
+                    receipt=receipt,
+                    item_code=item_data.get('item_code', '000000'),
+                    description=item_data.get('description', 'Unknown Item'),
+                    price=Decimal(str(item_data.get('price', '0.00'))),
+                    quantity=item_data.get('quantity', 1),
+                    is_taxable=item_data.get('is_taxable', False),
+                    instant_savings=Decimal(str(item_data['instant_savings'])) if item_data.get('instant_savings') else None,
+                    original_price=Decimal(str(item_data['original_price'])) if item_data.get('original_price') else None
+                )
+                # Check for potential price adjustments
+                check_for_price_adjustments(line_item, receipt)
+            except Exception as e:
+                logger.error(f"Error creating line item: {str(e)}")
+                continue
         
         # Update price database
         update_price_database({
+            'transaction_number': transaction_number,
             'store_location': receipt.store_location,
             'store_number': receipt.store_number,
             'transaction_date': receipt.transaction_date,
-            'items': data.get('items', [])
+            'items': data.get('items', []),
+            'subtotal': receipt.subtotal,
+            'tax': receipt.tax,
+            'total': receipt.total
         }, user=request.user)
         
-        return JsonResponse({'message': 'Receipt updated successfully'})
+        return JsonResponse({
+            'message': 'Receipt updated successfully',
+            'receipt': {
+                'transaction_number': receipt.transaction_number,
+                'store_location': receipt.store_location,
+                'store_number': receipt.store_number,
+                'transaction_date': receipt.transaction_date.isoformat(),
+                'subtotal': str(receipt.subtotal),
+                'tax': str(receipt.tax),
+                'total': str(receipt.total),
+                'items': [{
+                    'id': item.id,
+                    'item_code': item.item_code,
+                    'description': item.description,
+                    'price': str(item.price),
+                    'quantity': item.quantity,
+                    'total_price': str(item.total_price),
+                    'is_taxable': item.is_taxable,
+                    'instant_savings': str(item.instant_savings) if item.instant_savings else None,
+                    'original_price': str(item.original_price) if item.original_price else None
+                } for item in receipt.items.all()]
+            }
+        })
         
     except Exception as e:
         logger.error(f"Error updating receipt: {str(e)}")

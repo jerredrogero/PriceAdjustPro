@@ -23,6 +23,7 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  Divider,
 } from '@mui/material';
 import {
   CloudUpload as UploadIcon,
@@ -30,6 +31,7 @@ import {
   Delete as DeleteIcon,
   PictureAsPdf as PictureAsPdfIcon,
   Info as InfoIcon,
+  ArrowForward as ArrowForwardIcon,
 } from '@mui/icons-material';
 import api from '../api/axios';
 import { Receipt } from '../types';
@@ -54,259 +56,220 @@ interface UploadResponse {
   is_duplicate: boolean;
 }
 
+interface UploadedFile {
+  file: File;
+  status: 'pending' | 'uploading' | 'success' | 'error';
+  error?: string;
+  transactionNumber?: string;
+}
+
 const ReceiptUpload: React.FC = () => {
   const navigate = useNavigate();
   const theme = useTheme();
+  const [files, setFiles] = useState<UploadedFile[]>([]);
   const [uploading, setUploading] = useState(false);
   const [errors, setErrors] = useState<UploadError[]>([]);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [uploadProgress, setUploadProgress] = useState<{[key: string]: number}>({});
   const [error, setError] = useState<string | null>(null);
 
-  const onDrop = useCallback(async (acceptedFiles: File[]) => {
-    const pdfFiles = acceptedFiles.filter(file => file.name.toLowerCase().endsWith('.pdf'));
-    if (pdfFiles.length === 0) {
-      setErrors(prev => [...prev, { file: 'Upload', error: 'Please upload PDF files only' }]);
-      return;
-    }
-
-    setSelectedFiles(current => [...current, ...pdfFiles]);
-    setErrors([]);
+  const onDrop = useCallback((acceptedFiles: File[]) => {
+    const newFiles = acceptedFiles.map(file => ({
+      file,
+      status: 'pending' as const
+    }));
+    setFiles(prev => [...prev, ...newFiles]);
   }, []);
 
-  const removeFile = (fileName: string) => {
-    setSelectedFiles(current => current.filter(file => file.name !== fileName));
-    setUploadProgress(current => {
-      const newProgress = { ...current };
-      delete newProgress[fileName];
-      return newProgress;
-    });
-    setErrors(current => current.filter(error => error.file !== fileName));
+  const removeFile = (index: number) => {
+    setFiles(prev => prev.filter((_, i) => i !== index));
   };
 
   const handleUpload = async () => {
-    if (selectedFiles.length === 0) return;
-    
     setUploading(true);
-    setErrors([]);
     
-    const uploadPromises = selectedFiles.map(async (file) => {
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      if (file.status === 'success' || file.status === 'uploading') continue;
+
+      setFiles(prev => prev.map((f, index) => 
+        index === i ? { ...f, status: 'uploading' } : f
+      ));
+
       const formData = new FormData();
-      formData.append('receipt_file', file);
+      formData.append('receipt_file', file.file);
 
       try {
-        const response = await api.post('/api/receipts/upload/', formData, {
-          headers: {
-            'Content-Type': 'multipart/form-data',
-          },
-          onUploadProgress: (progressEvent) => {
-            if (progressEvent.total) {
-              const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-              setUploadProgress(current => ({
-                ...current,
-                [file.name]: progress
-              }));
-            }
-          }
-        });
-
-        const data = response.data;
-        
-        if (data.parse_error) {
-          setErrors(prev => [...prev, { file: file.name, error: data.parse_error }]);
-        }
-        
-        if (data.error && !data.is_duplicate) {
-          setErrors(prev => [...prev, { file: file.name, error: data.error }]);
-        }
-        
-        // Remove file from list if:
-        // 1. It was successfully processed (parsed_successfully)
-        // 2. It's a duplicate (is_duplicate)
-        // 3. It had a parse error but was still processed
-        if (data.parsed_successfully || data.is_duplicate || data.parse_error) {
-          removeFile(file.name);
-        }
-      } catch (err: any) {
-        setErrors(prev => [...prev, { 
-          file: file.name, 
-          error: err.response?.data?.error || 'Upload failed' 
-        }]);
-        removeFile(file.name);
+        const response = await api.post('/api/receipts/upload/', formData);
+        setFiles(prev => prev.map((f, index) => 
+          index === i ? { 
+            ...f, 
+            status: 'success',
+            transactionNumber: response.data.transaction_number
+          } : f
+        ));
+      } catch (error) {
+        setFiles(prev => prev.map((f, index) => 
+          index === i ? { ...f, status: 'error', error: 'Upload failed' } : f
+        ));
       }
-    });
-
-    try {
-      await Promise.all(uploadPromises);
-      if (selectedFiles.length === 0) {  // Only navigate if all files were processed
-        navigate('/receipts');
-      }
-    } catch (err) {
-      console.error('Upload failed:', err);
-    } finally {
-      setUploading(false);
     }
+    
+    setUploading(false);
   };
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: {
-      'application/pdf': ['.pdf'],
+      'application/pdf': ['.pdf']
     },
-    multiple: true,
-    disabled: uploading,
+    multiple: true
   });
 
   return (
-    <Container maxWidth="sm" sx={{ py: 4 }}>
-      <Card elevation={3}>
-        <CardContent sx={{ p: 4 }}>
-          <Box sx={{ textAlign: 'center', mb: 3 }}>
-            <UploadIcon sx={{ fontSize: 40, color: 'primary.main', mb: 2 }} />
-            <Typography variant="h4" component="h1" gutterBottom>
-              Upload Receipts
-            </Typography>
-            <Typography color="text.secondary">
-              Upload one or more Costco receipt PDFs
-            </Typography>
-          </Box>
+    <Container maxWidth="lg" sx={{ py: 4 }}>
+      <Typography variant="h4" gutterBottom>
+        Upload Receipts
+      </Typography>
 
-          {errors.length > 0 && (
-            <Box sx={{ mb: 3 }}>
-              {errors.map((error, index) => (
-                <Alert key={index} severity="error" sx={{ mb: 1 }}>
-                  {error.file}: {error.error}
-                </Alert>
-              ))}
-            </Box>
-          )}
-
-          <Paper
-            {...getRootProps()}
-            sx={{
-              p: 4,
-              textAlign: 'center',
-              cursor: uploading ? 'not-allowed' : 'pointer',
-              backgroundColor: isDragActive ? alpha(theme.palette.primary.main, 0.04) : 'background.paper',
-              border: '2px dashed',
-              borderColor: isDragActive ? 'primary.main' : 'divider',
-              borderRadius: 2,
-              transition: 'all 0.2s ease-in-out',
-              '&:hover': {
-                backgroundColor: alpha(theme.palette.primary.main, 0.04),
-                borderColor: 'primary.main',
-              },
-              mb: 3,
-            }}
+      {/* Instructions Section */}
+      <Paper sx={{ p: 4, mb: 4 }}>
+        <Typography variant="h5" gutterBottom>
+          How to Find Your Costco Receipts
+        </Typography>
+        <List>
+          <ListItem>
+            <ListItemIcon>
+              <Typography variant="h6" color="primary">1.</Typography>
+            </ListItemIcon>
+            <ListItemText 
+              primary="Log in to Costco.com" 
+              secondary="Visit Costco.com and sign in to your account"
+            />
+          </ListItem>
+          <ListItem>
+            <ListItemIcon>
+              <Typography variant="h6" color="primary">2.</Typography>
+            </ListItemIcon>
+            <ListItemText 
+              primary="Navigate to Orders & Returns" 
+              secondary="Click on 'Orders & Returns' in the top navigation menu"
+            />
+          </ListItem>
+          <ListItem>
+            <ListItemIcon>
+              <Typography variant="h6" color="primary">3.</Typography>
+            </ListItemIcon>
+            <ListItemText 
+              primary="Find Your Order" 
+              secondary="Locate the order you want to track"
+            />
+          </ListItem>
+          <ListItem>
+            <ListItemIcon>
+              <Typography variant="h6" color="primary">4.</Typography>
+            </ListItemIcon>
+            <ListItemText 
+              primary="Download Receipt" 
+              secondary="Click 'View Receipt' and download the PDF"
+            />
+          </ListItem>
+        </List>
+        <Box sx={{ mt: 2 }}>
+          <Button
+            variant="contained"
+            component="a"
+            href="https://www.costco.com/OrderStatusCmd"
+            target="_blank"
+            rel="noopener noreferrer"
+            endIcon={<ArrowForwardIcon />}
           >
-            <input {...getInputProps()} />
-            
-            {uploading ? (
-              <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                <CircularProgress size={48} sx={{ mb: 2 }} />
-                <Typography variant="h6" color="primary">Processing receipts...</Typography>
-                <Typography color="text.secondary" sx={{ mt: 1 }}>
-                  This may take a few moments
-                </Typography>
-              </Box>
-            ) : (
-              <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                <UploadIcon sx={{ fontSize: 48, mb: 2, color: 'primary.main' }} />
-                <Typography variant="h6" gutterBottom>
-                  {isDragActive ? 'Drop the PDFs here' : 'Drag and drop receipt PDFs here'}
-                </Typography>
-                <Typography color="text.secondary" gutterBottom>
-                  or
-                </Typography>
-                <Button 
-                  variant="contained" 
-                  component="span" 
-                  disabled={uploading}
-                  sx={{ mt: 1 }}
-                >
-                  Browse Files
-                </Button>
-              </Box>
-            )}
-          </Paper>
+            Go to Costco Orders
+          </Button>
+        </Box>
+      </Paper>
 
-          {selectedFiles.length > 0 && (
-            <Box>
-              <Typography variant="h6" gutterBottom>
-                Selected Files ({selectedFiles.length})
-              </Typography>
-              <List>
-                {selectedFiles.map((file) => (
-                  <ListItem
-                    key={file.name}
-                    secondaryAction={
-                      !uploading && (
-                        <IconButton edge="end" onClick={() => removeFile(file.name)}>
-                          <DeleteIcon />
-                        </IconButton>
-                      )
-                    }
+      <Divider sx={{ my: 4 }} />
+
+      {/* Upload Section */}
+      <Paper
+        {...getRootProps()}
+        sx={{
+          p: 4,
+          border: `2px dashed ${theme.palette.primary.main}`,
+          borderRadius: 2,
+          cursor: 'pointer',
+          bgcolor: isDragActive ? alpha(theme.palette.primary.main, 0.1) : 'background.paper',
+          transition: 'background-color 0.3s ease',
+          textAlign: 'center',
+        }}
+      >
+        <input {...getInputProps()} />
+        <UploadIcon sx={{ fontSize: 48, color: 'primary.main', mb: 2 }} />
+        <Typography variant="h6" gutterBottom>
+          {isDragActive ? 'Drop your receipt PDFs here' : 'Drag and drop receipt PDFs here'}
+        </Typography>
+        <Typography color="text.secondary" gutterBottom>
+          Save time by uploading multiple receipts at once
+        </Typography>
+        <Typography color="text.secondary">
+          or click to select files
+        </Typography>
+      </Paper>
+
+      {files.length > 0 && (
+        <Paper sx={{ mt: 4, p: 3 }}>
+          <Typography variant="h6" gutterBottom>
+            Selected Files
+          </Typography>
+          <List>
+            {files.map((file, index) => (
+              <ListItem
+                key={index}
+                secondaryAction={
+                  <IconButton
+                    edge="end"
+                    onClick={() => removeFile(index)}
+                    disabled={file.status === 'uploading'}
                   >
-                    <ListItemIcon>
-                      <PictureAsPdfIcon />
-                    </ListItemIcon>
-                    <ListItemText 
-                      primary={file.name}
-                      secondary={
-                        uploading && uploadProgress[file.name] !== undefined && (
-                          <LinearProgress 
-                            variant="determinate" 
-                            value={uploadProgress[file.name]} 
-                            sx={{ mt: 1 }}
-                          />
-                        )
-                      }
-                    />
-                  </ListItem>
-                ))}
-              </List>
-
-              <Button
-                variant="contained"
-                fullWidth
-                size="large"
-                onClick={handleUpload}
-                disabled={uploading}
-                startIcon={uploading ? <CircularProgress size={20} /> : <UploadIcon />}
-                sx={{ mt: 2 }}
+                    <DeleteIcon />
+                  </IconButton>
+                }
               >
-                {uploading ? 'Uploading...' : 'Upload Selected Files'}
-              </Button>
-            </Box>
-          )}
-
-          <Box sx={{ mt: 4 }}>
-            <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-              Instructions:
-            </Typography>
-            <List dense>
-              <ListItem>
-                <ListItemIcon>
-                  <InfoIcon color="primary" />
-                </ListItemIcon>
-                <ListItemText primary="Upload multiple PDF files at once" />
+                <ListItemText
+                  primary={file.file.name}
+                  secondary={
+                    file.status === 'uploading' ? (
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <CircularProgress size={16} />
+                        <Typography variant="body2">Uploading...</Typography>
+                      </Box>
+                    ) : file.status === 'success' ? (
+                      <Typography variant="body2" color="success.main">
+                        Uploaded successfully
+                      </Typography>
+                    ) : file.status === 'error' ? (
+                      <Typography variant="body2" color="error">
+                        {file.error}
+                      </Typography>
+                    ) : null
+                  }
+                />
               </ListItem>
-              <ListItem>
-                <ListItemIcon>
-                  <InfoIcon color="primary" />
-                </ListItemIcon>
-                <ListItemText primary="Files must be in PDF format" />
-              </ListItem>
-              <ListItem>
-                <ListItemIcon>
-                  <InfoIcon color="primary" />
-                </ListItemIcon>
-                <ListItemText primary="Each receipt will be processed individually" />
-              </ListItem>
-            </List>
+            ))}
+          </List>
+          <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-end' }}>
+            <Button
+              variant="contained"
+              onClick={handleUpload}
+              disabled={uploading || files.every(f => f.status === 'success')}
+              startIcon={uploading ? <CircularProgress size={20} /> : null}
+            >
+              {uploading ? 'Uploading...' : 'Upload Selected Files'}
+            </Button>
           </Box>
-        </CardContent>
-      </Card>
+        </Paper>
+      )}
     </Container>
   );
 };

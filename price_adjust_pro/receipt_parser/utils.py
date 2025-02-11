@@ -273,55 +273,66 @@ def check_for_price_adjustments(item: LineItem, receipt: Receipt) -> None:
     the same item at full price in the last 30 days.
     """
     try:
-        # Only check items that are currently on sale
-        if not item.item_code or not item.instant_savings:
+        # Only check items that have a lower price (either through instant savings or regular price)
+        if not item.item_code:
             return
 
         # Get the date 30 days ago
         thirty_days_ago = timezone.now() - timedelta(days=30)
 
-        # Find users who bought this item at full price in the last 30 days
+        # Find users who bought this item at a higher price in the last 30 days
         full_price_purchases = LineItem.objects.filter(
             item_code=item.item_code,
             receipt__transaction_date__gte=thirty_days_ago,
-            instant_savings__isnull=True,  # Only full price purchases
+            price__gt=item.price,  # Find any items with a higher price
             receipt__user__isnull=False  # Ensure there's a user
-        ).select_related('receipt')
+        ).select_related('receipt', 'receipt__user')
 
-        # Create alerts for users who bought at full price
+        # Create alerts for users who bought at higher price
         for purchase in full_price_purchases:
             # Don't alert the same user who found the sale
             if purchase.receipt.user == receipt.user:
                 continue
 
-            # Create or update alert
-            alert, created = PriceAdjustmentAlert.objects.get_or_create(
-                user=purchase.receipt.user,
-                item_code=item.item_code,
-                original_price=purchase.price,  # Their purchase price
-                purchase_date=purchase.receipt.transaction_date,
-                defaults={
-                    'item_description': item.description,
-                    'lower_price': item.price,  # The sale price
-                    'original_store_city': purchase.receipt.store_city,
-                    'original_store_number': purchase.receipt.store_number,
-                    'cheaper_store_city': receipt.store_city,  # Where the sale was found
-                    'cheaper_store_number': receipt.store_number,
-                    'is_active': True,
-                    'is_dismissed': False
-                }
-            )
+            price_difference = purchase.price - item.price
+            
+            # Only alert if the difference is significant (e.g., > $0.50)
+            if price_difference >= Decimal('0.50'):
+                # Create or update alert
+                alert, created = PriceAdjustmentAlert.objects.get_or_create(
+                    user=purchase.receipt.user,
+                    item_code=item.item_code,
+                    original_price=purchase.price,  # Their purchase price
+                    purchase_date=purchase.receipt.transaction_date,
+                    defaults={
+                        'item_description': item.description,
+                        'lower_price': item.price,  # The sale price
+                        'original_store_city': purchase.receipt.store_city,
+                        'original_store_number': purchase.receipt.store_number,
+                        'cheaper_store_city': receipt.store_city,  # Where the sale was found
+                        'cheaper_store_number': receipt.store_number,
+                        'is_active': True,
+                        'is_dismissed': False
+                    }
+                )
 
-            if not created and item.price < alert.lower_price:
-                # Update the alert if we found an even lower sale price
-                alert.lower_price = item.price
-                alert.cheaper_store_city = receipt.store_city
-                alert.cheaper_store_number = receipt.store_number
-                alert.is_dismissed = False  # Re-activate if user dismissed it before
-                alert.save()
+                if not created and item.price < alert.lower_price:
+                    # Update the alert if we found an even lower price
+                    alert.lower_price = item.price
+                    alert.cheaper_store_city = receipt.store_city
+                    alert.cheaper_store_number = receipt.store_number
+                    alert.is_dismissed = False  # Re-activate if user dismissed it before
+                    alert.save()
+
+                # Log the alert creation/update
+                logger.info(
+                    f"Price adjustment alert created/updated for user {purchase.receipt.user.username} "
+                    f"on item {item.description} (${purchase.price} -> ${item.price})"
+                )
 
     except Exception as e:
-        print(f"Error checking price adjustments for {item.description}: {str(e)}")
+        logger.error(f"Error checking price adjustments for {item.description}: {str(e)}")
+        raise
 
 def update_price_database(parsed_data: Dict, user=None) -> None:
     """Update the price database with information from a parsed receipt."""

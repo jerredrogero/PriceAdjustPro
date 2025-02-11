@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, Link as RouterLink } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import {
   Container,
   Typography,
@@ -12,24 +12,27 @@ import {
   TableRow,
   Button,
   Box,
-  Chip,
-  LinearProgress,
+  IconButton,
+  TextField,
   Alert,
-  Divider,
+  LinearProgress,
+  useTheme,
 } from '@mui/material';
 import {
-  ArrowBack as ArrowBackIcon,
-  LocalOffer as PriceIcon,
+  ArrowBack as BackIcon,
+  Edit as EditIcon,
+  Save as SaveIcon,
+  Cancel as CancelIcon,
 } from '@mui/icons-material';
 import { format } from 'date-fns';
 import api from '../api/axios';
 
 interface ReceiptItem {
-  id?: number;
+  id: number;
   item_code: string;
   description: string;
-  quantity: number;
   price: string;
+  quantity: number;
   total_price: string;
   is_taxable: boolean;
   instant_savings: string | null;
@@ -47,85 +50,150 @@ interface Receipt {
   items: ReceiptItem[];
   parsed_successfully: boolean;
   parse_error: string | null;
-  file: string | null;
-  instant_savings?: string;
-  ebt_amount?: string;
 }
 
+const formatCurrency = (value: string | null | undefined): string => {
+  if (!value) return '$0.00';
+  const num = parseFloat(value);
+  return num.toLocaleString('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+};
+
 const ReceiptDetail: React.FC = () => {
-  const { id } = useParams<{ id: string }>();
+  const { transactionNumber } = useParams<{ transactionNumber: string }>();
+  const navigate = useNavigate();
+  const theme = useTheme();
   const [receipt, setReceipt] = useState<Receipt | null>(null);
+  const [editMode, setEditMode] = useState(false);
+  const [editedItems, setEditedItems] = useState<ReceiptItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     fetchReceipt();
-  }, [id]);
+  }, [transactionNumber]);
 
   const fetchReceipt = async () => {
     try {
-      const response = await api.get(`/api/receipts/${id}/`);
+      const response = await api.get(`/api/receipts/${transactionNumber}/`);
       setReceipt(response.data);
+      setEditedItems(response.data.items);
     } catch (err) {
       setError('Failed to load receipt details');
+      console.error('Error fetching receipt:', err);
     } finally {
       setLoading(false);
     }
   };
 
+  const handleItemChange = (index: number, field: keyof ReceiptItem, value: any) => {
+    const newItems = [...editedItems];
+    newItems[index] = {
+      ...newItems[index],
+      [field]: value,
+      total_price: field === 'price' || field === 'quantity' 
+        ? (parseFloat(field === 'price' ? value : newItems[index].price) * 
+           (field === 'quantity' ? value : newItems[index].quantity)).toFixed(2)
+        : newItems[index].total_price
+    };
+    setEditedItems(newItems);
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await api.post(`/api/receipts/${transactionNumber}/update/`, {
+        transaction_number: transactionNumber,
+        store_location: receipt?.store_location,
+        store_number: receipt?.store_number,
+        transaction_date: receipt?.transaction_date,
+        items: editedItems.map(item => ({
+          ...item,
+          price: parseFloat(item.price).toFixed(2),
+          total_price: (parseFloat(item.price) * item.quantity).toFixed(2)
+        })),
+        total_items_sold: editedItems.reduce((sum, item) => sum + item.quantity, 0),
+        subtotal: editedItems.reduce((sum, item) => sum + parseFloat(item.total_price), 0).toFixed(2),
+        tax: receipt?.tax,
+        total: calculateTotal()
+      });
+      setEditMode(false);
+      fetchReceipt(); // Refresh data
+    } catch (err) {
+      setError('Failed to save changes');
+      console.error('Save error:', err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (loading) return <LinearProgress />;
+  if (error) return <Alert severity="error">{error}</Alert>;
+  if (!receipt) return <Alert severity="error">Receipt not found</Alert>;
 
-  if (error) {
-    return (
-      <Container maxWidth="lg" sx={{ mt: 4 }}>
-        <Alert severity="error">{error}</Alert>
-      </Container>
-    );
-  }
-
-  if (!receipt) {
-    return (
-      <Container maxWidth="lg" sx={{ mt: 4 }}>
-        <Alert severity="error">Receipt not found</Alert>
-      </Container>
-    );
-  }
+  const calculateTotal = () => {
+    const subtotal = editedItems.reduce((sum, item) => sum + parseFloat(item.total_price), 0);
+    const tax = parseFloat(receipt.tax);
+    return (subtotal + tax).toFixed(2);
+  };
 
   return (
     <Container maxWidth="lg" sx={{ py: 4 }}>
-      <Button
-        component={RouterLink}
-        to="/receipts"
-        startIcon={<ArrowBackIcon />}
-        sx={{ mb: 3 }}
-      >
-        Back to Receipts
-      </Button>
+      <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Button
+          startIcon={<BackIcon />}
+          onClick={() => navigate('/receipts')}
+          variant="outlined"
+        >
+          Back to Receipts
+        </Button>
+        {!editMode ? (
+          <Button
+            startIcon={<EditIcon />}
+            variant="contained"
+            onClick={() => setEditMode(true)}
+          >
+            Edit Receipt
+          </Button>
+        ) : (
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Button
+              startIcon={<CancelIcon />}
+              variant="outlined"
+              onClick={() => {
+                setEditMode(false);
+                setEditedItems(receipt.items);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              startIcon={<SaveIcon />}
+              variant="contained"
+              onClick={handleSave}
+              disabled={saving}
+            >
+              Save Changes
+            </Button>
+          </Box>
+        )}
+      </Box>
 
       <Paper sx={{ p: 3, mb: 3 }}>
-        <Typography variant="h4" gutterBottom>
-          Receipt Details
-        </Typography>
-        <Typography variant="subtitle1" gutterBottom>
+        <Typography variant="h5" gutterBottom>
           {receipt.store_location}
-          {receipt.store_number && ` #${receipt.store_number}`}
         </Typography>
         <Typography variant="subtitle1" gutterBottom>
-          Date: {receipt.transaction_date ? 
-            format(new Date(receipt.transaction_date), 'MMMM d, yyyy') : 
-            'Invalid date'}
+          Transaction #: {receipt.transaction_number}
         </Typography>
-        <Box sx={{ mt: 2 }}>
-          <Typography variant="subtitle1" gutterBottom>
-            Subtotal: ${receipt.subtotal}
-          </Typography>
-          <Typography variant="subtitle1" gutterBottom>
-            Tax: ${receipt.tax}
-          </Typography>
-          <Typography variant="h5" color="primary" gutterBottom>
-            Total: ${receipt.total}
-          </Typography>
-        </Box>
+        <Typography variant="subtitle1" gutterBottom>
+          Date: {format(new Date(receipt.transaction_date), 'PPPp')}
+        </Typography>
       </Paper>
 
       <TableContainer component={Paper}>
@@ -134,104 +202,75 @@ const ReceiptDetail: React.FC = () => {
             <TableRow>
               <TableCell>Item Code</TableCell>
               <TableCell>Description</TableCell>
-              <TableCell align="right">Quantity</TableCell>
               <TableCell align="right">Price</TableCell>
-              <TableCell align="right">Sale</TableCell>
+              <TableCell align="right">Quantity</TableCell>
               <TableCell align="right">Total</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
-            {receipt.items.map((item) => (
-              <TableRow key={item.item_code}>
+            {editedItems.map((item, index) => (
+              <TableRow key={item.id}>
                 <TableCell>{item.item_code}</TableCell>
-                <TableCell>{item.description}</TableCell>
-                <TableCell align="right">{item.quantity}</TableCell>
-                <TableCell align="right">
-                  ${item.price}
-                  {item.original_price && (
-                    <Typography variant="caption" color="text.secondary" display="block">
-                      Was: ${item.original_price}
-                    </Typography>
-                  )}
-                </TableCell>
-                <TableCell align="right">
-                  {item.instant_savings ? (
-                    <Chip
-                      label={`Save $${item.instant_savings}`}
-                      color="success"
-                      size="small"
-                      sx={{ fontWeight: 'medium' }}
+                <TableCell>
+                  {editMode ? (
+                    <TextField
+                      fullWidth
+                      value={item.description}
+                      onChange={(e) => handleItemChange(index, 'description', e.target.value)}
+                      variant="standard"
                     />
                   ) : (
-                    <Typography variant="body2" color="text.secondary">
-                      -
-                    </Typography>
+                    item.description
                   )}
                 </TableCell>
-                <TableCell align="right">${item.total_price}</TableCell>
+                <TableCell align="right">
+                  {editMode ? (
+                    <TextField
+                      type="number"
+                      value={item.price}
+                      onChange={(e) => handleItemChange(index, 'price', e.target.value)}
+                      variant="standard"
+                      inputProps={{ min: 0, step: 0.01, style: { textAlign: 'right' } }}
+                    />
+                  ) : (
+                    formatCurrency(item.price)
+                  )}
+                </TableCell>
+                <TableCell align="right">
+                  {editMode ? (
+                    <TextField
+                      type="number"
+                      value={item.quantity}
+                      onChange={(e) => handleItemChange(index, 'quantity', parseInt(e.target.value))}
+                      variant="standard"
+                      inputProps={{ min: 1, style: { textAlign: 'right' } }}
+                    />
+                  ) : (
+                    item.quantity
+                  )}
+                </TableCell>
+                <TableCell align="right">
+                  {formatCurrency(item.total_price)}
+                </TableCell>
               </TableRow>
             ))}
-
             <TableRow>
-              <TableCell colSpan={6}>
-                <Divider sx={{ my: 2 }} />
+              <TableCell colSpan={3} />
+              <TableCell align="right">
+                <Typography variant="subtitle1">Subtotal:</Typography>
+                <Typography variant="subtitle1">Tax:</Typography>
+                <Typography variant="h6">Total:</Typography>
               </TableCell>
-            </TableRow>
-
-            <TableRow>
-              <TableCell colSpan={4} align="right">
-                <Typography variant="subtitle1">Subtotal</Typography>
-              </TableCell>
-              <TableCell align="right" colSpan={2}>
-                <Typography variant="subtitle1">${receipt.subtotal}</Typography>
-              </TableCell>
-            </TableRow>
-
-            {receipt.instant_savings && (
-              <TableRow>
-                <TableCell colSpan={4} align="right">
-                  <Typography variant="subtitle1" color="success.main">
-                    Total Instant Savings
-                  </Typography>
-                </TableCell>
-                <TableCell align="right" colSpan={2}>
-                  <Typography variant="subtitle1" color="success.main">
-                    -${receipt.instant_savings}
-                  </Typography>
-                </TableCell>
-              </TableRow>
-            )}
-
-            <TableRow>
-              <TableCell colSpan={4} align="right">
-                <Typography variant="subtitle1">Tax</Typography>
-              </TableCell>
-              <TableCell align="right" colSpan={2}>
-                <Typography variant="subtitle1">${receipt.tax}</Typography>
-              </TableCell>
-            </TableRow>
-
-            {receipt.ebt_amount && (
-              <TableRow>
-                <TableCell colSpan={4} align="right">
-                  <Typography variant="subtitle1" color="info.main">
-                    EBT Amount
-                  </Typography>
-                </TableCell>
-                <TableCell align="right" colSpan={2}>
-                  <Typography variant="subtitle1" color="info.main">
-                    ${receipt.ebt_amount}
-                  </Typography>
-                </TableCell>
-              </TableRow>
-            )}
-
-            <TableRow>
-              <TableCell colSpan={4} align="right">
-                <Typography variant="h6" color="primary.main">Total</Typography>
-              </TableCell>
-              <TableCell align="right" colSpan={2}>
-                <Typography variant="h6" color="primary.main">${receipt.total}</Typography>
+              <TableCell align="right">
+                <Typography variant="subtitle1">
+                  {formatCurrency(editedItems.reduce((sum, item) => sum + parseFloat(item.total_price), 0).toString())}
+                </Typography>
+                <Typography variant="subtitle1">
+                  {formatCurrency(receipt.tax)}
+                </Typography>
+                <Typography variant="h6">
+                  {formatCurrency(calculateTotal())}
+                </Typography>
               </TableCell>
             </TableRow>
           </TableBody>

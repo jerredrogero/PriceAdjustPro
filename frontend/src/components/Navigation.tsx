@@ -12,6 +12,7 @@ import {
   Badge,
   useTheme,
   useMediaQuery,
+  Link,
 } from '@mui/material';
 import {
   Menu as MenuIcon,
@@ -67,42 +68,23 @@ const Navigation: React.FC = () => {
     }
   };
 
-  if (!isAuthenticated) {
-    return (
-      <AppBar position="fixed">
-        <Toolbar>
-          <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-            PriceAdjustPro
-          </Typography>
-          <Button color="inherit" component={RouterLink} to="/login">
-            Login
-          </Button>
-          <Button color="inherit" component={RouterLink} to="/register">
-            Register
-          </Button>
-        </Toolbar>
-      </AppBar>
-    );
-  }
-
   const menuItems = [
-    { text: 'Dashboard', icon: <DashboardIcon />, path: '/' },
+    { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
     { text: 'Receipts', icon: <ReceiptIcon />, path: '/receipts' },
     {
-      text: 'Adjustments',
+      text: 'Price Adjustments',
       icon: <AdjustmentIcon />,
-      path: '/adjustments',
+      path: '/price-adjustments',
       badge: adjustmentCount,
     },
     { text: 'Analytics', icon: <AnalyticsIcon />, path: '/analytics' },
     { text: 'Upload', icon: <UploadIcon />, path: '/upload' },
-    { text: 'Settings', icon: <SettingsIcon />, path: '/settings' },
   ];
 
   return (
     <AppBar position="fixed">
       <Toolbar>
-        {isMobile && (
+        {isMobile && isAuthenticated && (
           <IconButton
             color="inherit"
             edge="start"
@@ -113,46 +95,67 @@ const Navigation: React.FC = () => {
           </IconButton>
         )}
 
-        <Typography
-          variant="h6"
+        <Link
           component={RouterLink}
           to="/"
-          sx={{ flexGrow: 1, textDecoration: 'none', color: 'inherit' }}
+          sx={{
+            textDecoration: 'none',
+            color: 'inherit',
+            display: 'flex',
+            alignItems: 'center',
+            flexGrow: 1,
+          }}
         >
-          PriceAdjustPro
-        </Typography>
+          <ReceiptIcon sx={{ mr: 1 }} />
+          <Typography variant="h6" component="span">
+            PriceAdjustPro
+          </Typography>
+        </Link>
 
-        {!isMobile && (
-          <Box sx={{ display: 'flex', alignItems: 'center' }}>
-            {menuItems.map((item) => (
-              <Button
-                key={item.path}
-                color="inherit"
-                component={RouterLink}
-                to={item.path}
-                startIcon={
-                  item.badge ? (
-                    <Badge badgeContent={item.badge} color="error">
-                      {item.icon}
-                    </Badge>
-                  ) : (
-                    item.icon
-                  )
-                }
-                sx={{ ml: 1 }}
-              >
-                {item.text}
-              </Button>
-            ))}
-            <Button
-              color="inherit"
-              onClick={handleLogout}
-              startIcon={<LogoutIcon />}
-              sx={{ ml: 1 }}
-            >
-              Logout
+        {!isAuthenticated ? (
+          <Box>
+            <Button color="inherit" component={RouterLink} to="/login">
+              Login
+            </Button>
+            <Button color="inherit" component={RouterLink} to="/register">
+              Register
             </Button>
           </Box>
+        ) : (
+          <>
+            {!isMobile && (
+              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                {menuItems.map((item) => (
+                  <Button
+                    key={item.path}
+                    color="inherit"
+                    component={RouterLink}
+                    to={item.path}
+                    startIcon={
+                      item.badge ? (
+                        <Badge badgeContent={item.badge} color="error">
+                          {item.icon}
+                        </Badge>
+                      ) : (
+                        item.icon
+                      )
+                    }
+                    sx={{ ml: 1 }}
+                  >
+                    {item.text}
+                  </Button>
+                ))}
+                <Button
+                  color="inherit"
+                  onClick={handleLogout}
+                  startIcon={<LogoutIcon />}
+                  sx={{ ml: 1 }}
+                >
+                  Logout
+                </Button>
+              </Box>
+            )}
+          </>
         )}
 
         <Menu
