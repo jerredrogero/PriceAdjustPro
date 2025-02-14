@@ -93,30 +93,21 @@ WSGI_APPLICATION = 'price_adjust_pro.wsgi.application'
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
 # Database configuration
-db_config = dj_database_url.config(
-    default=os.environ.get('DATABASE_URL'),
-    conn_max_age=600,
-    ssl_require=True
-)
-
-# Add additional PostgreSQL options
-db_config.update({
-    'CONN_MAX_AGE': 600,
-    'ATOMIC_REQUESTS': True,
-    'AUTOCOMMIT': True,
-    'OPTIONS': {
-        'sslmode': 'require',
-        'keepalives': 1,
-        'keepalives_idle': 30,
-        'keepalives_interval': 10,
-        'keepalives_count': 5,
-        'options': '-c statement_timeout=30000 -c idle_in_transaction_session_timeout=30000'
+if DEBUG:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
     }
-})
-
-DATABASES = {
-    'default': db_config
-}
+else:
+    DATABASES = {
+        'default': dj_database_url.config(
+            default=os.environ.get('DATABASE_URL'),
+            conn_max_age=600,
+            ssl_require=True
+        )
+    }
 
 # Cache settings for better performance
 CACHES = {
@@ -207,8 +198,22 @@ LOGIN_REDIRECT_URL = 'receipt_list'
 LOGOUT_REDIRECT_URL = 'login'
 
 # CORS settings
-CORS_ALLOW_ALL_ORIGINS = False
-CORS_ALLOWED_ORIGINS = os.environ.get('CORS_ALLOWED_ORIGINS', '').split(',')
+CORS_ALLOW_ALL_ORIGINS = DEBUG  # Allow all origins in development
+CORS_ALLOWED_ORIGINS = os.environ.get('CORS_ALLOWED_ORIGINS', 'http://localhost:3000').split(',')
+CORS_ALLOW_CREDENTIALS = True
+CORS_EXPOSE_HEADERS = ['Content-Type', 'X-CSRFToken']
+
+CSRF_COOKIE_SAMESITE = 'Lax'
+CSRF_COOKIE_HTTPONLY = False  # Required for Axios to read CSRF token
+CSRF_TRUSTED_ORIGINS = CORS_ALLOWED_ORIGINS
+
+SESSION_COOKIE_SAMESITE = 'Lax'
+SESSION_COOKIE_HTTPONLY = True
+
+if DEBUG:
+    CSRF_COOKIE_SECURE = False
+    SESSION_COOKIE_SECURE = False
+    SECURE_SSL_REDIRECT = False
 
 # Whitenoise configuration for better static file serving
 WHITENOISE_ROOT = REACT_APP_BUILD_PATH

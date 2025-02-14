@@ -32,7 +32,6 @@ from receipt_parser.urls import urls_api as receipt_api_urls
 def home_redirect(request):
     return redirect('receipt_list')
 
-@csrf_exempt
 def api_login(request):
     if request.method == 'POST':
         data = json.loads(request.body)
