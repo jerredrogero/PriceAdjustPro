@@ -8,10 +8,49 @@ from django.utils.html import format_html
 from django.db.models import Count, Sum, Avg, F, Window
 from django.db.models.functions import ExtractYear, ExtractMonth, TruncDate
 from django.contrib.postgres.search import SearchVector, SearchQuery, SearchRank
+from django.contrib import admin
+from django.contrib.auth.models import User, Group
+from django.contrib.auth.admin import UserAdmin
+from django.http import HttpResponse
+import csv
+import json
+from datetime import datetime
 from .models import (
     Receipt, LineItem, CostcoItem, CostcoWarehouse,
     ItemPriceHistory, ItemWarehousePrice, PriceAdjustmentAlert
 )
+
+# Customize admin site
+admin.site.site_header = 'PriceAdjustPro Administration'
+admin.site.site_title = 'PriceAdjustPro Admin'
+admin.site.index_title = 'Dashboard'
+
+# Unregister default User and Group admin
+admin.site.unregister(User)
+admin.site.unregister(Group)
+
+# Custom User admin with limited fields
+@admin.register(User)
+class CustomUserAdmin(UserAdmin):
+    list_display = ('username', 'email', 'date_joined', 'last_login', 'is_active', 'is_staff')
+    list_filter = ('is_active', 'is_staff', 'date_joined')
+    readonly_fields = ('date_joined', 'last_login')
+    ordering = ('-date_joined',)
+    
+    # Limit what fields can be changed
+    fieldsets = (
+        (None, {'fields': ('username', 'email', 'password')}),
+        ('Permissions', {'fields': ('is_active', 'is_staff')}),
+        ('Important dates', {'fields': ('last_login', 'date_joined')}),
+    )
+    
+    # Limit what fields are shown when creating a new user
+    add_fieldsets = (
+        (None, {
+            'classes': ('wide',),
+            'fields': ('username', 'email', 'password1', 'password2'),
+        }),
+    )
 
 csrf_protect_m = method_decorator(csrf_protect)
 
@@ -37,6 +76,10 @@ class BaseModelAdmin(admin.ModelAdmin):
             'all': ('admin/css/custom_admin.css',)
         }
 
+    def has_delete_permission(self, request, obj=None):
+        # Only superusers can delete objects
+        return request.user.is_superuser
+
 class LineItemInline(admin.TabularInline):
     model = LineItem
     extra = 0
@@ -60,7 +103,7 @@ class ReceiptAdmin(BaseModelAdmin):
         'store_city', 
         'parsed_successfully', 
         'transaction_date',
-        'user__username',
+        ('user', admin.RelatedOnlyFieldListFilter),
         ('instant_savings', admin.EmptyFieldListFilter),
     )
     search_fields = ('transaction_number', 'store_location', 'store_city', 'user__username', 'items__description')
@@ -68,21 +111,29 @@ class ReceiptAdmin(BaseModelAdmin):
     readonly_fields = ('created_at', 'store_city', 'items_count', 'total_savings_display', 'parse_status', 'parse_error')
     date_hierarchy = 'transaction_date'
     list_per_page = 50
-    show_full_result_count = False  # Performance optimization for large datasets
+    show_full_result_count = False
     raw_id_fields = ('user',)
-    actions = ['mark_as_parsed']
+    actions = ['mark_as_parsed', 'export_as_csv', 'export_as_json']
+    ordering = ('-transaction_date',)
 
     def get_queryset(self, request):
-        # Optimize for PostgreSQL
-        return super().get_queryset(request)\
-            .select_related('user')\
-            .prefetch_related('items')\
-            .annotate(
-                items_total=Count('items'),
-                total_savings=Sum('items__instant_savings'),
-                year=ExtractYear('transaction_date'),
-                month=ExtractMonth('transaction_date')
-            )
+        # Non-superusers can only see their own receipts
+        qs = super().get_queryset(request)
+        if not request.user.is_superuser:
+            qs = qs.filter(user=request.user)
+        return qs.select_related('user').prefetch_related('items')
+
+    def has_change_permission(self, request, obj=None):
+        # Users can only edit their own receipts
+        if not obj or request.user.is_superuser:
+            return True
+        return obj.user == request.user
+
+    def get_readonly_fields(self, request, obj=None):
+        # Make more fields readonly for non-superusers
+        if not request.user.is_superuser:
+            return self.readonly_fields + ('user', 'transaction_number', 'transaction_date')
+        return self.readonly_fields
 
     def total_display(self, obj):
         return format_html('${}', '{:.2f}'.format(float(obj.total)))
@@ -136,6 +187,67 @@ class ReceiptAdmin(BaseModelAdmin):
         self.message_user(request, f'{updated} receipts marked as successfully parsed.')
     mark_as_parsed.short_description = "Mark selected receipts as successfully parsed"
 
+    def export_as_csv(self, request, queryset):
+        meta = self.model._meta
+        field_names = ['transaction_number', 'store_location', 'store_city', 'store_number',
+                      'transaction_date', 'total', 'subtotal', 'tax', 'instant_savings',
+                      'parsed_successfully', 'user__username']
+
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = f'attachment; filename=receipts_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+        writer = csv.writer(response)
+
+        # Write header
+        writer.writerow(field_names)
+        
+        # Write data
+        for obj in queryset:
+            row = []
+            for field in field_names:
+                if field == 'user__username':
+                    row.append(obj.user.username)
+                else:
+                    value = getattr(obj, field)
+                    if isinstance(value, datetime):
+                        value = value.strftime('%Y-%m-%d %H:%M:%S')
+                    row.append(value)
+            writer.writerow(row)
+
+        return response
+    export_as_csv.short_description = "Export selected receipts as CSV"
+
+    def export_as_json(self, request, queryset):
+        data = []
+        for receipt in queryset:
+            receipt_data = {
+                'transaction_number': receipt.transaction_number,
+                'store_location': receipt.store_location,
+                'store_city': receipt.store_city,
+                'store_number': receipt.store_number,
+                'transaction_date': receipt.transaction_date.strftime('%Y-%m-%d %H:%M:%S'),
+                'total': str(receipt.total),
+                'subtotal': str(receipt.subtotal),
+                'tax': str(receipt.tax),
+                'instant_savings': str(receipt.instant_savings) if receipt.instant_savings else None,
+                'parsed_successfully': receipt.parsed_successfully,
+                'user': receipt.user.username,
+                'items': [{
+                    'item_code': item.item_code,
+                    'description': item.description,
+                    'price': str(item.price),
+                    'quantity': item.quantity,
+                    'is_taxable': item.is_taxable,
+                    'instant_savings': str(item.instant_savings) if item.instant_savings else None,
+                } for item in receipt.items.all()]
+            }
+            data.append(receipt_data)
+
+        response = HttpResponse(content_type='application/json')
+        response['Content-Disposition'] = f'attachment; filename=receipts_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json'
+        json.dump(data, response, indent=2)
+        return response
+    export_as_json.short_description = "Export selected receipts as JSON"
+
 @admin.register(PriceAdjustmentAlert)
 class PriceAdjustmentAlertAdmin(BaseModelAdmin):
     list_display = ('item_description', 'user', 'original_store_city', 'cheaper_store_city',
@@ -154,7 +266,7 @@ class PriceAdjustmentAlertAdmin(BaseModelAdmin):
     date_hierarchy = 'purchase_date'
     list_per_page = 50
     raw_id_fields = ('user',)
-    actions = ['mark_as_expired', 'mark_as_dismissed']
+    actions = ['mark_as_expired', 'mark_as_dismissed', 'export_as_csv', 'export_as_json']
 
     def mark_as_expired(self, request, queryset):
         updated = queryset.update(is_active=False, is_expired=True)
@@ -187,6 +299,60 @@ class PriceAdjustmentAlertAdmin(BaseModelAdmin):
         return format_html('<span style="color: green">Active</span>')
     status_display.short_description = "Status"
 
+    def export_as_csv(self, request, queryset):
+        meta = self.model._meta
+        field_names = ['item_code', 'item_description', 'original_price', 'lower_price',
+                      'original_store_city', 'cheaper_store_city', 'purchase_date',
+                      'days_remaining', 'is_active', 'is_dismissed', 'user__username']
+
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = f'attachment; filename=price_adjustments_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+        writer = csv.writer(response)
+
+        # Write header
+        writer.writerow(field_names)
+        
+        # Write data
+        for obj in queryset:
+            row = []
+            for field in field_names:
+                if field == 'user__username':
+                    row.append(obj.user.username)
+                else:
+                    value = getattr(obj, field)
+                    if isinstance(value, datetime):
+                        value = value.strftime('%Y-%m-%d %H:%M:%S')
+                    row.append(value)
+            writer.writerow(row)
+
+        return response
+    export_as_csv.short_description = "Export selected alerts as CSV"
+
+    def export_as_json(self, request, queryset):
+        data = []
+        for alert in queryset:
+            alert_data = {
+                'item_code': alert.item_code,
+                'item_description': alert.item_description,
+                'original_price': str(alert.original_price),
+                'lower_price': str(alert.lower_price),
+                'price_difference': str(alert.price_difference),
+                'original_store_city': alert.original_store_city,
+                'cheaper_store_city': alert.cheaper_store_city,
+                'purchase_date': alert.purchase_date.strftime('%Y-%m-%d %H:%M:%S'),
+                'days_remaining': alert.days_remaining,
+                'is_active': alert.is_active,
+                'is_dismissed': alert.is_dismissed,
+                'user': alert.user.username,
+            }
+            data.append(alert_data)
+
+        response = HttpResponse(content_type='application/json')
+        response['Content-Disposition'] = f'attachment; filename=price_adjustments_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json'
+        json.dump(data, response, indent=2)
+        return response
+    export_as_json.short_description = "Export selected alerts as JSON"
+
 @admin.register(LineItem)
 class LineItemAdmin(BaseModelAdmin):
     list_display = ('item_code', 'description', 'price', 'quantity', 'total_price', 
@@ -202,6 +368,7 @@ class LineItemAdmin(BaseModelAdmin):
     raw_id_fields = ('receipt',)
     list_per_page = 100
     show_full_result_count = False
+    actions = ['export_as_csv', 'export_as_json']
 
     def get_queryset(self, request):
         return super().get_queryset(request)\
@@ -222,6 +389,54 @@ class LineItemAdmin(BaseModelAdmin):
                          obj.receipt.id, obj.receipt.transaction_number)
     receipt_link.short_description = 'Receipt'
 
+    def export_as_csv(self, request, queryset):
+        field_names = ['item_code', 'description', 'price', 'quantity', 'discount',
+                      'is_taxable', 'instant_savings', 'original_price', 'receipt__transaction_number']
+
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = f'attachment; filename=line_items_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+        writer = csv.writer(response)
+
+        writer.writerow(field_names)
+        for obj in queryset:
+            row = []
+            for field in field_names:
+                if field == 'receipt__transaction_number':
+                    row.append(obj.receipt.transaction_number)
+                else:
+                    value = getattr(obj, field)
+                    row.append(str(value) if value is not None else '')
+            writer.writerow(row)
+
+        return response
+    export_as_csv.short_description = "Export selected items as CSV"
+
+    def export_as_json(self, request, queryset):
+        data = []
+        for item in queryset:
+            item_data = {
+                'item_code': item.item_code,
+                'description': item.description,
+                'price': str(item.price),
+                'quantity': item.quantity,
+                'discount': str(item.discount) if item.discount else None,
+                'is_taxable': item.is_taxable,
+                'instant_savings': str(item.instant_savings) if item.instant_savings else None,
+                'original_price': str(item.original_price) if item.original_price else None,
+                'receipt': {
+                    'transaction_number': item.receipt.transaction_number,
+                    'store_location': item.receipt.store_location,
+                    'transaction_date': item.receipt.transaction_date.strftime('%Y-%m-%d %H:%M:%S')
+                }
+            }
+            data.append(item_data)
+
+        response = HttpResponse(content_type='application/json')
+        response['Content-Disposition'] = f'attachment; filename=line_items_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json'
+        json.dump(data, response, indent=2)
+        return response
+    export_as_json.short_description = "Export selected items as JSON"
+
 @admin.register(CostcoItem)
 class CostcoItemAdmin(BaseModelAdmin):
     list_display = ('item_code', 'description', 'current_price', 'price_history_count', 
@@ -231,6 +446,7 @@ class CostcoItemAdmin(BaseModelAdmin):
     readonly_fields = ('last_price_update', 'created_at', 'updated_at', 'price_history_count')
     ordering = ('item_code',)
     list_per_page = 100
+    actions = ['export_as_csv', 'export_as_json']
 
     def get_queryset(self, request):
         return super().get_queryset(request)\
@@ -248,6 +464,49 @@ class CostcoItemAdmin(BaseModelAdmin):
     price_history_count.short_description = 'Price Changes'
     price_history_count.admin_order_field = 'price_history_count'
 
+    def export_as_csv(self, request, queryset):
+        field_names = ['item_code', 'description', 'current_price', 'last_price_update']
+        
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = f'attachment; filename=costco_items_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+        writer = csv.writer(response)
+
+        writer.writerow(field_names)
+        for obj in queryset:
+            row = []
+            for field in field_names:
+                value = getattr(obj, field)
+                if isinstance(value, datetime):
+                    value = value.strftime('%Y-%m-%d %H:%M:%S')
+                row.append(str(value) if value is not None else '')
+            writer.writerow(row)
+
+        return response
+    export_as_csv.short_description = "Export selected items as CSV"
+
+    def export_as_json(self, request, queryset):
+        data = []
+        for item in queryset:
+            item_data = {
+                'item_code': item.item_code,
+                'description': item.description,
+                'current_price': str(item.current_price) if item.current_price else None,
+                'last_price_update': item.last_price_update.strftime('%Y-%m-%d %H:%M:%S') if item.last_price_update else None,
+                'price_history': [{
+                    'date': history.date_changed.strftime('%Y-%m-%d %H:%M:%S'),
+                    'old_price': str(history.old_price) if history.old_price else None,
+                    'new_price': str(history.new_price),
+                    'warehouse': history.warehouse.store_number
+                } for history in item.price_history.all()]
+            }
+            data.append(item_data)
+
+        response = HttpResponse(content_type='application/json')
+        response['Content-Disposition'] = f'attachment; filename=costco_items_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json'
+        json.dump(data, response, indent=2)
+        return response
+    export_as_json.short_description = "Export selected items as JSON"
+
 @admin.register(CostcoWarehouse)
 class CostcoWarehouseAdmin(BaseModelAdmin):
     list_display = ('store_number', 'location', 'city', 'state', 'item_count', 'updated_at')
@@ -256,6 +515,7 @@ class CostcoWarehouseAdmin(BaseModelAdmin):
     readonly_fields = ('created_at', 'updated_at', 'item_count')
     ordering = ('store_number',)
     list_per_page = 50
+    actions = ['export_as_csv', 'export_as_json']
 
     def get_queryset(self, request):
         return super().get_queryset(request).annotate(
@@ -267,69 +527,153 @@ class CostcoWarehouseAdmin(BaseModelAdmin):
     item_count.short_description = 'Items Tracked'
     item_count.admin_order_field = 'item_count'
 
+    def export_as_csv(self, request, queryset):
+        field_names = ['store_number', 'location', 'city', 'state']
+        
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = f'attachment; filename=warehouses_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+        writer = csv.writer(response)
+
+        writer.writerow(field_names)
+        for obj in queryset:
+            writer.writerow([getattr(obj, field) for field in field_names])
+
+        return response
+    export_as_csv.short_description = "Export selected warehouses as CSV"
+
+    def export_as_json(self, request, queryset):
+        data = []
+        for warehouse in queryset:
+            warehouse_data = {
+                'store_number': warehouse.store_number,
+                'location': warehouse.location,
+                'city': warehouse.city,
+                'state': warehouse.state,
+                'current_prices': [{
+                    'item_code': price.item.item_code,
+                    'description': price.item.description,
+                    'price': str(price.price),
+                    'last_seen': price.last_seen.strftime('%Y-%m-%d %H:%M:%S')
+                } for price in warehouse.itemwarehouseprice_set.select_related('item').all()]
+            }
+            data.append(warehouse_data)
+
+        response = HttpResponse(content_type='application/json')
+        response['Content-Disposition'] = f'attachment; filename=warehouses_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json'
+        json.dump(data, response, indent=2)
+        return response
+    export_as_json.short_description = "Export selected warehouses as JSON"
+
 @admin.register(ItemPriceHistory)
 class ItemPriceHistoryAdmin(BaseModelAdmin):
-    list_display = ('item_link', 'warehouse_link', 'old_price', 'new_price', 
-                   'price_change_display', 'date_changed')
+    list_display = ('item', 'warehouse', 'old_price', 'new_price', 'date_changed')
     list_filter = ('warehouse', 'date_changed')
     search_fields = ('item__item_code', 'item__description', 'warehouse__store_number')
-    readonly_fields = ('created_at',)
-    ordering = ('-date_changed',)
     raw_id_fields = ('item', 'warehouse')
-    list_per_page = 100
-    show_full_result_count = False
+    ordering = ('-date_changed',)
+    actions = ['export_as_csv', 'export_as_json']
 
-    def get_queryset(self, request):
-        return super().get_queryset(request)\
-            .select_related('item', 'warehouse')\
-            .annotate(
-                price_change=F('new_price') - F('old_price'),
-                change_percentage=(F('new_price') - F('old_price')) / F('old_price') * 100
-            )
+    def export_as_csv(self, request, queryset):
+        field_names = ['item__item_code', 'item__description', 'warehouse__store_number',
+                      'old_price', 'new_price', 'date_changed']
+        
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = f'attachment; filename=price_history_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+        writer = csv.writer(response)
 
-    def price_change_display(self, obj):
-        if obj.old_price and obj.new_price:
-            change = obj.new_price - obj.old_price
-            color = 'red' if change > 0 else 'green'
-            return format_html('<span style="color: {}">{:+.2f}</span>', color, change)
-        return '-'
-    price_change_display.short_description = 'Price Change'
+        writer.writerow(['item_code', 'description', 'store_number', 'old_price', 'new_price', 'date_changed'])
+        for obj in queryset:
+            row = [
+                obj.item.item_code,
+                obj.item.description,
+                obj.warehouse.store_number,
+                str(obj.old_price) if obj.old_price else '',
+                str(obj.new_price),
+                obj.date_changed.strftime('%Y-%m-%d %H:%M:%S')
+            ]
+            writer.writerow(row)
 
-    def item_link(self, obj):
-        return format_html('<a href="/admin/receipt_parser/costcoitem/{}/">{} - {}</a>', 
-                         obj.item.item_code, obj.item.item_code, obj.item.description)
-    item_link.short_description = 'Item'
+        return response
+    export_as_csv.short_description = "Export selected price history as CSV"
 
-    def warehouse_link(self, obj):
-        return format_html('<a href="/admin/receipt_parser/costcowarehouse/{}/">{}</a>', 
-                         obj.warehouse.store_number, obj.warehouse.location)
-    warehouse_link.short_description = 'Warehouse'
+    def export_as_json(self, request, queryset):
+        data = []
+        for history in queryset:
+            history_data = {
+                'item': {
+                    'item_code': history.item.item_code,
+                    'description': history.item.description
+                },
+                'warehouse': {
+                    'store_number': history.warehouse.store_number,
+                    'location': history.warehouse.location
+                },
+                'old_price': str(history.old_price) if history.old_price else None,
+                'new_price': str(history.new_price),
+                'date_changed': history.date_changed.strftime('%Y-%m-%d %H:%M:%S'),
+                'price_change': str(float(history.new_price) - float(history.old_price)) if history.old_price else None
+            }
+            data.append(history_data)
+
+        response = HttpResponse(content_type='application/json')
+        response['Content-Disposition'] = f'attachment; filename=price_history_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json'
+        json.dump(data, response, indent=2)
+        return response
+    export_as_json.short_description = "Export selected price history as JSON"
 
 @admin.register(ItemWarehousePrice)
 class ItemWarehousePriceAdmin(BaseModelAdmin):
-    list_display = ('item_link', 'warehouse_link', 'price', 'last_seen', 'updated_at')
+    list_display = ('item', 'warehouse', 'price', 'last_seen')
     list_filter = ('warehouse', 'last_seen')
     search_fields = ('item__item_code', 'item__description', 'warehouse__store_number')
-    readonly_fields = ('created_at', 'updated_at')
-    ordering = ('item', 'warehouse')
     raw_id_fields = ('item', 'warehouse')
-    list_per_page = 100
-    show_full_result_count = False
+    ordering = ('item', 'warehouse')
+    actions = ['export_as_csv', 'export_as_json']
 
-    def get_queryset(self, request):
-        return super().get_queryset(request)\
-            .select_related('item', 'warehouse')\
-            .annotate(
-                days_since_update=TruncDate('updated_at') - TruncDate('created_at'),
-                price_vs_avg=(F('price') - Avg('item__warehouse_prices__price')) / Avg('item__warehouse_prices__price') * 100
-            )
+    def export_as_csv(self, request, queryset):
+        field_names = ['item__item_code', 'item__description', 'warehouse__store_number',
+                      'price', 'last_seen']
+        
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = f'attachment; filename=current_prices_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+        writer = csv.writer(response)
 
-    def item_link(self, obj):
-        return format_html('<a href="/admin/receipt_parser/costcoitem/{}/">{} - {}</a>', 
-                         obj.item.item_code, obj.item.item_code, obj.item.description)
-    item_link.short_description = 'Item'
+        writer.writerow(['item_code', 'description', 'store_number', 'price', 'last_seen'])
+        for obj in queryset:
+            row = [
+                obj.item.item_code,
+                obj.item.description,
+                obj.warehouse.store_number,
+                str(obj.price),
+                obj.last_seen.strftime('%Y-%m-%d %H:%M:%S')
+            ]
+            writer.writerow(row)
 
-    def warehouse_link(self, obj):
-        return format_html('<a href="/admin/receipt_parser/costcowarehouse/{}/">{}</a>', 
-                         obj.warehouse.store_number, obj.warehouse.location)
-    warehouse_link.short_description = 'Warehouse'
+        return response
+    export_as_csv.short_description = "Export selected prices as CSV"
+
+    def export_as_json(self, request, queryset):
+        data = []
+        for price in queryset:
+            price_data = {
+                'item': {
+                    'item_code': price.item.item_code,
+                    'description': price.item.description,
+                    'current_price': str(price.item.current_price) if price.item.current_price else None
+                },
+                'warehouse': {
+                    'store_number': price.warehouse.store_number,
+                    'location': price.warehouse.location,
+                    'city': price.warehouse.city,
+                    'state': price.warehouse.state
+                },
+                'price': str(price.price),
+                'last_seen': price.last_seen.strftime('%Y-%m-%d %H:%M:%S')
+            }
+            data.append(price_data)
+
+        response = HttpResponse(content_type='application/json')
+        response['Content-Disposition'] = f'attachment; filename=current_prices_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json'
+        json.dump(data, response, indent=2)
+        return response
+    export_as_json.short_description = "Export selected prices as JSON"

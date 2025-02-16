@@ -28,9 +28,27 @@ import {
   DateRange as DateIcon,
   Warning as WarningIcon,
   Visibility as ViewIcon,
+  Add as AddIcon,
 } from '@mui/icons-material';
 import { format } from 'date-fns';
 import api from '../api/axios';
+import { alpha } from '@mui/material/styles';
+import { useTheme } from '@mui/material/styles';
+import PriceAdjustmentAlert from '../components/PriceAdjustmentAlert';
+
+interface PriceAdjustmentInfo {
+  item_code: string;
+  description: string;
+  current_price: number;
+  lower_price: number;
+  price_difference: number;
+  store_location: string;
+  store_number: string;
+  purchase_date: string;
+  days_remaining: number;
+  original_store: string;
+  original_store_number: string;
+}
 
 interface ReceiptItem {
   id: number;
@@ -208,7 +226,9 @@ const ReceiptList: React.FC = () => {
   const [debugInfo, setDebugInfo] = useState('');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedReceipt, setSelectedReceipt] = useState<Receipt | null>(null);
+  const [priceAdjustments, setPriceAdjustments] = useState<PriceAdjustmentInfo[]>([]);
   const navigate = useNavigate();
+  const theme = useTheme();
 
   const handleDeleteClick = (receipt: Receipt) => {
     setSelectedReceipt(receipt);
@@ -264,12 +284,26 @@ const ReceiptList: React.FC = () => {
       }
     };
 
+    const fetchPriceAdjustments = async () => {
+      try {
+        const response = await api.get('/api/price-adjustments/');
+        setPriceAdjustments(response.data);
+      } catch (error) {
+        console.error('Error fetching price adjustments:', error);
+      }
+    };
+
     fetchReceipts();
+    fetchPriceAdjustments();
 
     return () => {
       mounted = false;
     };
   }, []);
+
+  const handleDismissAdjustment = (itemCode: string) => {
+    setPriceAdjustments(prev => prev.filter(adj => adj.item_code !== itemCode));
+  };
 
   if (loading) {
     return (
@@ -305,45 +339,156 @@ const ReceiptList: React.FC = () => {
   }
 
   return (
-    <Container maxWidth="lg" sx={{ py: 4 }}>
-      <Box sx={{ mb: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Typography variant="h4">
-          My Receipts
+    <Container maxWidth="xl" sx={{ py: 2 }}>
+      <PriceAdjustmentAlert 
+        adjustments={priceAdjustments}
+        onDismiss={handleDismissAdjustment}
+      />
+
+      <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Typography variant="h5" component="h1" fontWeight="medium">
+          Your Receipts
         </Typography>
-        <Button 
-          variant="contained" 
-          color="primary" 
-          component={RouterLink} 
-          to="/upload"
+        <Button
+          variant="contained"
+          startIcon={<AddIcon />}
+          onClick={() => navigate('/upload')}
+          sx={{
+            px: 2,
+            py: 1,
+            borderRadius: 1.5,
+            textTransform: 'none',
+            boxShadow: 1,
+          }}
         >
-          Upload Receipt
+          Upload New
         </Button>
       </Box>
 
       {(!Array.isArray(receipts) || receipts.length === 0) ? (
         <EmptyState />
       ) : (
-        <Grid container spacing={3}>
+        <Grid container spacing={2}>
           {receipts.map((receipt, index) => (
-            <Grid item xs={12} sm={6} md={4} key={receipt.transaction_number}>
-              <Fade in timeout={300} style={{ transitionDelay: `${index * 100}ms` }}>
+            <Grid item xs={12} sm={6} md={4} lg={3} key={receipt.transaction_number}>
+              <Fade in timeout={300} style={{ transitionDelay: `${index * 50}ms` }}>
                 <Paper 
-                  elevation={2}
+                  elevation={1}
                   sx={{
                     height: '100%',
-                    borderRadius: 3,
-                    transition: 'all 0.3s ease-in-out',
+                    borderRadius: 2,
+                    transition: 'all 0.2s ease-in-out',
                     '&:hover': {
-                      transform: 'translateY(-4px)',
-                      boxShadow: 6,
+                      transform: 'translateY(-2px)',
+                      boxShadow: 2,
                     },
                   }}
                 >
-                  <ReceiptCard 
-                    receipt={receipt}
-                    onDelete={handleDeleteClick}
-                    navigate={navigate}
-                  />
+                  <CardContent sx={{ p: 2 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1.5 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <StoreIcon color="primary" sx={{ fontSize: 20 }} />
+                        <Box>
+                          <Typography variant="subtitle1" component="div" noWrap>
+                            Costco #{receipt.transaction_number.slice(-4)}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary" noWrap>
+                            {receipt.store_location}
+                          </Typography>
+                        </Box>
+                      </Box>
+                      <Box sx={{ display: 'flex', gap: 0.5 }}>
+                        <Tooltip title="Delete Receipt">
+                          <IconButton
+                            size="small"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              e.preventDefault();
+                              handleDeleteClick(receipt);
+                            }}
+                            sx={{
+                              color: 'error.main',
+                              '&:hover': {
+                                backgroundColor: alpha(theme.palette.error.main, 0.1),
+                              },
+                            }}
+                          >
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip title="View Details">
+                          <IconButton
+                            size="small"
+                            onClick={() => navigate(`/receipts/${receipt.transaction_number}`)}
+                            sx={{
+                              color: 'primary.main',
+                              '&:hover': {
+                                backgroundColor: alpha(theme.palette.primary.main, 0.1),
+                              },
+                            }}
+                          >
+                            <ViewIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      </Box>
+                    </Box>
+
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+                      <DateIcon sx={{ color: 'text.secondary', fontSize: 18 }} />
+                      <Typography variant="body2" color="text.secondary">
+                        {new Date(receipt.transaction_date).toLocaleDateString(undefined, {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric',
+                        })}
+                      </Typography>
+                    </Box>
+
+                    <Box sx={{ 
+                      display: 'flex', 
+                      justifyContent: 'space-between', 
+                      alignItems: 'center',
+                      backgroundColor: alpha(theme.palette.primary.main, 0.1),
+                      color: 'primary.main',
+                      p: 1,
+                      borderRadius: 1,
+                    }}>
+                      <Typography variant="subtitle1" fontWeight="medium">
+                        ${receipt.total}
+                      </Typography>
+                      <Chip
+                        label={`${receipt.items_count} items`}
+                        size="small"
+                        sx={{ 
+                          backgroundColor: alpha(theme.palette.primary.main, 0.2),
+                          color: 'primary.main',
+                          '.MuiChip-label': {
+                            px: 1,
+                            fontSize: '0.75rem',
+                          },
+                        }}
+                      />
+                    </Box>
+
+                    {!receipt.parsed_successfully && (
+                      <Alert
+                        severity="warning"
+                        icon={<WarningIcon fontSize="small" />}
+                        sx={{ 
+                          mt: 1.5,
+                          py: 0.5,
+                          px: 1,
+                          '& .MuiAlert-message': {
+                            padding: 0,
+                          },
+                        }}
+                      >
+                        <Typography variant="caption">
+                          Parse warning
+                        </Typography>
+                      </Alert>
+                    )}
+                  </CardContent>
                 </Paper>
               </Fade>
             </Grid>
@@ -351,20 +496,19 @@ const ReceiptList: React.FC = () => {
         </Grid>
       )}
 
-      <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)}>
+      <Dialog
+        open={deleteDialogOpen}
+        onClose={() => setDeleteDialogOpen(false)}
+      >
         <DialogTitle>Delete Receipt?</DialogTitle>
         <DialogContent>
           <Typography>
-            Are you sure you want to delete receipt {selectedReceipt?.transaction_number}?
+            Are you sure you want to delete this receipt? This action cannot be undone.
           </Typography>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
-          <Button 
-            onClick={handleDeleteConfirm} 
-            color="error"
-            variant="contained"
-          >
+          <Button onClick={handleDeleteConfirm} color="error" variant="contained">
             Delete
           </Button>
         </DialogActions>
