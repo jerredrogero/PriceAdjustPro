@@ -1,16 +1,17 @@
 import React from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 import {
-  Container,
+  Box,
   Typography,
   Button,
-  Box,
+  Container,
   Grid,
   Paper,
   List,
   ListItem,
   ListItemIcon,
   ListItemText,
+  Alert,
   useTheme,
   alpha,
 } from '@mui/material';
@@ -21,6 +22,7 @@ import {
   Analytics as AnalyticsIcon,
   ArrowForward as ArrowForwardIcon,
   ShoppingCart as CartIcon,
+  Check as CheckIcon,
 } from '@mui/icons-material';
 
 const Landing: React.FC = () => {
@@ -56,7 +58,7 @@ const Landing: React.FC = () => {
         sx={{
           background: `linear-gradient(45deg, ${theme.palette.primary.main}, ${theme.palette.primary.dark})`,
           color: 'white',
-          py: 12,
+          py: 8,
           mb: 6,
         }}
       >
@@ -64,10 +66,10 @@ const Landing: React.FC = () => {
           <Grid container spacing={6} alignItems="center">
             <Grid item xs={12} md={7}>
               <Typography variant="h2" component="h1" gutterBottom fontWeight="bold">
-                Save Money on Your Costco Purchases
+                Never Miss a Price Drop
               </Typography>
               <Typography variant="h5" paragraph sx={{ mb: 4, opacity: 0.9 }}>
-                Track your receipts, get price drop alerts, and never miss out on price adjustments again.
+                Track your Costco receipts and get notified when prices drop within 30 days of your purchase.
               </Typography>
               <Button
                 variant="contained"
@@ -98,41 +100,84 @@ const Landing: React.FC = () => {
         </Container>
       </Box>
 
-      {/* Features Section */}
+      {/* Price Adjustment Policy Section */}
       <Container maxWidth="lg" sx={{ mb: 8 }}>
+        <Typography variant="h4" align="center" gutterBottom>
+          Costco Price Adjustment Policy
+        </Typography>
+        <Typography variant="h6" align="center" color="text.secondary" paragraph sx={{ mb: 6 }}>
+          Get the difference back when prices drop
+        </Typography>
+
         <Grid container spacing={4}>
-          {features.map((feature, index) => (
-            <Grid item xs={12} sm={6} md={3} key={index}>
-              <Paper
-                elevation={2}
-                sx={{
-                  p: 3,
-                  height: '100%',
-                  transition: 'transform 0.2s',
-                  '&:hover': {
-                    transform: 'translateY(-4px)',
-                  },
-                }}
-              >
-                <Box sx={{ color: 'primary.main', mb: 2 }}>
-                  {feature.icon}
-                </Box>
-                <Typography variant="h6" gutterBottom>
-                  {feature.title}
+          <Grid item xs={12} md={6}>
+            <Paper sx={{ p: 4, height: '100%' }}>
+              <Typography variant="h5" gutterBottom color="primary">
+                What is a Price Adjustment?
+              </Typography>
+              <Typography paragraph>
+                When an item you purchased goes on sale within 30 days, Costco will refund you the difference between what you paid and the new sale price.
+              </Typography>
+              <Typography paragraph>
+                This applies to both regular price reductions and instant savings offers that appear after your purchase.
+              </Typography>
+              <Box sx={{ mt: 3 }}>
+                <Typography variant="subtitle1" color="primary" gutterBottom>
+                  Example:
                 </Typography>
-                <Typography color="text.secondary">
-                  {feature.description}
+                <Typography>
+                  You buy an item for $49.99. Two weeks later, it goes on sale for $39.99.
+                  You're eligible for a $10 refund!
                 </Typography>
-              </Paper>
-            </Grid>
-          ))}
+              </Box>
+            </Paper>
+          </Grid>
+          <Grid item xs={12} md={6}>
+            <Paper sx={{ p: 4, height: '100%' }}>
+              <Typography variant="h5" gutterBottom color="primary">
+                How to Get Your Refund
+              </Typography>
+              <List>
+                <ListItem>
+                  <ListItemIcon>
+                    <CheckIcon color="success" />
+                  </ListItemIcon>
+                  <ListItemText 
+                    primary="Visit any Costco warehouse" 
+                    secondary="You can get your adjustment at any location, not just where you made the purchase."
+                  />
+                </ListItem>
+                <ListItem>
+                  <ListItemIcon>
+                    <CheckIcon color="success" />
+                  </ListItemIcon>
+                  <ListItemText 
+                    primary="Bring your membership card" 
+                    secondary="It's preferred you have a copy of your receipt, but they can look up your purchase history from your membership card."
+                  />
+                </ListItem>
+                <ListItem>
+                  <ListItemIcon>
+                    <CheckIcon color="success" />
+                  </ListItemIcon>
+                  <ListItemText 
+                    primary="Have the item number(s) ready" 
+                    secondary="You may want a picture of the item on sale in store, but it's not required."
+                  />
+                </ListItem>
+              </List>
+              <Alert severity="success" sx={{ mt: 3 }}>
+                <Typography variant="subtitle2">Request your refund!</Typography>
+              </Alert>
+            </Paper>
+          </Grid>
         </Grid>
       </Container>
 
-      {/* How It Works Section */}
+      {/* Features Section */}
       <Box sx={{ bgcolor: 'grey.50', py: 8 }}>
         <Container maxWidth="lg">
-          <Typography variant="h3" align="center" gutterBottom>
+          <Typography variant="h4" align="center" gutterBottom>
             How It Works
           </Typography>
           <Typography variant="h6" align="center" color="text.secondary" paragraph sx={{ mb: 6 }}>
@@ -146,19 +191,55 @@ const Landing: React.FC = () => {
                   1
                 </Typography>
                 <Typography variant="h6" gutterBottom>
-                  Find Your Costco Receipts
+                  Get Your Receipt
                 </Typography>
-                <Typography paragraph color="text.secondary">
-                  Log in to your Costco.com account, go to Orders & Returns, and download your receipt PDFs.
-                </Typography>
+                <List dense>
+                  <ListItem>
+                    <ListItemIcon>
+                      <ArrowForwardIcon color="primary" fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText primary="Log in to Costco.com" />
+                  </ListItem>
+                  <ListItem>
+                    <ListItemIcon>
+                      <ArrowForwardIcon color="primary" fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText primary="Click Orders & Returns" />
+                  </ListItem>
+                  <ListItem>
+                    <ListItemIcon>
+                      <ArrowForwardIcon color="primary" fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText primary="Select Warehouse tab" />
+                  </ListItem>
+                  <ListItem>
+                    <ListItemIcon>
+                      <ArrowForwardIcon color="primary" fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText primary="Click View Receipt" />
+                  </ListItem>
+                  <ListItem>
+                    <ListItemIcon>
+                      <ArrowForwardIcon color="primary" fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText primary="Click Print Receipt" />
+                  </ListItem>
+                  <ListItem>
+                    <ListItemIcon>
+                      <ArrowForwardIcon color="primary" fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText primary="Choose Save as PDF" secondary="In the print dialog" />
+                  </ListItem>
+                </List>
                 <Button
                   variant="outlined"
                   component="a"
                   href="https://www.costco.com/OrderStatusCmd"
                   target="_blank"
                   rel="noopener noreferrer"
+                  sx={{ mt: 2 }}
                 >
-                  Visit Costco.com
+                  Go to Costco.com
                 </Button>
               </Paper>
             </Grid>
@@ -168,15 +249,36 @@ const Landing: React.FC = () => {
                   2
                 </Typography>
                 <Typography variant="h6" gutterBottom>
-                  Upload Your Receipts
+                  Upload Your Receipt
                 </Typography>
-                <Typography paragraph color="text.secondary">
-                  Create an account and upload your receipt PDFs. Save time by uploading multiple receipts at once. Our system will automatically extract and organize your purchase data.
+                <Typography paragraph>
+                  Create an account and upload your receipt PDFs. Our system will automatically:
                 </Typography>
+                <List dense>
+                  <ListItem>
+                    <ListItemIcon>
+                      <CheckIcon color="success" fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText primary="Extract all item details" />
+                  </ListItem>
+                  <ListItem>
+                    <ListItemIcon>
+                      <CheckIcon color="success" fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText primary="Track prices across locations" />
+                  </ListItem>
+                  <ListItem>
+                    <ListItemIcon>
+                      <CheckIcon color="success" fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText primary="Monitor for price drops" />
+                  </ListItem>
+                </List>
                 <Button
                   variant="outlined"
                   component={RouterLink}
                   to="/register"
+                  sx={{ mt: 2 }}
                 >
                   Create Account
                 </Button>
@@ -188,82 +290,39 @@ const Landing: React.FC = () => {
                   3
                 </Typography>
                 <Typography variant="h6" gutterBottom>
-                  Start Saving
+                  Get Notified & Save
                 </Typography>
-                <Typography paragraph color="text.secondary">
-                  Get notified when prices drop within 30 days of your purchase. Visit any Costco location to claim your price adjustment.
+                <Typography paragraph>
+                  We'll notify you when:
                 </Typography>
-                <Button
-                  variant="outlined"
-                  component={RouterLink}
-                  to="/register"
-                >
-                  Get Started
-                </Button>
+                <List dense>
+                  <ListItem>
+                    <ListItemIcon>
+                      <NotificationsIcon color="primary" fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText primary="Items go on sale" />
+                  </ListItem>
+                  <ListItem>
+                    <ListItemIcon>
+                      <NotificationsIcon color="primary" fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText primary="Instant savings appear" />
+                  </ListItem>
+                  <ListItem>
+                    <ListItemIcon>
+                      <NotificationsIcon color="primary" fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText primary="Lower prices found at other locations" />
+                  </ListItem>
+                </List>
+                <Alert severity="info" sx={{ mt: 2 }}>
+                  You have 30 days from your purchase date to claim your adjustment!
+                </Alert>
               </Paper>
             </Grid>
           </Grid>
         </Container>
       </Box>
-
-      {/* Finding Receipts Guide */}
-      <Container maxWidth="lg" sx={{ py: 8 }}>
-        <Typography variant="h4" gutterBottom>
-          How to Find Your Costco Receipts
-        </Typography>
-        <Paper sx={{ p: 4 }}>
-          <List>
-            <ListItem>
-              <ListItemIcon>
-                <Typography variant="h6" color="primary">1.</Typography>
-              </ListItemIcon>
-              <ListItemText 
-                primary="Log in to Costco.com" 
-                secondary="Visit Costco.com and sign in to your account"
-              />
-            </ListItem>
-            <ListItem>
-              <ListItemIcon>
-                <Typography variant="h6" color="primary">2.</Typography>
-              </ListItemIcon>
-              <ListItemText 
-                primary="Navigate to Orders & Returns" 
-                secondary="Click on 'Orders & Returns' in the top navigation menu"
-              />
-            </ListItem>
-            <ListItem>
-              <ListItemIcon>
-                <Typography variant="h6" color="primary">3.</Typography>
-              </ListItemIcon>
-              <ListItemText 
-                primary="Find Your Order" 
-                secondary="Locate the order you want to track"
-              />
-            </ListItem>
-            <ListItem>
-              <ListItemIcon>
-                <Typography variant="h6" color="primary">4.</Typography>
-              </ListItemIcon>
-              <ListItemText 
-                primary="Download Receipt" 
-                secondary="Click 'View Receipt' and download the PDF"
-              />
-            </ListItem>
-          </List>
-          <Box sx={{ mt: 3 }}>
-            <Button
-              variant="contained"
-              component="a"
-              href="https://www.costco.com/OrderStatusCmd"
-              target="_blank"
-              rel="noopener noreferrer"
-              endIcon={<ArrowForwardIcon />}
-            >
-              Go to Costco Orders
-            </Button>
-          </Box>
-        </Paper>
-      </Container>
     </Box>
   );
 };
