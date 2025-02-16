@@ -12,6 +12,7 @@ import PriceAdjustments from './pages/PriceAdjustments';
 import Analytics from './pages/Analytics';
 import Landing from './pages/Landing';
 import Navigation from './components/Navigation';
+import ReceiptDetail from './pages/ReceiptDetail';
 
 const theme = createTheme({
   palette: {
@@ -44,6 +45,7 @@ const App: React.FC = () => {
             <Route element={<Layout />}>
               <Route path="/dashboard" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
               <Route path="/receipts" element={<PrivateRoute><ReceiptList /></PrivateRoute>} />
+              <Route path="/receipts/:transactionNumber" element={<PrivateRoute><ReceiptDetail /></PrivateRoute>} />
               <Route path="/upload" element={<PrivateRoute><ReceiptUpload /></PrivateRoute>} />
               <Route path="/price-adjustments" element={<PrivateRoute><PriceAdjustments /></PrivateRoute>} />
               <Route path="/analytics" element={<PrivateRoute><Analytics /></PrivateRoute>} />

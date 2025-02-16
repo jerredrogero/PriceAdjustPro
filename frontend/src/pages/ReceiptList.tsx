@@ -126,7 +126,7 @@ const ReceiptCard = ({
             </Tooltip>
             <Tooltip title="View Details">
               <IconButton
-                onClick={() => navigate(`/receipt/${receipt.transaction_number}`)}
+                onClick={() => navigate(`/receipts/${receipt.transaction_number}`)}
                 color="primary"
                 sx={{
                   backgroundColor: 'action.hover',

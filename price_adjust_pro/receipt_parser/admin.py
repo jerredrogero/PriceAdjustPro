@@ -53,8 +53,8 @@ class LineItemInline(admin.TabularInline):
 @admin.register(Receipt)
 class ReceiptAdmin(BaseModelAdmin):
     list_display = ('transaction_number', 'store_location', 'store_city', 'store_number', 
-                   'transaction_date', 'total', 'items_count', 'instant_savings_display', 
-                   'parsed_successfully', 'user_link')
+                   'transaction_date', 'total_display', 'items_count', 'instant_savings_display', 
+                   'parse_status', 'user_link')
     list_filter = (
         'store_location', 
         'store_city', 
@@ -65,11 +65,12 @@ class ReceiptAdmin(BaseModelAdmin):
     )
     search_fields = ('transaction_number', 'store_location', 'store_city', 'user__username', 'items__description')
     inlines = [LineItemInline]
-    readonly_fields = ('created_at', 'store_city', 'items_count', 'total_savings')
+    readonly_fields = ('created_at', 'store_city', 'items_count', 'total_savings_display', 'parse_status', 'parse_error')
     date_hierarchy = 'transaction_date'
     list_per_page = 50
     show_full_result_count = False  # Performance optimization for large datasets
     raw_id_fields = ('user',)
+    actions = ['mark_as_parsed']
 
     def get_queryset(self, request):
         # Optimize for PostgreSQL
@@ -83,15 +84,15 @@ class ReceiptAdmin(BaseModelAdmin):
                 month=ExtractMonth('transaction_date')
             )
 
-    def get_search_results(self, request, queryset, search_term):
-        if search_term:
-            search_query = SearchQuery(search_term)
-            search_vector = SearchVector('store_location', 'store_city', 'items__description')
-            queryset = queryset.annotate(
-                search=search_vector,
-                rank=SearchRank(search_vector, search_query)
-            ).filter(search=search_query).order_by('-rank')
-        return queryset, True
+    def total_display(self, obj):
+        return format_html('${}', '{:.2f}'.format(float(obj.total)))
+    total_display.short_description = 'Total'
+
+    def total_savings_display(self, obj):
+        if obj.instant_savings:
+            return format_html('${}', '{:.2f}'.format(float(obj.instant_savings)))
+        return '-'
+    total_savings_display.short_description = 'Total Savings'
 
     def items_count(self, obj):
         return obj.items.count()
@@ -99,13 +100,41 @@ class ReceiptAdmin(BaseModelAdmin):
 
     def instant_savings_display(self, obj):
         if obj.instant_savings:
-            return format_html('<span style="color: green">${}</span>', obj.instant_savings)
+            return format_html('<span style="color: green">${}</span>', 
+                '{:.2f}'.format(float(obj.instant_savings)))
         return '-'
     instant_savings_display.short_description = 'Savings'
 
     def user_link(self, obj):
         return format_html('<a href="/admin/auth/user/{}/">{}</a>', obj.user.id, obj.user.username)
     user_link.short_description = 'User'
+
+    def parse_status(self, obj):
+        if obj.parsed_successfully:
+            return format_html('<span style="color: green">✓ Parsed Successfully</span>')
+        else:
+            error_msg = obj.parse_error if obj.parse_error else 'Unknown parsing error'
+            return format_html(
+                '<span style="color: red">⚠ Parse Error</span>'
+                '<br><small style="color: grey">{}</small>', 
+                error_msg
+            )
+    parse_status.short_description = 'Parse Status'
+
+    def mark_as_parsed(self, request, queryset):
+        """Mark selected receipts as successfully parsed if they have all required data."""
+        updated = 0
+        for receipt in queryset:
+            if (receipt.transaction_number and 
+                receipt.items.exists() and 
+                receipt.total and 
+                receipt.transaction_date):
+                receipt.parsed_successfully = True
+                receipt.parse_error = None
+                receipt.save()
+                updated += 1
+        self.message_user(request, f'{updated} receipts marked as successfully parsed.')
+    mark_as_parsed.short_description = "Mark selected receipts as successfully parsed"
 
 @admin.register(PriceAdjustmentAlert)
 class PriceAdjustmentAlertAdmin(BaseModelAdmin):
@@ -146,7 +175,8 @@ class PriceAdjustmentAlertAdmin(BaseModelAdmin):
             )
 
     def price_difference_display(self, obj):
-        return format_html('<span style="color: green">${:.2f}</span>', obj.price_difference)
+        return format_html('<span style="color: green">${}</span>', 
+            '{:.2f}'.format(float(obj.price_difference)))
     price_difference_display.short_description = "Potential Savings"
 
     def status_display(self, obj):

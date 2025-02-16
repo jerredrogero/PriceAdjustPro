@@ -137,6 +137,18 @@ def upload_receipt(request):
 
             # Create new Receipt object if it doesn't exist
             try:
+                # Consider a receipt successfully parsed if it has:
+                # 1. A valid transaction number
+                # 2. Items with valid prices
+                # 3. Valid total amount
+                # 4. Valid transaction date
+                if (parsed_data.get('transaction_number') and 
+                    parsed_data.get('items') and 
+                    parsed_data.get('total') and 
+                    parsed_data.get('transaction_date')):
+                    parsed_data['parsed_successfully'] = True
+                    parsed_data['parse_error'] = None
+                
                 receipt = Receipt.objects.create(
                     user=request.user,
                     file=file_path,
@@ -354,76 +366,64 @@ def api_receipt_upload(request):
         # Process the receipt
         parsed_data = process_receipt_pdf(full_path, user=request.user)
 
-        # Check if receipt already exists for this user
+        # Check for existing receipt
         existing_receipt = Receipt.objects.filter(
-            user=request.user,
-            transaction_number=parsed_data.get('transaction_number')
+            transaction_number=parsed_data['transaction_number'],
+            user=request.user  # Add user filter
         ).first()
 
         if existing_receipt:
-            try:
-                # Update existing receipt with new data
-                existing_receipt.store_location = parsed_data.get('store_location', existing_receipt.store_location)
-                existing_receipt.store_number = parsed_data.get('store_number', existing_receipt.store_number)
-                existing_receipt.transaction_date = parsed_data.get('transaction_date', existing_receipt.transaction_date)
-                existing_receipt.total = parsed_data.get('total', existing_receipt.total)
-                existing_receipt.subtotal = parsed_data.get('subtotal', existing_receipt.subtotal)
-                existing_receipt.tax = parsed_data.get('tax', existing_receipt.tax)
-                existing_receipt.parsed_successfully = parsed_data.get('parsed_successfully', existing_receipt.parsed_successfully)
-                existing_receipt.parse_error = parsed_data.get('parse_error', existing_receipt.parse_error)
-                existing_receipt.save()
-                
-                # Clear existing line items
-                existing_receipt.items.all().delete()
-                
-                # Create new line items
-                if parsed_data.get('items'):
-                    for item_data in parsed_data['items']:
-                        try:
-                            line_item = LineItem.objects.create(
-                                receipt=existing_receipt,
-                                item_code=item_data.get('item_code', '000000'),
-                                description=item_data.get('description', 'Unknown Item'),
-                                price=Decimal(str(item_data.get('price', '0.00'))),
-                                quantity=item_data.get('quantity', 1),
-                                discount=item_data.get('discount'),
-                                is_taxable=item_data.get('is_taxable', False),
-                                instant_savings=Decimal(str(item_data['instant_savings'])) if item_data.get('instant_savings') else None,
-                                original_price=Decimal(str(item_data['original_price'])) if item_data.get('original_price') else None
-                            )
-                            # Check for potential price adjustments
-                            check_for_price_adjustments(line_item, existing_receipt)
-                        except Exception as e:
-                            logger.error(f"Line item error: {str(e)}")
-                            continue
-                
-                update_price_database(parsed_data, user=request.user)
-                default_storage.delete(file_path)
-                return JsonResponse({
-                    'transaction_number': existing_receipt.transaction_number,
-                    'message': 'Receipt updated successfully',
-                    'items': [
-                        {
-                            'item_code': item.item_code,
-                            'description': item.description,
-                            'price': str(item.price),
-                            'quantity': item.quantity,
-                            'discount': str(item.discount) if item.discount else None
-                        }
-                        for item in existing_receipt.items.all()
-                    ],
-                    'parse_error': parsed_data.get('parse_error'),
-                    'parsed_successfully': parsed_data.get('parsed_successfully', False),
-                    'is_duplicate': True
-                })
-            except Exception as e:
-                logger.error(f"Error processing duplicate receipt: {str(e)}")
-                default_storage.delete(file_path)
-                return JsonResponse({
-                    'error': str(e),
-                    'transaction_number': existing_receipt.transaction_number,
-                    'is_duplicate': True
-                }, status=200)  # Return 200 even for duplicates
+            # Update existing receipt
+            existing_receipt.file.delete(save=False)  # Delete old file
+            existing_receipt.file = file_path
+            existing_receipt.store_location = parsed_data['store_location']
+            existing_receipt.store_number = parsed_data['store_number']
+            existing_receipt.transaction_date = parsed_data['transaction_date']
+            existing_receipt.subtotal = Decimal(str(parsed_data['subtotal']))
+            existing_receipt.tax = Decimal(str(parsed_data['tax']))
+            existing_receipt.total = Decimal(str(parsed_data['total']))
+            existing_receipt.instant_savings = Decimal(str(parsed_data['instant_savings'])) if parsed_data.get('instant_savings') else None
+            existing_receipt.parsed_successfully = parsed_data['parsed_successfully']
+            existing_receipt.parse_error = parsed_data.get('parse_error')
+            existing_receipt.user = request.user  # Ensure user is set
+            existing_receipt.save()
+
+            # Delete existing line items
+            existing_receipt.items.all().delete()
+
+            # Create new line items
+            for item_data in parsed_data['items']:
+                LineItem.objects.create(
+                    receipt=existing_receipt,
+                    item_code=item_data['item_code'],
+                    description=item_data['description'],
+                    price=Decimal(str(item_data['price'])),
+                    quantity=int(item_data['quantity']),
+                    is_taxable=item_data['is_taxable'],
+                    instant_savings=Decimal(str(item_data['instant_savings'])) if item_data.get('instant_savings') else None,
+                    original_price=Decimal(str(item_data['original_price'])) if item_data.get('original_price') else None
+                )
+
+            receipt = existing_receipt
+            return JsonResponse({
+                'transaction_number': receipt.transaction_number,
+                'message': 'Receipt updated successfully',
+                'items': parsed_data['items'],
+                'parsed_successfully': True,
+                'is_duplicate': True
+            })
+        
+        # Consider a receipt successfully parsed if it has:
+        # 1. A valid transaction number
+        # 2. Items with valid prices
+        # 3. Valid total amount
+        # 4. Valid transaction date
+        if (parsed_data.get('transaction_number') and 
+            parsed_data.get('items') and 
+            parsed_data.get('total') and 
+            parsed_data.get('transaction_date')):
+            parsed_data['parsed_successfully'] = True
+            parsed_data['parse_error'] = None
         
         # Create Receipt object with default values if parsing failed
         receipt = Receipt.objects.create(

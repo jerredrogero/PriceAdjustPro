@@ -248,6 +248,32 @@ Parse this receipt:
             parsed_data['parse_error'] = f"Item count mismatch: found {actual_item_count} items but receipt shows {expected_item_count} items sold"
             parsed_data['parsed_successfully'] = False
 
+        # Try to extract transaction date from text
+        if not parsed_data.get('transaction_date'):
+            # Look for date patterns in the text
+            date_patterns = [
+                r'(\d{2}/\d{2}/\d{4})\s+(\d{2}:\d{2})',  # MM/DD/YYYY HH:MM
+                r'(\d{1,2}/\d{1,2}/\d{4})\s+(\d{1,2}:\d{2})',  # M/D/YYYY H:MM
+                r'P7\s+(\d{2}/\d{2}/\d{4})\s+(\d{2}:\d{2})',  # P7 MM/DD/YYYY HH:MM
+            ]
+            
+            for pattern in date_patterns:
+                matches = re.findall(pattern, text)
+                if matches:
+                    date_str, time_str = matches[0]
+                    try:
+                        # Parse date and time
+                        parsed_date = datetime.strptime(f"{date_str} {time_str}", "%m/%d/%Y %H:%M")
+                        parsed_data['transaction_date'] = timezone.make_aware(parsed_date)
+                        break
+                    except ValueError:
+                        continue
+
+            if not parsed_data.get('transaction_date'):
+                parsed_data['transaction_date'] = timezone.now()
+                parsed_data['parse_error'] = "Could not extract transaction date"
+                parsed_data['parsed_successfully'] = False
+
         return parsed_data
 
     except Exception as e:

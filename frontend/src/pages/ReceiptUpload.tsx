@@ -133,45 +133,57 @@ const ReceiptUpload: React.FC = () => {
       </Typography>
 
       {/* Instructions Section */}
-      <Paper sx={{ p: 4, mb: 4 }}>
-        <Typography variant="h5" gutterBottom>
+      <Paper sx={{ p: 3, mb: 4 }}>
+        <Typography variant="h6" gutterBottom>
           How to Find Your Costco Receipts
         </Typography>
-        <List>
+        <List dense>
           <ListItem>
             <ListItemIcon>
-              <Typography variant="h6" color="primary">1.</Typography>
+              <Typography variant="body2" color="primary">1.</Typography>
             </ListItemIcon>
             <ListItemText 
               primary="Log in to Costco.com" 
-              secondary="Visit Costco.com and sign in to your account"
             />
           </ListItem>
           <ListItem>
             <ListItemIcon>
-              <Typography variant="h6" color="primary">2.</Typography>
+              <Typography variant="body2" color="primary">2.</Typography>
             </ListItemIcon>
             <ListItemText 
-              primary="Navigate to Orders & Returns" 
-              secondary="Click on 'Orders & Returns' in the top navigation menu"
+              primary="Click Orders & Returns" 
             />
           </ListItem>
           <ListItem>
             <ListItemIcon>
-              <Typography variant="h6" color="primary">3.</Typography>
+              <Typography variant="body2" color="primary">3.</Typography>
             </ListItemIcon>
             <ListItemText 
-              primary="Find Your Order" 
-              secondary="Locate the order you want to track"
+              primary="Select Warehouse tab" 
             />
           </ListItem>
           <ListItem>
             <ListItemIcon>
-              <Typography variant="h6" color="primary">4.</Typography>
+              <Typography variant="body2" color="primary">4.</Typography>
             </ListItemIcon>
             <ListItemText 
-              primary="Download Receipt" 
-              secondary="Click 'View Receipt' and download the PDF"
+              primary="Click View Receipt" 
+            />
+          </ListItem>
+          <ListItem>
+            <ListItemIcon>
+              <Typography variant="body2" color="primary">5.</Typography>
+            </ListItemIcon>
+            <ListItemText 
+              primary="Click Print Receipt" 
+            />
+          </ListItem>
+          <ListItem>
+            <ListItemIcon>
+              <Typography variant="body2" color="primary">6.</Typography>
+            </ListItemIcon>
+            <ListItemText 
+              primary="Save as PDF" 
             />
           </ListItem>
         </List>

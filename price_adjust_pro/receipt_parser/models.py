@@ -61,12 +61,10 @@ class Receipt(models.Model):
                 self.store_city = ' '.join(parts[1:-1])
         super().save(*args, **kwargs)
 
-    @property
-    def total_items(self):
+    def get_total_items(self):
         return self.items.aggregate(total=models.Sum('quantity'))['total'] or 0
 
-    @property
-    def total_savings(self):
+    def get_total_savings(self):
         return self.instant_savings or Decimal('0.00')
 
 class LineItem(models.Model):
