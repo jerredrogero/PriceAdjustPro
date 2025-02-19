@@ -186,14 +186,13 @@ USE_TZ = True
 STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
-# Add admin static files directory
 STATICFILES_DIRS = [
     os.path.join(REACT_APP_BUILD_PATH, 'static'),
     os.path.join(BASE_DIR, 'receipt_parser', 'static'),
 ]
 
-# Use the standard Django static files storage
-STATICFILES_STORAGE = 'django.contrib.staticfiles.storage.StaticFilesStorage'
+# Use ManifestStaticFilesStorage in production for better caching
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 # Media files (Uploaded files)
 MEDIA_URL = '/media/'
@@ -240,12 +239,16 @@ if DEBUG:
 # Whitenoise configuration
 WHITENOISE_USE_FINDERS = True
 WHITENOISE_AUTOREFRESH = True
-WHITENOISE_ROOT = REACT_APP_BUILD_PATH
+
+# Point Whitenoise to the staticfiles directory instead of React build
+WHITENOISE_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
 if not DEBUG:
-    # In production, use Whitenoise for static files
-    STATICFILES_STORAGE = 'whitenoise.storage.CompressedStaticFilesStorage'
-    MIDDLEWARE.insert(1, 'django.middleware.gzip.GZipMiddleware')
+    # Enable GZip compression
+    if 'django.middleware.gzip.GZipMiddleware' not in MIDDLEWARE:
+        MIDDLEWARE.insert(1, 'django.middleware.gzip.GZipMiddleware')
+    
+    # Cache control headers for static files
     WHITENOISE_MAX_AGE = 31536000  # 1 year in seconds
 
 # Ensure admin static files are served
@@ -257,7 +260,4 @@ if not DEBUG:
     MIDDLEWARE.insert(1, 'django.middleware.gzip.GZipMiddleware')
     
     # Cache control headers for static files
-    WHITENOISE_MAX_AGE = 31536000  # 1 year in seconds
-
-    # SPA routing - serve index.html for all non-file URLs
-    WHITENOISE_HTML5_MODE = True
+    WHITENOISE_MAX_AGE = 31536000  # 1 year in second

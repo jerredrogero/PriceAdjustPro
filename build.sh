@@ -14,7 +14,7 @@ cd ..
 
 # Collect static files
 cd price_adjust_pro
-python manage.py collectstatic --no-input
+python manage.py collectstatic --noinput --clear
 
 # Run migrations
 python manage.py migrate 
