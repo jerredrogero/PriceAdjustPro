@@ -147,6 +147,9 @@ if settings.DEBUG:
 
 # React App catch-all - must be last
 urlpatterns += [
-    re_path(r'^(?!admin|static|api).*$', TemplateView.as_view(template_name='index.html')),
+    # Serve index.html for all other routes
+    re_path(r'^(?!admin/|api/|static/|media/).*$', 
+            TemplateView.as_view(template_name='index.html'), 
+            name='react-app'),
 ]
 

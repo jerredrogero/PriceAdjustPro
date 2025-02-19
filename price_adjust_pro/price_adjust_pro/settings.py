@@ -187,8 +187,7 @@ STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
 STATICFILES_DIRS = [
-    os.path.join(REACT_APP_BUILD_PATH, 'static'),
-    os.path.join(BASE_DIR, 'receipt_parser', 'static'),
+    os.path.join(REACT_APP_BUILD_PATH),
 ]
 
 # Use standard storage in development, compressed in production
@@ -201,6 +200,7 @@ else:
 WHITENOISE_USE_FINDERS = True
 WHITENOISE_AUTOREFRESH = True
 WHITENOISE_INDEX_FILE = True
+WHITENOISE_ROOT = REACT_APP_BUILD_PATH
 
 # Don't use manifest storage for React files
 WHITENOISE_MANIFEST_STRICT = False
