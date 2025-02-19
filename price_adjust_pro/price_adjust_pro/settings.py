@@ -78,7 +78,7 @@ TEMPLATES = [
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
         'DIRS': [
             os.path.join(BASE_DIR, 'receipt_parser/templates'),
-            os.path.join(REACT_APP_BUILD_PATH),  # React build directory
+            os.path.join(REACT_APP_BUILD_PATH),
         ],
         'APP_DIRS': True,
         'OPTIONS': {
@@ -87,6 +87,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'django.template.context_processors.static',
             ],
         },
     },
@@ -184,13 +185,15 @@ USE_TZ = True
 
 STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+
+# Add admin static files directory
 STATICFILES_DIRS = [
     os.path.join(REACT_APP_BUILD_PATH, 'static'),
     os.path.join(BASE_DIR, 'receipt_parser', 'static'),
 ]
 
-# Use simpler storage backend without manifest
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedStaticFilesStorage'
+# Use the standard Django static files storage
+STATICFILES_STORAGE = 'django.contrib.staticfiles.storage.StaticFilesStorage'
 
 # Media files (Uploaded files)
 MEDIA_URL = '/media/'
@@ -234,12 +237,16 @@ if DEBUG:
     SESSION_COOKIE_SECURE = False
     SECURE_SSL_REDIRECT = False
 
-# Whitenoise configuration for better static file serving
-WHITENOISE_ROOT = REACT_APP_BUILD_PATH
-WHITENOISE_INDEX_FILE = True
+# Whitenoise configuration
 WHITENOISE_USE_FINDERS = True
-WHITENOISE_MANIFEST_STRICT = False
-WHITENOISE_ALLOW_ALL_ORIGINS = True
+WHITENOISE_AUTOREFRESH = True
+WHITENOISE_ROOT = REACT_APP_BUILD_PATH
+
+if not DEBUG:
+    # In production, use Whitenoise for static files
+    STATICFILES_STORAGE = 'whitenoise.storage.CompressedStaticFilesStorage'
+    MIDDLEWARE.insert(1, 'django.middleware.gzip.GZipMiddleware')
+    WHITENOISE_MAX_AGE = 31536000  # 1 year in seconds
 
 # Ensure admin static files are served
 ADMIN_MEDIA_PREFIX = '/static/admin/'

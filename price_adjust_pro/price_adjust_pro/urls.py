@@ -121,17 +121,22 @@ api_urlpatterns = [
 ] + receipt_api_urls()
 
 urlpatterns = [
+    # Admin URLs must come before the React app catch-all
     path('admin/', admin.site.urls),
     path('api/', include(api_urlpatterns)),
-    
-    # Serve React App - this should be last to catch all other URLs
-    re_path(r'^.*', TemplateView.as_view(template_name='index.html')),
-] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+]
 
-# Serve static files during development
+# Add static/media file serving in development
 if settings.DEBUG:
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 
+# Serve React App - this should be last to catch all other URLs
+urlpatterns += [
+    re_path(r'^.*', TemplateView.as_view(template_name='index.html')),
+]
+
+# Handle common static files
 def return_404(request):
     return HttpResponse(status=404)
 urlpatterns += [
