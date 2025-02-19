@@ -66,10 +66,10 @@ const Landing: React.FC = () => {
           <Grid container spacing={6} alignItems="center">
             <Grid item xs={12} md={7}>
               <Typography variant="h2" component="h1" gutterBottom fontWeight="bold">
-                Never Miss a Price Drop
+                Get Money Back on Your Costco Purchases
               </Typography>
               <Typography variant="h5" paragraph sx={{ mb: 4, opacity: 0.9 }}>
-                Track your Costco receipts and get notified when prices drop within 30 days of your purchase.
+                PriceAdjustPro tracks your Costco purchases and automatically notifies you when a price adjustment is available.
               </Typography>
               <Button
                 variant="contained"
