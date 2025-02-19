@@ -191,8 +191,27 @@ STATICFILES_DIRS = [
     os.path.join(BASE_DIR, 'receipt_parser', 'static'),
 ]
 
-# Use ManifestStaticFilesStorage in production for better caching
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+# Use standard storage in development, compressed in production
+if DEBUG:
+    STATICFILES_STORAGE = 'django.contrib.staticfiles.storage.StaticFilesStorage'
+else:
+    STATICFILES_STORAGE = 'whitenoise.storage.CompressedStaticFilesStorage'
+
+# Whitenoise configuration
+WHITENOISE_USE_FINDERS = True
+WHITENOISE_AUTOREFRESH = True
+WHITENOISE_INDEX_FILE = True
+
+# Don't use manifest storage for React files
+WHITENOISE_MANIFEST_STRICT = False
+
+if not DEBUG:
+    # Enable GZip compression
+    if 'django.middleware.gzip.GZipMiddleware' not in MIDDLEWARE:
+        MIDDLEWARE.insert(1, 'django.middleware.gzip.GZipMiddleware')
+    
+    # Cache control headers for static files
+    WHITENOISE_MAX_AGE = 31536000  # 1 year in seconds
 
 # Media files (Uploaded files)
 MEDIA_URL = '/media/'
@@ -235,21 +254,6 @@ if DEBUG:
     CSRF_COOKIE_SECURE = False
     SESSION_COOKIE_SECURE = False
     SECURE_SSL_REDIRECT = False
-
-# Whitenoise configuration
-WHITENOISE_USE_FINDERS = True
-WHITENOISE_AUTOREFRESH = True
-
-# Point Whitenoise to the staticfiles directory instead of React build
-WHITENOISE_ROOT = os.path.join(BASE_DIR, 'staticfiles')
-
-if not DEBUG:
-    # Enable GZip compression
-    if 'django.middleware.gzip.GZipMiddleware' not in MIDDLEWARE:
-        MIDDLEWARE.insert(1, 'django.middleware.gzip.GZipMiddleware')
-    
-    # Cache control headers for static files
-    WHITENOISE_MAX_AGE = 31536000  # 1 year in seconds
 
 # Ensure admin static files are served
 ADMIN_MEDIA_PREFIX = '/static/admin/'

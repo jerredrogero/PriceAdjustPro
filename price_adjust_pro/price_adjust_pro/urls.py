@@ -20,11 +20,12 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib.auth import views as auth_views
 from django.shortcuts import redirect
-from django.http import JsonResponse, HttpResponse
+from django.http import JsonResponse, HttpResponse, FileResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth import authenticate, login, logout
 from django.views.generic import TemplateView
 import json
+import os
 from django.contrib.staticfiles.views import serve
 
 from receipt_parser.urls import urls_api as receipt_api_urls
@@ -36,6 +37,13 @@ admin.site.index_title = 'Site Administration'
 
 def home_redirect(request):
     return redirect('receipt_list')
+
+def serve_react_file(request, filename):
+    """Serve React static files that aren't part of Django's static files."""
+    file_path = os.path.join(settings.REACT_APP_BUILD_PATH, filename)
+    if os.path.exists(file_path):
+        return FileResponse(open(file_path, 'rb'))
+    return HttpResponse(status=404)
 
 def api_login(request):
     if request.method == 'POST':
@@ -112,7 +120,7 @@ def api_user(request):
         })
     return JsonResponse({'error': 'Not authenticated'}, status=401)
 
-# API URLs - these should come first
+# API URLs
 api_urlpatterns = [
     path('auth/login/', api_login, name='api_login'),
     path('auth/logout/', api_logout, name='api_logout'),
@@ -120,27 +128,25 @@ api_urlpatterns = [
     path('auth/user/', api_user, name='api_user'),
 ] + receipt_api_urls()
 
+# Main URL patterns
 urlpatterns = [
-    # Admin URLs must come before the React app catch-all
+    # Admin URLs must come first
     path('admin/', admin.site.urls),
     path('api/', include(api_urlpatterns)),
+    
+    # React static files
+    path('favicon.ico', serve_react_file, {'filename': 'favicon.ico'}),
+    path('logo192.png', serve_react_file, {'filename': 'logo192.png'}),
+    path('manifest.json', serve_react_file, {'filename': 'manifest.json'}),
 ]
 
-# Add static/media file serving in development
+# Static/media files in development
 if settings.DEBUG:
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 
-# Serve React App - this should be last to catch all other URLs
+# React App catch-all - must be last
 urlpatterns += [
-    re_path(r'^.*', TemplateView.as_view(template_name='index.html')),
-]
-
-# Handle common static files
-def return_404(request):
-    return HttpResponse(status=404)
-urlpatterns += [
-    re_path(r'^favicon\.ico$', return_404),
-    re_path(r'^logo192\.png$', return_404),
+    re_path(r'^(?!admin|static|api).*$', TemplateView.as_view(template_name='index.html')),
 ]
 
