@@ -449,15 +449,15 @@ class CostcoItemAdmin(BaseModelAdmin):
     actions = ['export_as_csv', 'export_as_json']
 
     def get_queryset(self, request):
-        return super().get_queryset(request)\
-            .annotate(
-                price_history_count=Count('price_history'),
-                avg_price=Avg('warehouse_prices__price'),
-                price_volatility=Window(
-                    expression=Avg('price_history__new_price'),
-                    order_by=F('price_history__date_changed').desc()
-                )
-            )
+        return super().get_queryset(request).annotate(
+            price_history_count=Count('price_history'),
+            # Remove problematic annotations
+            # avg_price=Avg('warehouse_prices__price'),
+            # price_volatility=Window(
+            #     expression=Avg('price_history__new_price'),
+            #     order_by=F('price_history__date_changed').desc()
+            # )
+        )
 
     def price_history_count(self, obj):
         return obj.price_history_count
