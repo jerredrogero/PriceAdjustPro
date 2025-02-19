@@ -29,6 +29,11 @@ from django.contrib.staticfiles.views import serve
 
 from receipt_parser.urls import urls_api as receipt_api_urls
 
+# Configure admin site
+admin.site.site_header = 'PriceAdjustPro Administration'
+admin.site.site_title = 'PriceAdjustPro Admin'
+admin.site.index_title = 'Site Administration'
+
 def home_redirect(request):
     return redirect('receipt_list')
 

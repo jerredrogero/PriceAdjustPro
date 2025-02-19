@@ -188,7 +188,8 @@ STATICFILES_DIRS = [
     os.path.join(REACT_APP_BUILD_PATH, 'static'),
     os.path.join(BASE_DIR, 'receipt_parser', 'static'),
 ]
-# Use simpler storage backend
+
+# Use simpler storage backend without manifest
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedStaticFilesStorage'
 
 # Media files (Uploaded files)
@@ -239,6 +240,9 @@ WHITENOISE_INDEX_FILE = True
 WHITENOISE_USE_FINDERS = True
 WHITENOISE_MANIFEST_STRICT = False
 WHITENOISE_ALLOW_ALL_ORIGINS = True
+
+# Ensure admin static files are served
+ADMIN_MEDIA_PREFIX = '/static/admin/'
 
 # Additional production settings
 if not DEBUG:
