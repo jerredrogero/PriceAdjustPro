@@ -14,6 +14,10 @@ const baseURL = process.env.NODE_ENV === 'development'
   : '';  // Production server (relative to current domain)
 
 // Configure axios defaults
+axios.defaults.withCredentials = true;
+axios.defaults.xsrfCookieName = 'csrftoken';
+axios.defaults.xsrfHeaderName = 'X-CSRFToken';
+
 const instance = axios.create({
   baseURL,
   withCredentials: true,  // Required for cookies
@@ -39,6 +43,11 @@ instance.interceptors.request.use((config) => {
   // Ensure URL starts with /api/
   if (!config.url?.startsWith('/api/')) {
     config.url = `/api${config.url?.startsWith('/') ? '' : '/'}${config.url}`;
+  }
+  
+  // Add mobile Safari workaround
+  if (config.data instanceof FormData) {
+    config.headers['X-Requested-With'] = 'XMLHttpRequest';
   }
   
   return config;

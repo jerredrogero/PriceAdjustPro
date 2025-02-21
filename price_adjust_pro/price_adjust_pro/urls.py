@@ -21,7 +21,7 @@ from django.conf.urls.static import static
 from django.contrib.auth import views as auth_views
 from django.shortcuts import redirect
 from django.http import JsonResponse, HttpResponse, FileResponse
-from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
 from django.contrib.auth import authenticate, login, logout
 from django.views.generic import TemplateView
 import json
@@ -45,6 +45,8 @@ def serve_react_file(request, filename):
         return FileResponse(open(file_path, 'rb'))
     return HttpResponse(status=404)
 
+@ensure_csrf_cookie
+@csrf_exempt
 def api_login(request):
     if request.method == 'POST':
         try:

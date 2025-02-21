@@ -250,13 +250,11 @@ CORS_ALLOW_METHODS = [
 CSRF_COOKIE_SAMESITE = 'Lax'
 CSRF_COOKIE_HTTPONLY = False  # Required for Axios to read CSRF token
 CSRF_TRUSTED_ORIGINS = [
-    'http://localhost:3000',
-    'http://127.0.0.1:3000',
     'https://priceadjustpro.com',
-    'https://www.priceadjustpro.com',
+    'https://www.priceadjustpro.com'
 ]
-CSRF_USE_SESSIONS = True  # Use sessions instead of cookies for CSRF
-CSRF_COOKIE_SECURE = not DEBUG
+CSRF_USE_SESSIONS = False  # Ensure we're using cookies, not sessions
+CSRF_COOKIE_SECURE = True
 
 # Session settings
 SESSION_COOKIE_SAMESITE = 'Lax'
@@ -277,7 +275,7 @@ if not DEBUG:
     
     # Additional cookie settings for mobile Safari
     SESSION_COOKIE_DOMAIN = '.priceadjustpro.com'  # Include subdomains
-    CSRF_COOKIE_DOMAIN = '.priceadjustpro.com'
+    CSRF_COOKIE_DOMAIN = '.priceadjustpro.com'  # Keep the leading dot
     CSRF_COOKIE_NAME = 'csrftoken'
     SESSION_COOKIE_NAME = 'sessionid'
 
