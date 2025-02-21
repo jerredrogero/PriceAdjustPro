@@ -47,17 +47,33 @@ def serve_react_file(request, filename):
 
 def api_login(request):
     if request.method == 'POST':
-        data = json.loads(request.body)
-        username = data.get('username')
-        password = data.get('password')
-        user = authenticate(request, username=username, password=password)
-        if user is not None:
-            login(request, user)
-            return JsonResponse({
-                'id': user.id,
-                'username': user.username,
-            })
-        return JsonResponse({'error': 'Invalid credentials'}, status=400)
+        try:
+            data = json.loads(request.body)
+            username = data.get('username')
+            password = data.get('password')
+            
+            if not username or not password:
+                return JsonResponse({'error': 'Username and password are required'}, status=400)
+            
+            user = authenticate(request, username=username, password=password)
+            if user is not None:
+                login(request, user)
+                
+                # Set session cookie attributes
+                request.session.set_expiry(1209600)  # 2 weeks
+                
+                return JsonResponse({
+                    'id': user.id,
+                    'username': user.username,
+                    'email': user.email,
+                    'csrftoken': get_token(request),  # Get new CSRF token after login
+                })
+            return JsonResponse({'error': 'Invalid credentials'}, status=401)
+        except json.JSONDecodeError:
+            return JsonResponse({'error': 'Invalid JSON'}, status=400)
+        except Exception as e:
+            print(f"Login error: {str(e)}")  # Log the error
+            return JsonResponse({'error': 'Login failed'}, status=500)
     return JsonResponse({'error': 'Method not allowed'}, status=405)
 
 @csrf_exempt

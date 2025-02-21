@@ -8,10 +8,13 @@ function getCookie(name: string): string | null {
   return null;
 }
 
-// Configure base URL
+// Configure base URL based on environment and device type
+const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 const baseURL = process.env.NODE_ENV === 'development' 
   ? 'http://localhost:8000'  // Development server
-  : '';  // Production server (relative to current domain)
+  : isMobile 
+    ? 'https://priceadjustpro.com'  // Mobile production
+    : '';  // Desktop production (relative to current domain)
 
 // Configure axios defaults
 const instance = axios.create({
@@ -43,5 +46,27 @@ instance.interceptors.request.use((config) => {
   
   return config;
 });
+
+// Add response interceptor to handle errors
+instance.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    // Log error details for debugging
+    console.error('API Error:', {
+      url: error.config?.url,
+      method: error.config?.method,
+      status: error.response?.status,
+      data: error.response?.data,
+    });
+
+    // Handle specific error cases
+    if (error.response?.status === 401) {
+      // Handle unauthorized access
+      window.location.href = '/login';
+    }
+
+    return Promise.reject(error);
+  }
+);
 
 export default instance; 
