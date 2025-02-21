@@ -8,13 +8,10 @@ function getCookie(name: string): string | null {
   return null;
 }
 
-// Configure base URL based on environment and device type
-const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+// Configure base URL based on environment
 const baseURL = process.env.NODE_ENV === 'development' 
   ? 'http://localhost:8000'  // Development server
-  : isMobile 
-    ? 'https://priceadjustpro.com'  // Mobile production
-    : '';  // Desktop production (relative to current domain)
+  : '';  // Production server (relative to current domain)
 
 // Configure axios defaults
 const instance = axios.create({
