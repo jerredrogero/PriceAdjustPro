@@ -255,7 +255,7 @@ CSRF_TRUSTED_ORIGINS = [
     'https://priceadjustpro.com',
     'https://www.priceadjustpro.com',
 ]
-CSRF_USE_SESSIONS = False
+CSRF_USE_SESSIONS = True  # Use sessions instead of cookies for CSRF
 CSRF_COOKIE_SECURE = not DEBUG
 
 # Session settings
@@ -264,11 +264,8 @@ SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SECURE = not DEBUG
 SESSION_COOKIE_AGE = 1209600  # 2 weeks in seconds
 
-if DEBUG:
-    CSRF_COOKIE_SECURE = False
-    SESSION_COOKIE_SECURE = False
-    SECURE_SSL_REDIRECT = False
-else:
+# Cookie settings for mobile compatibility
+if not DEBUG:
     # Production security settings
     SECURE_SSL_REDIRECT = True
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
@@ -277,6 +274,12 @@ else:
     SECURE_HSTS_SECONDS = 31536000  # 1 year
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
+    
+    # Additional cookie settings for mobile Safari
+    SESSION_COOKIE_DOMAIN = '.priceadjustpro.com'  # Include subdomains
+    CSRF_COOKIE_DOMAIN = '.priceadjustpro.com'
+    CSRF_COOKIE_NAME = 'csrftoken'
+    SESSION_COOKIE_NAME = 'sessionid'
 
 # Ensure admin static files are served
 ADMIN_MEDIA_PREFIX = '/static/admin/'

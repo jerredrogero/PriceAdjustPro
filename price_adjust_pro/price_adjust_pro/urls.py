@@ -62,12 +62,29 @@ def api_login(request):
                 # Set session cookie attributes
                 request.session.set_expiry(1209600)  # 2 weeks
                 
-                return JsonResponse({
+                # Ensure CSRF token is set
+                from django.middleware.csrf import get_token
+                csrf_token = get_token(request)
+                
+                response = JsonResponse({
                     'id': user.id,
                     'username': user.username,
                     'email': user.email,
-                    'csrftoken': get_token(request),  # Get new CSRF token after login
                 })
+                
+                # Set CSRF cookie explicitly
+                response.set_cookie(
+                    'csrftoken',
+                    csrf_token,
+                    max_age=31536000,  # 1 year
+                    secure=not settings.DEBUG,
+                    httponly=False,
+                    samesite='Lax',
+                    domain=settings.CSRF_COOKIE_DOMAIN if not settings.DEBUG else None
+                )
+                
+                return response
+                
             return JsonResponse({'error': 'Invalid credentials'}, status=401)
         except json.JSONDecodeError:
             return JsonResponse({'error': 'Invalid JSON'}, status=400)
