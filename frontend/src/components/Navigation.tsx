@@ -24,13 +24,26 @@ import {
   Analytics as AnalyticsIcon,
   Dashboard as DashboardIcon,
 } from '@mui/icons-material';
-import { useAuth } from '../contexts/AuthContext';
 
-const Navigation: React.FC = () => {
+// Define the User interface
+interface User {
+  id: number;
+  username: string;
+  email?: string;
+  is_staff?: boolean;
+  is_superuser?: boolean;
+}
+
+// Define props for the Navigation component
+interface NavigationProps {
+  user: User | null;
+}
+
+const Navigation: React.FC<NavigationProps> = ({ user }) => {
   const location = useLocation();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
-  const { isAuthenticated, user, logout } = useAuth();
+  const isAuthenticated = !!user;
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
   const [adjustmentCount, setAdjustmentCount] = useState(0);
 
@@ -62,7 +75,8 @@ const Navigation: React.FC = () => {
 
   const handleLogout = async () => {
     try {
-      await logout();
+      // Redirect to logout URL
+      window.location.href = '/api/auth/logout/';
     } catch (error) {
       console.error('Failed to logout:', error);
     }
