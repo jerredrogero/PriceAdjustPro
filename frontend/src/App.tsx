@@ -14,6 +14,7 @@ import Landing from './pages/Landing';
 import Navigation from './components/Navigation';
 import ReceiptDetail from './pages/ReceiptDetail';
 import api from './api/axios';
+import { UserContext } from './components/Layout';
 
 // Define User interface directly in this file
 interface User {
@@ -87,7 +88,7 @@ const AppContent: React.FC = () => {
   }
 
   return (
-    <>
+    <UserContext.Provider value={user}>
       <Navigation user={user} />
       <Box sx={{ mt: 8 }}>
         <Routes>
@@ -110,7 +111,7 @@ const AppContent: React.FC = () => {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Box>
-    </>
+    </UserContext.Provider>
   );
 };
 

@@ -1,13 +1,14 @@
-import React from 'react';
+import React, { useContext } from 'react';
 import { Navigate } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
+import { UserContext } from './Layout';
 
 interface Props {
   children: React.ReactNode;
 }
 
 const PrivateRoute: React.FC<Props> = ({ children }) => {
-  const { isAuthenticated } = useAuth();
+  const user = useContext(UserContext);
+  const isAuthenticated = !!user;
 
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
