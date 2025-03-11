@@ -40,8 +40,9 @@ instance.interceptors.request.use((config) => {
     config.headers['X-CSRFToken'] = csrfToken;
   }
   
-  // Ensure URL starts with /api/
+  // Don't modify URLs that already include /api/
   if (!config.url?.startsWith('/api/')) {
+    // Only prepend /api/ if it's not already there
     config.url = `/api${config.url?.startsWith('/') ? '' : '/'}${config.url}`;
   }
   
@@ -67,8 +68,10 @@ instance.interceptors.response.use(
 
     // Handle specific error cases
     if (error.response?.status === 401) {
-      // Handle unauthorized access
-      window.location.href = '/login';
+      // Only redirect to login if not already on login page
+      if (!window.location.pathname.includes('/login')) {
+        window.location.href = '/login';
+      }
     }
 
     return Promise.reject(error);

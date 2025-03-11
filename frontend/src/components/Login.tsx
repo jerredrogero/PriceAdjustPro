@@ -12,11 +12,10 @@ import {
   Link as MuiLink,
 } from '@mui/material';
 import { Login as LoginIcon } from '@mui/icons-material';
-import { useAuth } from '../contexts/AuthContext';
+import api from '../api/axios';
 
 const Login: React.FC = () => {
   const navigate = useNavigate();
-  const { login } = useAuth();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -28,8 +27,8 @@ const Login: React.FC = () => {
     setLoading(true);
 
     try {
-      await login(username, password);
-      navigate('/');
+      await api.post('/api/auth/login/', { username, password });
+      navigate('/dashboard');
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to login');
     } finally {

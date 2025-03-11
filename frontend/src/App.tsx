@@ -54,6 +54,7 @@ const AppContent: React.FC = () => {
         setUser(response.data);
       } catch (error) {
         setUser(null);
+        // Don't redirect if on public paths or accessing static files
         const publicPaths = ['/', '/login', '/register'];
         const isPublicPath = publicPaths.includes(location.pathname);
         const isStaticFile = location.pathname.startsWith('/static/') || 
@@ -61,7 +62,8 @@ const AppContent: React.FC = () => {
                            location.pathname.includes('manifest.json') ||
                            location.pathname.includes('logo192.png');
         
-        if (!isPublicPath && !isStaticFile) {
+        // Only redirect to login if trying to access a protected route
+        if (!isPublicPath && !isStaticFile && !location.pathname.startsWith('/api/')) {
           navigate('/login', { state: { from: location.pathname } });
         }
       } finally {

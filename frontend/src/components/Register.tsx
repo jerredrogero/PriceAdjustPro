@@ -12,12 +12,10 @@ import {
   Link as MuiLink,
 } from '@mui/material';
 import { PersonAdd as RegisterIcon } from '@mui/icons-material';
-import { useAuth } from '../contexts/AuthContext';
 import api from '../api/axios';
 
 const Register: React.FC = () => {
   const navigate = useNavigate();
-  const { login } = useAuth();
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password1, setPassword1] = useState('');
@@ -51,8 +49,12 @@ const Register: React.FC = () => {
       }
 
       // Log them in after successful registration
-      await login(username, password1);
-      navigate('/');
+      await api.post('/api/auth/login/', {
+        username,
+        password: password1,
+      });
+      
+      navigate('/dashboard');
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to create account');
     } finally {
