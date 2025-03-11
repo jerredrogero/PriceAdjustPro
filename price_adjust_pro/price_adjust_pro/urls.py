@@ -171,13 +171,10 @@ urlpatterns = [
     
     # React static files
     path('favicon.ico', serve_react_file, {'filename': 'favicon.ico'}),
-    path('logo192.png', serve_react_file, {'filename': 'logo192.png'}),
     path('manifest.json', serve_react_file, {'filename': 'manifest.json'}),
     
-    # Django auth views - disable these to avoid conflict with React routes
-    # path('login/', auth_views.LoginView.as_view(template_name='receipt_parser/login.html'), name='login'),
-    # path('logout/', auth_views.LogoutView.as_view(next_page='login'), name='logout'),
-    # path('register/', views.register, name='register'),
+    # Serve static files directly from the build directory
+    re_path(r'^static/(?P<path>.*)$', serve, {'document_root': os.path.join(settings.REACT_APP_BUILD_PATH, 'static')}),
 ]
 
 # Static/media files in development

@@ -16,6 +16,16 @@
       href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap"
     />
     <title>PriceAdjustPro</title>
+    <!-- Prevent 404 errors for missing static files -->
+    <script>
+      // Handle missing static files
+      window.addEventListener('error', function(e) {
+        if (e.target.tagName === 'LINK' || e.target.tagName === 'IMG' || e.target.tagName === 'SCRIPT') {
+          e.preventDefault();
+          console.warn('Resource not found:', e.target.src || e.target.href);
+        }
+      }, true);
+    </script>
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>
