@@ -47,14 +47,4 @@ export interface AnalyticsSummary {
       count: number;
     };
   };
-}
-
-export interface User {
-  id: number;
-  username: string;
-  email?: string;
-  is_staff?: boolean;
-  is_superuser?: boolean;
-}
-
-export type { User, ReceiptItem, Receipt, PriceAdjustment, AnalyticsSummary }; 
+} 

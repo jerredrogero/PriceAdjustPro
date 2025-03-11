@@ -14,7 +14,15 @@ import Landing from './pages/Landing';
 import Navigation from './components/Navigation';
 import ReceiptDetail from './pages/ReceiptDetail';
 import api from './api/axios';
-import type { User } from './types';
+
+// Define User interface directly in this file
+interface User {
+  id: number;
+  username: string;
+  email?: string;
+  is_staff?: boolean;
+  is_superuser?: boolean;
+}
 
 const theme = createTheme({
   palette: {
