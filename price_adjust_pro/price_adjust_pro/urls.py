@@ -40,11 +40,11 @@ def home_redirect(request):
     return redirect('receipt_list')
 
 def serve_react_file(request, filename):
-    """Serve React static files that aren't part of Django's static files."""
+    """Serve React static files from the build directory."""
     file_path = os.path.join(settings.REACT_APP_BUILD_PATH, filename)
     if os.path.exists(file_path):
         return FileResponse(open(file_path, 'rb'))
-    return HttpResponse(status=404)
+    return serve(request, filename, document_root=settings.STATIC_ROOT)
 
 @ensure_csrf_cookie
 @csrf_exempt
@@ -163,28 +163,26 @@ api_urlpatterns = [
     path('auth/user/', api_user, name='api_user'),
 ] + receipt_api_urls()
 
-# Django admin and API URLs
 urlpatterns = [
-    # Admin URLs must come first
+    # Admin URLs
     path('admin/', admin.site.urls),
+    
+    # API URLs
     path('api/', include(api_urlpatterns)),
     
-    # React static files
-    path('favicon.ico', serve_react_file, {'filename': 'favicon.ico'}),
-    path('manifest.json', serve_react_file, {'filename': 'manifest.json'}),
-    
-    # Serve static files directly from the build directory
+    # Static files from React build
     re_path(r'^static/(?P<path>.*)$', serve, {'document_root': os.path.join(settings.REACT_APP_BUILD_PATH, 'static')}),
+    path('favicon.ico', serve_react_file, kwargs={'filename': 'favicon.ico'}),
+    path('manifest.json', serve_react_file, kwargs={'filename': 'manifest.json'}),
+    path('logo192.png', serve_react_file, kwargs={'filename': 'logo192.png'}),
+    
+    # React App catch-all - must be last
+    re_path(r'^.*$', TemplateView.as_view(template_name='index.html')),
 ]
 
-# Static/media files in development
+# Add static/media serving in development
 if settings.DEBUG:
-    urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
-
-# React App catch-all - must be last
-# This will serve the React app for all routes not matched above
-urlpatterns += [
-    re_path(r'^.*$', TemplateView.as_view(template_name='index.html'), name='react-app'),
-]
+    urlpatterns = static(settings.STATIC_URL, document_root=settings.STATIC_ROOT) + \
+                 static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT) + \
+                 urlpatterns
 

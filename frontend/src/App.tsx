@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
-import { ThemeProvider, createTheme, Box } from '@mui/material';
+import { ThemeProvider, createTheme, Box, CircularProgress } from '@mui/material';
 import Layout from './components/Layout';
 import PrivateRoute from './components/PrivateRoute';
 import Login from './components/Login';
@@ -41,15 +41,19 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        const response = await api.get('/auth/user/');
+        const response = await api.get('/api/auth/user/');
         setUser(response.data);
       } catch (error) {
-        // Don't redirect to login if already on landing page or login/register pages
+        setUser(null);
         const publicPaths = ['/', '/login', '/register'];
-        if (!publicPaths.includes(location.pathname) && 
-            !location.pathname.startsWith('/static/') && 
-            !location.pathname.includes('favicon.ico')) {
-          navigate('/login');
+        const isPublicPath = publicPaths.includes(location.pathname);
+        const isStaticFile = location.pathname.startsWith('/static/') || 
+                           location.pathname.includes('favicon.ico') ||
+                           location.pathname.includes('manifest.json') ||
+                           location.pathname.includes('logo192.png');
+        
+        if (!isPublicPath && !isStaticFile) {
+          navigate('/login', { state: { from: location.pathname } });
         }
       } finally {
         setLoading(false);
@@ -60,7 +64,18 @@ const AppContent: React.FC = () => {
   }, [navigate, location.pathname]);
 
   if (loading) {
-    return <Box sx={{ p: 4 }}>Loading...</Box>;
+    return (
+      <Box
+        sx={{
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          height: '100vh',
+        }}
+      >
+        <CircularProgress />
+      </Box>
+    );
   }
 
   return (
