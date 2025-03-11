@@ -55,4 +55,6 @@ export interface User {
   email?: string;
   is_staff?: boolean;
   is_superuser?: boolean;
-} 
+}
+
+export type { User, ReceiptItem, Receipt, PriceAdjustment, AnalyticsSummary }; 
