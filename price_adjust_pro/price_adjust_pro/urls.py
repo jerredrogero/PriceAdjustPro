@@ -24,6 +24,7 @@ from django.http import JsonResponse, HttpResponse, FileResponse
 from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
 from django.contrib.auth import authenticate, login, logout
 from django.views.generic import TemplateView
+from django.middleware.csrf import get_token
 import json
 import os
 from django.contrib.staticfiles.views import serve
@@ -65,7 +66,6 @@ def api_login(request):
                 request.session.set_expiry(1209600)  # 2 weeks
                 
                 # Ensure CSRF token is set
-                from django.middleware.csrf import get_token
                 csrf_token = get_token(request)
                 
                 response = JsonResponse({
@@ -163,7 +163,7 @@ api_urlpatterns = [
     path('auth/user/', api_user, name='api_user'),
 ] + receipt_api_urls()
 
-# Main URL patterns
+# Django admin and API URLs
 urlpatterns = [
     # Admin URLs must come first
     path('admin/', admin.site.urls),
@@ -173,6 +173,11 @@ urlpatterns = [
     path('favicon.ico', serve_react_file, {'filename': 'favicon.ico'}),
     path('logo192.png', serve_react_file, {'filename': 'logo192.png'}),
     path('manifest.json', serve_react_file, {'filename': 'manifest.json'}),
+    
+    # Django auth views - disable these to avoid conflict with React routes
+    # path('login/', auth_views.LoginView.as_view(template_name='receipt_parser/login.html'), name='login'),
+    # path('logout/', auth_views.LogoutView.as_view(next_page='login'), name='logout'),
+    # path('register/', views.register, name='register'),
 ]
 
 # Static/media files in development
@@ -181,10 +186,8 @@ if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 
 # React App catch-all - must be last
+# This will serve the React app for all routes not matched above
 urlpatterns += [
-    # Serve index.html for all other routes
-    re_path(r'^(?!admin/|api/|static/|media/).*$', 
-            TemplateView.as_view(template_name='index.html'), 
-            name='react-app'),
+    re_path(r'^.*$', TemplateView.as_view(template_name='index.html'), name='react-app'),
 ]
 

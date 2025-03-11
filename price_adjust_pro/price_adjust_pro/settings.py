@@ -78,7 +78,7 @@ TEMPLATES = [
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
         'DIRS': [
             os.path.join(BASE_DIR, 'receipt_parser/templates'),
-            os.path.join(REACT_APP_BUILD_PATH),
+            os.path.join(REACT_APP_BUILD_PATH),  # React build directory for index.html
         ],
         'APP_DIRS': True,
         'OPTIONS': {
@@ -187,7 +187,7 @@ STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
 STATICFILES_DIRS = [
-    os.path.join(REACT_APP_BUILD_PATH),
+    os.path.join(REACT_APP_BUILD_PATH, 'static'),  # React static files
 ]
 
 # Use standard storage in development, compressed in production
@@ -200,18 +200,7 @@ else:
 WHITENOISE_USE_FINDERS = True
 WHITENOISE_AUTOREFRESH = True
 WHITENOISE_INDEX_FILE = True
-WHITENOISE_ROOT = REACT_APP_BUILD_PATH
-
-# Don't use manifest storage for React files
 WHITENOISE_MANIFEST_STRICT = False
-
-if not DEBUG:
-    # Enable GZip compression
-    if 'django.middleware.gzip.GZipMiddleware' not in MIDDLEWARE:
-        MIDDLEWARE.insert(1, 'django.middleware.gzip.GZipMiddleware')
-    
-    # Cache control headers for static files
-    WHITENOISE_MAX_AGE = 31536000  # 1 year in seconds
 
 # Media files (Uploaded files)
 MEDIA_URL = '/media/'
