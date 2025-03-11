@@ -47,4 +47,6 @@ export interface AnalyticsSummary {
       count: number;
     };
   };
-} 
+}
+
+export * from './User'; 

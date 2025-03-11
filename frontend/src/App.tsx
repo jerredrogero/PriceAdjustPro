@@ -14,7 +14,7 @@ import Landing from './pages/Landing';
 import Navigation from './components/Navigation';
 import ReceiptDetail from './pages/ReceiptDetail';
 import api from './api/axios';
-import { User } from './types/User';
+import { User } from './types';
 
 const theme = createTheme({
   palette: {
