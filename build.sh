@@ -9,6 +9,7 @@ pip install -r requirements.txt
 cd frontend
 export NODE_OPTIONS="--max-old-space-size=4096"
 npm install
+mkdir -p build/static  # Ensure build directory exists
 CI=false GENERATE_SOURCEMAP=false npm run build:production
 cd ..
 

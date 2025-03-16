@@ -186,9 +186,11 @@ USE_TZ = True
 STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
-STATICFILES_DIRS = [
-    os.path.join(REACT_APP_BUILD_PATH, 'static'),  # React static files
-]
+# Only add the React build directory if it exists
+REACT_STATIC_DIR = os.path.join(REACT_APP_BUILD_PATH, 'static')
+STATICFILES_DIRS = []
+if os.path.exists(REACT_STATIC_DIR):
+    STATICFILES_DIRS.append(REACT_STATIC_DIR)
 
 # Use standard storage in development, compressed in production
 if DEBUG:

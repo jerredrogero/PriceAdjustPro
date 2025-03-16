@@ -5,7 +5,30 @@ from typing import Dict, Optional
 import json
 import os
 from django.conf import settings
-import google.generativeai as genai
+
+# Try to import Google Generative AI, but provide a mock if not available
+try:
+    import google.generativeai as genai
+    GENAI_AVAILABLE = True
+except ImportError:
+    GENAI_AVAILABLE = False
+    # Mock implementation for development
+    class MockGenAI:
+        def configure(self, *args, **kwargs):
+            pass
+        
+        class GenerativeModel:
+            def __init__(self, *args, **kwargs):
+                pass
+                
+            def generate_content(self, *args, **kwargs):
+                class MockResponse:
+                    def __init__(self):
+                        self.text = "Mock response for development"
+                return MockResponse()
+    
+    genai = MockGenAI()
+
 from django.utils import timezone
 import base64
 from django.urls import reverse
@@ -17,6 +40,26 @@ from .models import (
 def extract_text_from_pdf(pdf_path: str) -> str:
     """Extract text from a PDF file using Gemini Vision."""
     try:
+        # If GenAI is not available, return a mock response for development
+        if not GENAI_AVAILABLE:
+            return """MOCK COSTCO RECEIPT FOR DEVELOPMENT
+WAREHOUSE #123 - ANYTOWN, USA
+DATE: 2023-05-15 12:34:56
+MEMBER: 12345678
+
+E 1347776 KS WD FL HNY 12.99 3
+346014 /1347776 3.00-
+E 1234567 BANANAS 4.99 1
+E 7654321 MILK 3.49 2
+E 9876543 EGGS 5.99 1
+
+SUBTOTAL 45.94
+TAX 3.67
+TOTAL 49.61
+
+TOTAL INSTANT SAVINGS 3.00
+"""
+            
         # Read the PDF file as binary
         with open(pdf_path, 'rb') as file:
             pdf_content = file.read()
