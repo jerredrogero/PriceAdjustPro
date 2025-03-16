@@ -214,7 +214,7 @@ if os.path.exists(REACT_STATIC_DIR):
 if DEBUG:
     STATICFILES_STORAGE = 'django.contrib.staticfiles.storage.StaticFilesStorage'
 else:
-    STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+    STATICFILES_STORAGE = 'whitenoise.storage.CompressedStaticFilesStorage'
 
 # Whitenoise configuration
 WHITENOISE_USE_FINDERS = True

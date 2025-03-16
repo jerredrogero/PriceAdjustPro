@@ -22,6 +22,10 @@ cd ../../..
 mkdir -p ../price_adjust_pro/staticfiles/
 cp -r build/* ../price_adjust_pro/staticfiles/
 
+# Also copy the static directory to ensure it's available at both paths
+mkdir -p ../price_adjust_pro/staticfiles/static/
+cp -r build/static/* ../price_adjust_pro/staticfiles/static/
+
 # Copy asset-manifest.json to the root
 cp build/asset-manifest.json ../price_adjust_pro/staticfiles/
 

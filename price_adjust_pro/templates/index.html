@@ -63,26 +63,42 @@
         // Function to find the main.js file
         async function loadApp() {
             try {
+                // Check if we're on the login page
+                const isLoginPage = window.location.pathname === '/login';
+                
                 // Try to load the main JS file
-                await loadScript('/static/js/main.js');
+                if (isLoginPage) {
+                    // For login page, try direct path first
+                    await loadScript('/static/js/main.js');
+                } else {
+                    // For other pages, try direct path first
+                    await loadScript('/static/js/main.js');
+                }
             } catch (e) {
-                console.error('Failed to load main.js, trying to fetch asset manifest');
+                console.error('Failed to load main.js, trying alternative paths');
                 
                 try {
-                    // Try to load from asset manifest
-                    const response = await fetch('/asset-manifest.json');
-                    if (response.ok) {
-                        const manifest = await response.json();
-                        if (manifest.files && manifest.files['main.js']) {
-                            await loadScript(manifest.files['main.js']);
-                        } else {
-                            console.error('No main.js found in asset manifest');
-                        }
-                    } else {
-                        console.error('Failed to load asset manifest');
-                    }
+                    // Try with a direct path to the build directory
+                    await loadScript('/static/static/js/main.js');
                 } catch (e) {
-                    console.error('Error loading app:', e);
+                    console.error('Failed with /static/static/js/main.js, trying asset manifest');
+                    
+                    try {
+                        // Try to load from asset manifest
+                        const response = await fetch('/asset-manifest.json');
+                        if (response.ok) {
+                            const manifest = await response.json();
+                            if (manifest.files && manifest.files['main.js']) {
+                                await loadScript(manifest.files['main.js']);
+                            } else {
+                                console.error('No main.js found in asset manifest');
+                            }
+                        } else {
+                            console.error('Failed to load asset manifest');
+                        }
+                    } catch (e) {
+                        console.error('Error loading app:', e);
+                    }
                 }
             }
         }
