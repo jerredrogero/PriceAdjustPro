@@ -184,17 +184,14 @@ urlpatterns = [
     path('robots.txt', serve_react_file, kwargs={'filename': 'robots.txt'}),
 ]
 
-# Add React App catch-all for non-admin URLs
-react_urls = [
-    re_path(r'^(?!admin/)(?!api/).*$', TemplateView.as_view(template_name='index.html')),
-]
-
-# Combine URL patterns
-urlpatterns += react_urls
-
 # Add static/media serving in development
 if settings.DEBUG:
     urlpatterns = static(settings.STATIC_URL, document_root=settings.STATIC_ROOT) + \
                  static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT) + \
                  urlpatterns
+
+# Add React App catch-all as the LAST pattern
+urlpatterns += [
+    re_path(r'.*', TemplateView.as_view(template_name='index.html')),
+]
 
