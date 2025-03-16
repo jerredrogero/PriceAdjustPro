@@ -199,9 +199,15 @@ USE_TZ = True
 STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
-# Only add the React build directory if it exists
+# React static files
 REACT_STATIC_DIR = os.path.join(REACT_APP_BUILD_PATH, 'static')
 STATICFILES_DIRS = []
+
+# Add React build directory if it exists
+if os.path.exists(REACT_APP_BUILD_PATH):
+    STATICFILES_DIRS.append(REACT_APP_BUILD_PATH)
+
+# Add React static directory if it exists
 if os.path.exists(REACT_STATIC_DIR):
     STATICFILES_DIRS.append(REACT_STATIC_DIR)
 
@@ -209,13 +215,14 @@ if os.path.exists(REACT_STATIC_DIR):
 if DEBUG:
     STATICFILES_STORAGE = 'django.contrib.staticfiles.storage.StaticFilesStorage'
 else:
-    STATICFILES_STORAGE = 'whitenoise.storage.CompressedStaticFilesStorage'
+    STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 # Whitenoise configuration
 WHITENOISE_USE_FINDERS = True
-WHITENOISE_AUTOREFRESH = True
+WHITENOISE_AUTOREFRESH = DEBUG
 WHITENOISE_INDEX_FILE = True
 WHITENOISE_MANIFEST_STRICT = False
+WHITENOISE_ROOT = STATIC_ROOT
 
 # Media files (Uploaded files)
 MEDIA_URL = '/media/'

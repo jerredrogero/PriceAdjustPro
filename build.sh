@@ -11,6 +11,10 @@ export NODE_OPTIONS="--max-old-space-size=4096"
 npm install
 mkdir -p build/static  # Ensure build directory exists
 CI=false GENERATE_SOURCEMAP=false npm run build:production
+
+# Copy the build to the Django static directory
+mkdir -p ../price_adjust_pro/staticfiles/
+cp -r build/* ../price_adjust_pro/staticfiles/
 cd ..
 
 # Collect static files

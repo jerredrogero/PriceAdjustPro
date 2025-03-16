@@ -171,10 +171,12 @@ urlpatterns = [
     path('api/', include(api_urlpatterns)),
     
     # Static files from React build
-    re_path(r'^static/(?P<path>.*)$', serve, {'document_root': os.path.join(settings.REACT_APP_BUILD_PATH, 'static')}),
+    re_path(r'^static/(?P<path>.*)$', serve, {'document_root': settings.STATIC_ROOT}),
     path('favicon.ico', serve_react_file, kwargs={'filename': 'favicon.ico'}),
     path('manifest.json', serve_react_file, kwargs={'filename': 'manifest.json'}),
     path('logo192.png', serve_react_file, kwargs={'filename': 'logo192.png'}),
+    path('asset-manifest.json', serve_react_file, kwargs={'filename': 'asset-manifest.json'}),
+    path('robots.txt', serve_react_file, kwargs={'filename': 'robots.txt'}),
     
     # React App catch-all - must be last
     re_path(r'^.*$', TemplateView.as_view(template_name='index.html')),
