@@ -75,7 +75,7 @@ const Navigation: React.FC<NavigationProps> = ({ user }) => {
 
   const handleLogout = async () => {
     try {
-      // Redirect to logout URL
+      // Redirect to logout URL with browser navigation
       window.location.href = '/api/auth/logout/';
     } catch (error) {
       console.error('Failed to logout:', error);

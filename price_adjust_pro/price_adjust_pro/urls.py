@@ -99,7 +99,12 @@ def api_login(request):
 def api_logout(request):
     if request.method in ['POST', 'GET']:
         logout(request)
-        return JsonResponse({'message': 'Logged out successfully'})
+        # Check if the request wants JSON response or redirect
+        if request.headers.get('Accept') == 'application/json':
+            return JsonResponse({'message': 'Logged out successfully'})
+        else:
+            # Redirect to login page
+            return redirect('/login')
     return JsonResponse({'error': 'Method not allowed'}, status=405)
 
 @csrf_exempt
@@ -181,7 +186,7 @@ urlpatterns = [
 
 # Add React App catch-all for non-admin URLs
 react_urls = [
-    re_path(r'^(?!admin/).*$', TemplateView.as_view(template_name='index.html')),
+    re_path(r'^(?!admin/)(?!api/).*$', TemplateView.as_view(template_name='index.html')),
 ]
 
 # Combine URL patterns
