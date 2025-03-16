@@ -97,7 +97,7 @@ def api_login(request):
 
 @csrf_exempt
 def api_logout(request):
-    if request.method == 'POST':
+    if request.method in ['POST', 'GET']:
         logout(request)
         return JsonResponse({'message': 'Logged out successfully'})
     return JsonResponse({'error': 'Method not allowed'}, status=405)
@@ -164,7 +164,7 @@ api_urlpatterns = [
 ] + receipt_api_urls()
 
 urlpatterns = [
-    # Admin URLs
+    # Admin URLs - must be first to take precedence
     path('admin/', admin.site.urls),
     
     # API URLs
@@ -177,10 +177,15 @@ urlpatterns = [
     path('logo192.png', serve_react_file, kwargs={'filename': 'logo192.png'}),
     path('asset-manifest.json', serve_react_file, kwargs={'filename': 'asset-manifest.json'}),
     path('robots.txt', serve_react_file, kwargs={'filename': 'robots.txt'}),
-    
-    # React App catch-all - must be last
-    re_path(r'^.*$', TemplateView.as_view(template_name='index.html')),
 ]
+
+# Add React App catch-all for non-admin URLs
+react_urls = [
+    re_path(r'^(?!admin/).*$', TemplateView.as_view(template_name='index.html')),
+]
+
+# Combine URL patterns
+urlpatterns += react_urls
 
 # Add static/media serving in development
 if settings.DEBUG:
