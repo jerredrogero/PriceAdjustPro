@@ -168,15 +168,20 @@ api_urlpatterns = [
     path('auth/user/', api_user, name='api_user'),
 ] + receipt_api_urls()
 
-urlpatterns = [
-    # Admin URLs - must be first to take precedence
+# Define all Django-specific URL patterns first
+django_urlpatterns = [
+    # Admin URLs
     path('admin/', admin.site.urls),
     
     # API URLs
     path('api/', include(api_urlpatterns)),
     
-    # Static files from React build
+    # Static files
     re_path(r'^static/(?P<path>.*)$', serve, {'document_root': settings.STATIC_ROOT}),
+]
+
+# Define React-specific file patterns
+react_file_patterns = [
     path('favicon.ico', serve_react_file, kwargs={'filename': 'favicon.ico'}),
     path('manifest.json', serve_react_file, kwargs={'filename': 'manifest.json'}),
     path('logo192.png', serve_react_file, kwargs={'filename': 'logo192.png'}),
@@ -184,14 +189,21 @@ urlpatterns = [
     path('robots.txt', serve_react_file, kwargs={'filename': 'robots.txt'}),
 ]
 
+# Combine all URL patterns
+urlpatterns = django_urlpatterns + react_file_patterns
+
 # Add static/media serving in development
 if settings.DEBUG:
     urlpatterns = static(settings.STATIC_URL, document_root=settings.STATIC_ROOT) + \
                  static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT) + \
                  urlpatterns
 
-# Add React App catch-all as the LAST pattern
+# Add React App catch-all route LAST
+# This must be added after all other URL patterns
 urlpatterns += [
-    re_path(r'.*', TemplateView.as_view(template_name='index.html')),
+    # Exclude admin and API paths from the catch-all
+    re_path(r'^(?!admin/)(?!api/).+', TemplateView.as_view(template_name='index.html')),
+    # Handle the root URL
+    path('', TemplateView.as_view(template_name='index.html')),
 ]
 
