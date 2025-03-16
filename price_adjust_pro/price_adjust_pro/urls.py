@@ -198,12 +198,19 @@ if settings.DEBUG:
                  static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT) + \
                  urlpatterns
 
-# Add React App catch-all route LAST
-# This must be added after all other URL patterns
-urlpatterns += [
-    # Exclude admin and API paths from the catch-all
-    re_path(r'^(?!admin/)(?!api/).+', TemplateView.as_view(template_name='index.html')),
-    # Handle the root URL
+# Define specific React routes
+react_routes = [
     path('', TemplateView.as_view(template_name='index.html')),
+    path('login/', TemplateView.as_view(template_name='index.html')),
+    path('register/', TemplateView.as_view(template_name='index.html')),
+    path('dashboard/', TemplateView.as_view(template_name='index.html')),
+    path('receipts/', TemplateView.as_view(template_name='index.html')),
+    path('receipts/<path:path>/', TemplateView.as_view(template_name='index.html')),
+    path('analytics/', TemplateView.as_view(template_name='index.html')),
+    path('settings/', TemplateView.as_view(template_name='index.html')),
+    path('profile/', TemplateView.as_view(template_name='index.html')),
 ]
+
+# Add React routes LAST
+urlpatterns += react_routes
 
