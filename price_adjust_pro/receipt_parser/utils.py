@@ -172,7 +172,7 @@ Parse this receipt:
 
         # Configure Gemini
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-2.0-flash')
 
         # Generate response
         response = model.generate_content(prompt.format(text=text), stream=False)
