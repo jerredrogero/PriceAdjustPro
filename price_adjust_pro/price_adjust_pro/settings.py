@@ -99,21 +99,34 @@ WSGI_APPLICATION = 'price_adjust_pro.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
-# Database configuration
-if DEBUG:
+# Parse database connection url
+DATABASE_URL = os.getenv('DATABASE_URL')
+
+# Default to SQLite if no DATABASE_URL is provided
+if DATABASE_URL:
+    try:
+        DATABASES = {
+            'default': dj_database_url.config(
+                default=DATABASE_URL,
+                conn_max_age=600,
+                conn_health_checks=True,
+            )
+        }
+    except Exception as e:
+        print(f"Error connecting to PostgreSQL: {e}")
+        print("Falling back to SQLite database")
+        DATABASES = {
+            'default': {
+                'ENGINE': 'django.db.backends.sqlite3',
+                'NAME': BASE_DIR / 'db.sqlite3',
+            }
+        }
+else:
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
             'NAME': BASE_DIR / 'db.sqlite3',
         }
-    }
-else:
-    DATABASES = {
-        'default': dj_database_url.config(
-            default=os.environ.get('DATABASE_URL'),
-            conn_max_age=600,
-            ssl_require=True
-        )
     }
 
 # Cache settings for better performance
