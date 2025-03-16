@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <link rel="icon" href="/favicon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#000000" />
+    <meta name="description" content="PriceAdjustPro - Track your Costco receipts and price adjustments" />
+    <link rel="apple-touch-icon" href="/logo192.png" />
+    <link rel="manifest" href="/manifest.json" />
+    <title>PriceAdjustPro</title>
+    
+    <!-- Material UI Fonts -->
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,400,500,700&display=swap" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons" />
+    
+    <!-- Inline critical CSS -->
+    <style>
+        body {
+            margin: 0;
+            font-family: 'Roboto', 'Helvetica', 'Arial', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            background-color: #f5f5f5;
+        }
+        
+        #root {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .loading {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            width: 100vw;
+        }
+    </style>
+</head>
+<body>
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <div id="root">
+        <div class="loading">
+            <p>Loading PriceAdjustPro...</p>
+        </div>
+    </div>
+    
+    <!-- Load the React app -->
+    <script>
+        // Dynamically load the main JS bundle
+        function loadScript(src) {
+            return new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = src;
+                script.onload = resolve;
+                script.onerror = reject;
+                document.body.appendChild(script);
+            });
+        }
+        
+        // Function to find the main.js file
+        async function loadApp() {
+            try {
+                // Try to load the main JS file
+                await loadScript('/static/js/main.js');
+            } catch (e) {
+                console.error('Failed to load main.js, trying to fetch asset manifest');
+                
+                try {
+                    // Try to load from asset manifest
+                    const response = await fetch('/asset-manifest.json');
+                    if (response.ok) {
+                        const manifest = await response.json();
+                        if (manifest.files && manifest.files['main.js']) {
+                            await loadScript(manifest.files['main.js']);
+                        } else {
+                            console.error('No main.js found in asset manifest');
+                        }
+                    } else {
+                        console.error('Failed to load asset manifest');
+                    }
+                } catch (e) {
+                    console.error('Error loading app:', e);
+                }
+            }
+        }
+        
+        // Load the app when the page is ready
+        document.addEventListener('DOMContentLoaded', loadApp);
+    </script>
+</body>
+</html> 

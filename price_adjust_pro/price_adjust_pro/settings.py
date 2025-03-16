@@ -77,8 +77,8 @@ TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
         'DIRS': [
-            os.path.join(BASE_DIR, 'receipt_parser/templates'),
-            os.path.join(REACT_APP_BUILD_PATH),  # React build directory for index.html
+            os.path.join(BASE_DIR, 'templates'),
+            os.path.join(REACT_APP_BUILD_PATH),
         ],
         'APP_DIRS': True,
         'OPTIONS': {
@@ -87,7 +87,6 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
-                'django.template.context_processors.static',
             ],
         },
     },

@@ -12,9 +12,19 @@ npm install
 mkdir -p build/static  # Ensure build directory exists
 CI=false GENERATE_SOURCEMAP=false npm run build:production
 
+# Create a symlink for main.js to handle the hashed filename
+cd build/static/js
+MAIN_JS=$(ls main.*.js)
+ln -sf "$MAIN_JS" main.js
+cd ../../..
+
 # Copy the build to the Django static directory
 mkdir -p ../price_adjust_pro/staticfiles/
 cp -r build/* ../price_adjust_pro/staticfiles/
+
+# Copy asset-manifest.json to the root
+cp build/asset-manifest.json ../price_adjust_pro/staticfiles/
+
 cd ..
 
 # Collect static files
