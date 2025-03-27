@@ -59,6 +59,8 @@ INSTALLED_APPS = [
     'rest_framework',
 ]
 
+# Add middleware to bypass authentication checks for admin and registration
+
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
@@ -67,6 +69,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'price_adjust_pro.middleware.AuthenticationMiddleware',  # Our custom middleware
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]

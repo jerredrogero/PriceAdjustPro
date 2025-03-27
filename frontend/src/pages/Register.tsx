@@ -36,6 +36,7 @@ const Register: React.FC = () => {
     setLoading(true);
 
     try {
+      console.log('Registration: Sending registration request');
       const response = await fetch('/api/auth/register/', {
         method: 'POST',
         headers: {
@@ -49,15 +50,26 @@ const Register: React.FC = () => {
         }),
       });
 
+      const data = await response.json();
+      
       if (!response.ok) {
-        const data = await response.json();
+        console.error('Registration failed with response:', data);
         throw new Error(data.error || 'Registration failed');
       }
 
+      console.log('Registration successful:', data);
+
+      // Wait 1 second to ensure session is established
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
       // Log in the user after successful registration
+      console.log('Attempting login after registration');
       await login(username, password);
+      
+      console.log('Login successful, navigating to dashboard');
       navigate('/dashboard');
     } catch (err) {
+      console.error('Registration/login error:', err);
       setError(err instanceof Error ? err.message : 'Failed to create account');
     } finally {
       setLoading(false);

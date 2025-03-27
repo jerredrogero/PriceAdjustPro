@@ -3,16 +3,6 @@ URL configuration for price_adjust_pro project.
 
 The `urlpatterns` list routes URLs to views. For more information please see:
     https://docs.djangoproject.com/en/5.1/topics/http/urls/
-Examples:
-Function views
-    1. Add an import:  from my_app import views
-    2. Add a URL to urlpatterns:  path('', views.home, name='home')
-Class-based views
-    1. Add an import:  from other_app.views import Home
-    2. Add a URL to urlpatterns:  path('', Home.as_view(), name='home')
-Including another URLconf
-    1. Import the include() function: from django.urls import include, path
-    2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
 from django.urls import path, include, re_path
@@ -51,15 +41,18 @@ def serve_react_file(request, filename):
 def api_login(request):
     if request.method == 'POST':
         try:
+            print("Login attempt received")
             data = json.loads(request.body)
             username = data.get('username')
             password = data.get('password')
             
             if not username or not password:
+                print(f"Login error: Missing username or password")
                 return JsonResponse({'error': 'Username and password are required'}, status=400)
             
             user = authenticate(request, username=username, password=password)
             if user is not None:
+                print(f"User {username} authenticated successfully")
                 login(request, user)
                 
                 # Set session cookie attributes
@@ -85,26 +78,36 @@ def api_login(request):
                     domain=settings.CSRF_COOKIE_DOMAIN if not settings.DEBUG else None
                 )
                 
+                print(f"Login response prepared for {username}")
                 return response
                 
+            print(f"Login failed: Invalid credentials for {username}")
             return JsonResponse({'error': 'Invalid credentials'}, status=401)
         except json.JSONDecodeError:
+            print("Login error: Invalid JSON")
             return JsonResponse({'error': 'Invalid JSON'}, status=400)
         except Exception as e:
-            print(f"Login error: {str(e)}")  # Log the error
+            print(f"Login error: {str(e)}")
             return JsonResponse({'error': 'Login failed'}, status=500)
+    
+    print("Login error: Method not allowed")
     return JsonResponse({'error': 'Method not allowed'}, status=405)
 
 @csrf_exempt
 def api_logout(request):
     if request.method in ['POST', 'GET']:
+        print(f"Logout request for user: {request.user.username if request.user.is_authenticated else 'anonymous'}")
         logout(request)
         # Check if the request wants JSON response or redirect
         if request.headers.get('Accept') == 'application/json':
+            print("Sending JSON logout response")
             return JsonResponse({'message': 'Logged out successfully'})
         else:
             # Redirect to login page
+            print("Redirecting to login page after logout")
             return redirect('/login')
+    
+    print("Logout error: Method not allowed")
     return JsonResponse({'error': 'Method not allowed'}, status=405)
 
 @csrf_exempt
@@ -146,7 +149,13 @@ def api_register(request):
             login(request, user)
             print(f"User {username} created and logged in successfully")
             
-            return JsonResponse({
+            # Set session cookie attributes and expiry
+            request.session.set_expiry(1209600)  # 2 weeks
+            
+            # Ensure CSRF token is set
+            csrf_token = get_token(request)
+            
+            response = JsonResponse({
                 'message': 'Account created successfully',
                 'user': {
                     'id': user.id,
@@ -154,6 +163,19 @@ def api_register(request):
                     'email': user.email
                 }
             })
+            
+            # Set CSRF cookie explicitly
+            response.set_cookie(
+                'csrftoken',
+                csrf_token,
+                max_age=31536000,  # 1 year
+                secure=not settings.DEBUG,
+                httponly=False,
+                samesite='Lax',
+                domain=settings.CSRF_COOKIE_DOMAIN if not settings.DEBUG else None
+            )
+            
+            return response
         except Exception as e:
             print(f"Registration error: {str(e)}")
             return JsonResponse({'error': str(e)}, status=500)
@@ -161,11 +183,16 @@ def api_register(request):
     return JsonResponse({'error': 'Method not allowed'}, status=405)
 
 def api_user(request):
+    print(f"API User request received - Auth: {request.user.is_authenticated}")
     if request.user.is_authenticated:
-        return JsonResponse({
+        user_data = {
             'id': request.user.id,
             'username': request.user.username,
-        })
+        }
+        print(f"Returning authenticated user data: {user_data}")
+        return JsonResponse(user_data)
+    
+    print("User not authenticated")
     return JsonResponse({'error': 'Not authenticated'}, status=401)
 
 # API URLs
@@ -176,14 +203,17 @@ api_urlpatterns = [
     path('auth/user/', api_user, name='api_user'),
 ] + receipt_api_urls()
 
-# Define all URL patterns
-urlpatterns = [
-    # Admin URLs must be first - this is critical
+# Define Django-only URL patterns (these are completely separate from React)
+django_urlpatterns = [
+    # Admin URLs must be first
     path('admin/', admin.site.urls),
     
     # API URLs
     path('api/', include(api_urlpatterns)),
-    
+]
+
+# Define static files and React-specific files
+static_urlpatterns = [
     # Static files
     re_path(r'^static/(?P<path>.*)$', serve, {'document_root': settings.STATIC_ROOT}),
     
@@ -195,6 +225,15 @@ urlpatterns = [
     path('robots.txt', serve_react_file, kwargs={'filename': 'robots.txt'}),
 ]
 
+# Define React app routes
+react_urlpatterns = [
+    # All other paths go to the React app
+    re_path(r'^.*$', TemplateView.as_view(template_name='index.html')),
+]
+
+# Combine URL patterns in the correct order
+urlpatterns = django_urlpatterns + static_urlpatterns
+
 # Add static/media serving in development
 if settings.DEBUG:
     urlpatterns = static(settings.STATIC_URL, document_root=settings.STATIC_ROOT) + \
@@ -202,8 +241,5 @@ if settings.DEBUG:
                  urlpatterns
 
 # Add React routes LAST
-# All other URLs get handled by the React app
-urlpatterns += [
-    re_path(r'^.*$', TemplateView.as_view(template_name='index.html')),
-]
+urlpatterns += react_urlpatterns
 
