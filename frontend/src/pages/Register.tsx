@@ -62,8 +62,8 @@ const Register: React.FC = () => {
       const postRegSession = await axios.get('/api/debug/session/', { withCredentials: true });
       console.log('Post-registration session state:', postRegSession.data);
 
-      // Wait 1 second to ensure session is established
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Wait a bit longer to ensure session is established
+      await new Promise(resolve => setTimeout(resolve, 2000));
 
       try {
         // Log in the user after successful registration
@@ -75,11 +75,11 @@ const Register: React.FC = () => {
         console.log('Post-login session state:', postLoginSession.data);
         
         console.log('Login successful, navigating to dashboard');
-        navigate('/dashboard');
+        window.location.href = '/dashboard';  // Force a full page navigation instead of React Router
       } catch (loginErr) {
         console.error('Post-registration login failed:', loginErr);
         // If login fails, try to continue with registration success
-        navigate('/dashboard');
+        window.location.href = '/dashboard';  // Force a full page navigation instead of React Router
       }
     } catch (err) {
       console.error('Registration error:', err);
