@@ -13,6 +13,7 @@ import {
 } from '@mui/material';
 import { PersonAdd as RegisterIcon } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
+import axios from 'axios';
 
 const Register: React.FC = () => {
   const navigate = useNavigate();
@@ -37,40 +38,59 @@ const Register: React.FC = () => {
 
     try {
       console.log('Registration: Sending registration request');
-      const response = await fetch('/api/auth/register/', {
-        method: 'POST',
+      
+      // Check session state before registration
+      const sessionCheck = await axios.get('/api/debug/session/', { withCredentials: true });
+      console.log('Pre-registration session state:', sessionCheck.data);
+      
+      // Use axios instead of fetch to ensure cookies are handled properly
+      const response = await axios.post('/api/auth/register/', {
+        username,
+        email,
+        password1: password,
+        password2: confirmPassword,
+      }, { 
+        withCredentials: true,
         headers: {
           'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          username,
-          email,
-          password1: password,
-          password2: confirmPassword,
-        }),
+        }
       });
-
-      const data = await response.json();
       
-      if (!response.ok) {
-        console.error('Registration failed with response:', data);
-        throw new Error(data.error || 'Registration failed');
-      }
-
-      console.log('Registration successful:', data);
+      console.log('Registration successful:', response.data);
+      
+      // Check session state after registration
+      const postRegSession = await axios.get('/api/debug/session/', { withCredentials: true });
+      console.log('Post-registration session state:', postRegSession.data);
 
       // Wait 1 second to ensure session is established
       await new Promise(resolve => setTimeout(resolve, 1000));
 
-      // Log in the user after successful registration
-      console.log('Attempting login after registration');
-      await login(username, password);
-      
-      console.log('Login successful, navigating to dashboard');
-      navigate('/dashboard');
+      try {
+        // Log in the user after successful registration
+        console.log('Attempting login after registration');
+        await login(username, password);
+        
+        // Check session after login
+        const postLoginSession = await axios.get('/api/debug/session/', { withCredentials: true });
+        console.log('Post-login session state:', postLoginSession.data);
+        
+        console.log('Login successful, navigating to dashboard');
+        navigate('/dashboard');
+      } catch (loginErr) {
+        console.error('Post-registration login failed:', loginErr);
+        // If login fails, try to continue with registration success
+        navigate('/dashboard');
+      }
     } catch (err) {
-      console.error('Registration/login error:', err);
-      setError(err instanceof Error ? err.message : 'Failed to create account');
+      console.error('Registration error:', err);
+      let message = 'Failed to create account';
+      
+      if (axios.isAxiosError(err) && err.response) {
+        message = err.response.data.error || message;
+        console.error('Server response:', err.response.data);
+      }
+      
+      setError(message);
     } finally {
       setLoading(false);
     }

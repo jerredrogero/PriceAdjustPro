@@ -29,6 +29,9 @@ const instance = axios.create({
 
 // Add request interceptor
 instance.interceptors.request.use((config) => {
+  // Ensure withCredentials is always true
+  config.withCredentials = true;
+  
   // For file uploads, don't set Content-Type header
   if (config.data instanceof FormData) {
     delete config.headers['Content-Type'];
@@ -40,23 +43,38 @@ instance.interceptors.request.use((config) => {
     config.headers['X-CSRFToken'] = csrfToken;
   }
   
+  // Log all requests for debugging
+  console.log('API Request:', {
+    url: config.url,
+    method: config.method,
+    withCredentials: config.withCredentials,
+    headers: config.headers,
+    hasCsrf: !!csrfToken,
+  });
+  
   // Don't modify URLs that already include /api/
   if (!config.url?.startsWith('/api/')) {
     // Only prepend /api/ if it's not already there
     config.url = `/api${config.url?.startsWith('/') ? '' : '/'}${config.url}`;
   }
   
-  // Add mobile Safari workaround
-  if (config.data instanceof FormData) {
-    config.headers['X-Requested-With'] = 'XMLHttpRequest';
-  }
-  
   return config;
+}, error => {
+  console.error('API Request Error:', error);
+  return Promise.reject(error);
 });
 
 // Add response interceptor to handle errors
 instance.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // Log successful responses
+    console.log('API Response:', {
+      url: response.config.url,
+      status: response.status,
+      data: response.data
+    });
+    return response;
+  },
   (error) => {
     // Log error details for debugging
     console.error('API Error:', {
@@ -69,7 +87,8 @@ instance.interceptors.response.use(
     // Handle specific error cases
     if (error.response?.status === 401) {
       // Only redirect to login if not already on login page
-      if (!window.location.pathname.includes('/login')) {
+      if (!window.location.pathname.includes('/login') && 
+          !window.location.pathname.includes('/register')) {
         window.location.href = '/login';
       }
     }

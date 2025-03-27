@@ -195,12 +195,33 @@ def api_user(request):
     print("User not authenticated")
     return JsonResponse({'error': 'Not authenticated'}, status=401)
 
+def debug_session(request):
+    """Debug endpoint to check session and cookie status."""
+    response_data = {
+        'is_authenticated': request.user.is_authenticated,
+        'session_key': request.session.session_key,
+        'has_csrf_cookie': 'csrftoken' in request.COOKIES,
+        'has_session_cookie': 'sessionid' in request.COOKIES,
+        'csrf_token': get_token(request),
+        'cookies': list(request.COOKIES.keys())
+    }
+    
+    if request.user.is_authenticated:
+        response_data['user'] = {
+            'username': request.user.username,
+            'id': request.user.id
+        }
+    
+    print(f"Debug session: {response_data}")
+    return JsonResponse(response_data)
+
 # API URLs
 api_urlpatterns = [
     path('auth/login/', api_login, name='api_login'),
     path('auth/logout/', api_logout, name='api_logout'),
     path('auth/register/', api_register, name='api_register'),
     path('auth/user/', api_user, name='api_user'),
+    path('debug/session/', debug_session, name='debug_session'),
 ] + receipt_api_urls()
 
 # Define Django-only URL patterns (these are completely separate from React)

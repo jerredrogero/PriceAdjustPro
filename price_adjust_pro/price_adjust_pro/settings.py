@@ -259,41 +259,32 @@ CORS_ALLOW_METHODS = [
     'PUT',
 ]
 
-# CSRF settings
-CSRF_COOKIE_SECURE = not DEBUG
+# CSRF settings - relaxed for troubleshooting
+CSRF_COOKIE_SECURE = False  # Allow non-HTTPS for now
 CSRF_USE_SESSIONS = False
 CSRF_COOKIE_HTTPONLY = False
 CSRF_COOKIE_SAMESITE = 'Lax'
 CSRF_COOKIE_NAME = 'csrftoken'
 CSRF_HEADER_NAME = 'HTTP_X_CSRFTOKEN'
 
-# Add admin URLs to CSRF exempt list to avoid CSRF issues with the admin interface
-CSRF_TRUSTED_ORIGINS = ['https://*.onrender.com']
-# Pattern to match admin URLs that should be exempt from CSRF (this is safe for admin as it has its own CSRF protection)
-CSRF_EXEMPT_PATHS = ['/admin/']
+# Add trusted origins for all subdomains
+CSRF_TRUSTED_ORIGINS = [
+    'https://*.onrender.com',
+    'http://*.onrender.com',  # For testing
+    'http://localhost:8000',
+    'http://127.0.0.1:8000',
+]
 
-# Session settings
+# Session settings - relaxed for troubleshooting
 SESSION_COOKIE_SAMESITE = 'Lax'
 SESSION_COOKIE_HTTPONLY = True
-SESSION_COOKIE_SECURE = not DEBUG
+SESSION_COOKIE_SECURE = False  # Allow non-HTTPS for now
 SESSION_COOKIE_AGE = 1209600  # 2 weeks in seconds
+SESSION_ENGINE = 'django.contrib.sessions.backends.db'  # Use database sessions
 
-# Cookie settings for mobile compatibility
-if not DEBUG:
-    # Production security settings
-    SECURE_SSL_REDIRECT = True
-    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
-    SECURE_BROWSER_XSS_FILTER = True
-    SECURE_CONTENT_TYPE_NOSNIFF = True
-    SECURE_HSTS_SECONDS = 31536000  # 1 year
-    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-    SECURE_HSTS_PRELOAD = True
-    
-    # Additional cookie settings for mobile Safari
-    SESSION_COOKIE_DOMAIN = '.priceadjustpro.com'  # Include subdomains
-    CSRF_COOKIE_DOMAIN = '.priceadjustpro.com'  # Keep the leading dot
-    CSRF_COOKIE_NAME = 'csrftoken'
-    SESSION_COOKIE_NAME = 'sessionid'
+# Clear domain settings that might cause issues
+SESSION_COOKIE_DOMAIN = None
+CSRF_COOKIE_DOMAIN = None
 
 # Ensure admin static files are served
 ADMIN_MEDIA_PREFIX = '/static/admin/'

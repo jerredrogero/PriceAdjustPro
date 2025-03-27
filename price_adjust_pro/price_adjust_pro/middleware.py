@@ -17,25 +17,18 @@ class AuthenticationMiddleware:
             re.compile(r'^/asset-manifest.json$'),
             re.compile(r'^/robots.txt$'),
         ]
+        print("AuthenticationMiddleware initialized")
 
     def __call__(self, request):
-        # Process the request
-        response = self.get_response(request)
+        # Check for debugging
+        if 'HTTP_X_DEBUG_MIDDLEWARE' in request.META:
+            print(f"Middleware processing path: {request.path}")
         
+        # Always allow the request to proceed
+        response = self.get_response(request)
         return response
 
     def process_view(self, request, view_func, view_args, view_kwargs):
-        """
-        Called just before Django calls the view.
-        Return None to continue processing, or a Response to short-circuit.
-        """
-        # Check if the path is exempt
-        path = request.path_info.lstrip('/')
-        full_path = f'/{path}'
-        
-        # Allow access to exempt URLs without authentication
-        for exempt_url in self.exempt_urls:
-            if exempt_url.match(full_path):
-                return None
-                
+        """Always return None to let all requests pass through"""
+        # For testing purposes, always allow the request
         return None 

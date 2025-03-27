@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import api from '../api/axios';
+import axios from 'axios';
 
 interface AuthContextType {
   isAuthenticated: boolean;
@@ -30,7 +31,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const checkAuth = async () => {
     try {
       console.log('AuthProvider: Making API call to check auth status');
-      const response = await api.get('/api/auth/user/');
+      // Use direct axios call with withCredentials
+      const response = await axios.get('/api/auth/user/', { withCredentials: true });
       console.log('AuthProvider: Auth check successful', response.data);
       setIsAuthenticated(true);
       setUser(response.data);
@@ -44,13 +46,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const login = async (username: string, password: string) => {
     try {
       console.log('AuthProvider: Attempting login for', username);
-      const response = await api.post('/api/auth/login/', {
+      // Use direct axios call with withCredentials
+      const response = await axios.post('/api/auth/login/', {
         username,
         password,
-      });
+      }, { withCredentials: true });
+      
       console.log('AuthProvider: Login successful', response.data);
       setIsAuthenticated(true);
       setUser(response.data);
+      
+      // Check session state after login
+      const sessionState = await axios.get('/api/debug/session/', { withCredentials: true });
+      console.log('AuthProvider: Session state after login:', sessionState.data);
+      
       // Force a cookie check to ensure cookies are set properly
       await checkAuth();
     } catch (error) {
@@ -62,7 +71,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const logout = async () => {
     try {
       console.log('AuthProvider: Attempting logout');
-      await api.post('/api/auth/logout/');
+      // Use direct axios call with withCredentials
+      await axios.post('/api/auth/logout/', {}, { withCredentials: true });
       console.log('AuthProvider: Logout successful');
       setIsAuthenticated(false);
       setUser(null);
