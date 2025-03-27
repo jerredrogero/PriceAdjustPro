@@ -111,6 +111,7 @@ def api_logout(request):
 def api_register(request):
     if request.method == 'POST':
         try:
+            print("Registration attempt received")
             data = json.loads(request.body)
             from django.contrib.auth.models import User
             
@@ -120,13 +121,18 @@ def api_register(request):
             password1 = data.get('password1')
             password2 = data.get('password2')
             
+            print(f"Registration attempt for user: {username}, email: {email}")
+            
             if not all([username, email, password1, password2]):
+                print("Registration error: Missing required fields")
                 return JsonResponse({'error': 'All fields are required'}, status=400)
             
             if password1 != password2:
+                print("Registration error: Passwords do not match")
                 return JsonResponse({'error': 'Passwords do not match'}, status=400)
             
             if User.objects.filter(username=username).exists():
+                print(f"Registration error: Username {username} already exists")
                 return JsonResponse({'error': 'Username already exists'}, status=400)
             
             # Create user
@@ -138,6 +144,7 @@ def api_register(request):
             
             # Log the user in
             login(request, user)
+            print(f"User {username} created and logged in successfully")
             
             return JsonResponse({
                 'message': 'Account created successfully',
@@ -148,6 +155,7 @@ def api_register(request):
                 }
             })
         except Exception as e:
+            print(f"Registration error: {str(e)}")
             return JsonResponse({'error': str(e)}, status=500)
     
     return JsonResponse({'error': 'Method not allowed'}, status=405)
@@ -168,9 +176,9 @@ api_urlpatterns = [
     path('auth/user/', api_user, name='api_user'),
 ] + receipt_api_urls()
 
-# Define all Django-specific URL patterns first
-django_urlpatterns = [
-    # Admin URLs
+# Define all URL patterns
+urlpatterns = [
+    # Admin URLs must be first - this is critical
     path('admin/', admin.site.urls),
     
     # API URLs
@@ -178,10 +186,8 @@ django_urlpatterns = [
     
     # Static files
     re_path(r'^static/(?P<path>.*)$', serve, {'document_root': settings.STATIC_ROOT}),
-]
-
-# Define React-specific file patterns
-react_file_patterns = [
+    
+    # React-specific files
     path('favicon.ico', serve_react_file, kwargs={'filename': 'favicon.ico'}),
     path('manifest.json', serve_react_file, kwargs={'filename': 'manifest.json'}),
     path('logo192.png', serve_react_file, kwargs={'filename': 'logo192.png'}),
@@ -189,28 +195,15 @@ react_file_patterns = [
     path('robots.txt', serve_react_file, kwargs={'filename': 'robots.txt'}),
 ]
 
-# Combine all URL patterns
-urlpatterns = django_urlpatterns + react_file_patterns
-
 # Add static/media serving in development
 if settings.DEBUG:
     urlpatterns = static(settings.STATIC_URL, document_root=settings.STATIC_ROOT) + \
                  static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT) + \
                  urlpatterns
 
-# Define specific React routes
-react_routes = [
-    path('', TemplateView.as_view(template_name='index.html')),
-    path('login/', TemplateView.as_view(template_name='index.html')),
-    path('register/', TemplateView.as_view(template_name='index.html')),
-    path('dashboard/', TemplateView.as_view(template_name='index.html')),
-    path('receipts/', TemplateView.as_view(template_name='index.html')),
-    path('receipts/<path:path>/', TemplateView.as_view(template_name='index.html')),
-    path('analytics/', TemplateView.as_view(template_name='index.html')),
-    path('settings/', TemplateView.as_view(template_name='index.html')),
-    path('profile/', TemplateView.as_view(template_name='index.html')),
-]
-
 # Add React routes LAST
-urlpatterns += react_routes
+# All other URLs get handled by the React app
+urlpatterns += [
+    re_path(r'^.*$', TemplateView.as_view(template_name='index.html')),
+]
 

@@ -257,14 +257,17 @@ CORS_ALLOW_METHODS = [
 ]
 
 # CSRF settings
+CSRF_COOKIE_SECURE = not DEBUG
+CSRF_USE_SESSIONS = False
+CSRF_COOKIE_HTTPONLY = False
 CSRF_COOKIE_SAMESITE = 'Lax'
-CSRF_COOKIE_HTTPONLY = False  # Required for Axios to read CSRF token
-CSRF_TRUSTED_ORIGINS = [
-    'https://priceadjustpro.com',
-    'https://www.priceadjustpro.com'
-]
-CSRF_USE_SESSIONS = False  # Ensure we're using cookies, not sessions
-CSRF_COOKIE_SECURE = True
+CSRF_COOKIE_NAME = 'csrftoken'
+CSRF_HEADER_NAME = 'HTTP_X_CSRFTOKEN'
+
+# Add admin URLs to CSRF exempt list to avoid CSRF issues with the admin interface
+CSRF_TRUSTED_ORIGINS = ['https://*.onrender.com']
+# Pattern to match admin URLs that should be exempt from CSRF (this is safe for admin as it has its own CSRF protection)
+CSRF_EXEMPT_PATHS = ['/admin/']
 
 # Session settings
 SESSION_COOKIE_SAMESITE = 'Lax'
