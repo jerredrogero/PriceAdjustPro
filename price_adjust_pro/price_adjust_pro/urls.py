@@ -248,8 +248,8 @@ static_urlpatterns = [
 
 # Define React app routes
 react_urlpatterns = [
-    # All other paths go to the React app
-    re_path(r'^.*$', TemplateView.as_view(template_name='index.html')),
+    # All other paths go to the React app (excluding admin and api paths)
+    re_path(r'^(?!admin)(?!api/).*$', TemplateView.as_view(template_name='index.html')),
 ]
 
 # Combine URL patterns in the correct order
