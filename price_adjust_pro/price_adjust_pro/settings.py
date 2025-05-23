@@ -273,6 +273,8 @@ CSRF_TRUSTED_ORIGINS = [
     'http://*.onrender.com',  # For testing
     'http://localhost:8000',
     'http://127.0.0.1:8000',
+    'http://localhost:3000',  # React frontend
+    'http://127.0.0.1:3000',  # React frontend
 ]
 
 # Session settings - relaxed for troubleshooting

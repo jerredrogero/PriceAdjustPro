@@ -23,6 +23,8 @@ import {
   Edit as EditIcon,
   Save as SaveIcon,
   Cancel as CancelIcon,
+  Delete as DeleteIcon,
+  Add as AddIcon,
 } from '@mui/icons-material';
 import { format } from 'date-fns';
 import api from '../api/axios';
@@ -138,6 +140,25 @@ const ReceiptDetail: React.FC = () => {
     }
   };
 
+  const addNewItem = () => {
+    const newItem: ReceiptItem = {
+      id: Date.now(), // Temporary ID for new items
+      item_code: '',
+      description: '',
+      price: '0.00',
+      quantity: 1,
+      total_price: '0.00',
+      is_taxable: true,
+      instant_savings: null,
+      original_price: null
+    };
+    setEditedItems(prev => [...prev, newItem]);
+  };
+
+  const removeItem = (index: number) => {
+    setEditedItems(prev => prev.filter((_, i) => i !== index));
+  };
+
   if (loading) return <LinearProgress />;
   if (error) return <Alert severity="error">{error}</Alert>;
   if (!receipt) return <Alert severity="error">Receipt not found</Alert>;
@@ -237,6 +258,7 @@ const ReceiptDetail: React.FC = () => {
               <TableCell align="right">Price</TableCell>
               <TableCell align="right">Quantity</TableCell>
               <TableCell align="right">Total</TableCell>
+              {editMode && <TableCell align="right">Actions</TableCell>}
             </TableRow>
           </TableHead>
           <TableBody>
@@ -296,10 +318,22 @@ const ReceiptDetail: React.FC = () => {
                 <TableCell align="right">
                   {formatCurrency(item.total_price)}
                 </TableCell>
+                {editMode && (
+                  <TableCell align="right">
+                    <IconButton
+                      onClick={() => removeItem(index)}
+                      color="error"
+                      size="small"
+                      title="Remove Item"
+                    >
+                      <DeleteIcon />
+                    </IconButton>
+                  </TableCell>
+                )}
               </TableRow>
             ))}
             <TableRow>
-              <TableCell colSpan={3} />
+              <TableCell colSpan={editMode ? 4 : 3} />
               <TableCell align="right">
                 <Typography variant="subtitle1">Subtotal:</Typography>
                 <Typography variant="subtitle1">Tax:</Typography>
@@ -320,6 +354,19 @@ const ReceiptDetail: React.FC = () => {
           </TableBody>
         </Table>
       </TableContainer>
+
+      {editMode && (
+        <Box sx={{ mt: 2, display: 'flex', justifyContent: 'center' }}>
+          <Button
+            variant="outlined"
+            startIcon={<AddIcon />}
+            onClick={addNewItem}
+            sx={{ px: 3 }}
+          >
+            Add Missing Item
+          </Button>
+        </Box>
+      )}
     </Container>
   );
 };
