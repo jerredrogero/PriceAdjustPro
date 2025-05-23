@@ -7,6 +7,11 @@ export interface ReceiptItem {
   total_price: string;
   instant_savings: string | null;
   original_price: string | null;
+  // Optional fields for editing support
+  original_item_code?: string;
+  original_description?: string;
+  original_quantity?: number;
+  needs_quantity_review?: boolean;
 }
 
 export interface Receipt {

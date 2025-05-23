@@ -196,6 +196,16 @@ const ReceiptDetail: React.FC = () => {
         </Typography>
       </Paper>
 
+      {editMode && (
+        <Alert severity="warning" sx={{ mb: 3 }}>
+          <Typography variant="body2">
+            <strong>Beta Feature:</strong> Item number editing is enabled for testing. 
+            Note that item numbers are used to match products across users for price adjustment alerts. 
+            Incorrect item numbers may affect price matching accuracy.
+          </Typography>
+        </Alert>
+      )}
+
       <TableContainer component={Paper}>
         <Table>
           <TableHead>
@@ -210,7 +220,19 @@ const ReceiptDetail: React.FC = () => {
           <TableBody>
             {editedItems.map((item, index) => (
               <TableRow key={item.id}>
-                <TableCell>{item.item_code}</TableCell>
+                <TableCell>
+                  {editMode ? (
+                    <TextField
+                      value={item.item_code}
+                      onChange={(e) => handleItemChange(index, 'item_code', e.target.value)}
+                      variant="standard"
+                      inputProps={{ style: { textAlign: 'center' } }}
+                      sx={{ width: '120px' }}
+                    />
+                  ) : (
+                    item.item_code
+                  )}
+                </TableCell>
                 <TableCell>
                   {editMode ? (
                     <TextField

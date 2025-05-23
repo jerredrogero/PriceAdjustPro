@@ -30,17 +30,13 @@ interface Props {
   onSave: (updatedReceipt: Partial<Receipt>) => void;
 }
 
-interface EditableItem extends Omit<LineItem, 'original_description' | 'original_quantity'> {
-  original_description: string;
-  original_quantity: number;
-}
-
 const ReceiptReview: React.FC<Props> = ({ receipt, open, onClose, onSave }) => {
-  const [items, setItems] = useState<EditableItem[]>(
+  const [items, setItems] = useState<LineItem[]>(
     receipt.items.map(item => ({
       ...item,
       original_description: item.original_description || item.description,
       original_quantity: item.original_quantity || item.quantity,
+      original_item_code: item.original_item_code || item.item_code,
     }))
   );
   const [error, setError] = useState<string>('');
@@ -59,6 +55,15 @@ const ReceiptReview: React.FC<Props> = ({ receipt, open, onClose, onSave }) => {
     newItems[index] = {
       ...newItems[index],
       description: newDescription,
+    };
+    setItems(newItems);
+  };
+
+  const handleItemCodeChange = (index: number, newItemCode: string) => {
+    const newItems = [...items];
+    newItems[index] = {
+      ...newItems[index],
+      item_code: newItemCode,
     };
     setItems(newItems);
   };
@@ -104,6 +109,13 @@ const ReceiptReview: React.FC<Props> = ({ receipt, open, onClose, onSave }) => {
           Total items on receipt: {receipt.total_items_sold}
         </Typography>
 
+        <Alert severity="info" sx={{ mt: 1, mb: 2 }}>
+          <Typography variant="body2">
+            <strong>Beta Feature:</strong> Item codes can be edited for accuracy. 
+            These are used to match products across users for price adjustment alerts.
+          </Typography>
+        </Alert>
+
         <TableContainer component={Paper} sx={{ mt: 2 }}>
           <Table>
             <TableHead>
@@ -118,7 +130,19 @@ const ReceiptReview: React.FC<Props> = ({ receipt, open, onClose, onSave }) => {
             <TableBody>
               {items.map((item, index) => (
                 <TableRow key={item.item_code}>
-                  <TableCell>{item.item_code}</TableCell>
+                  <TableCell>
+                    <TextField
+                      fullWidth
+                      value={item.item_code}
+                      onChange={(e) => handleItemCodeChange(index, e.target.value)}
+                      variant="standard"
+                      helperText={
+                        item.item_code !== (item.original_item_code || item.item_code)
+                          ? `Original: ${item.original_item_code || item.item_code}`
+                          : undefined
+                      }
+                    />
+                  </TableCell>
                   <TableCell>
                     <TextField
                       fullWidth
@@ -126,8 +150,8 @@ const ReceiptReview: React.FC<Props> = ({ receipt, open, onClose, onSave }) => {
                       onChange={(e) => handleDescriptionChange(index, e.target.value)}
                       variant="standard"
                       helperText={
-                        item.description !== item.original_description
-                          ? `Original: ${item.original_description}`
+                        item.description !== (item.original_description || item.description)
+                          ? `Original: ${item.original_description || item.description}`
                           : undefined
                       }
                     />
@@ -141,8 +165,8 @@ const ReceiptReview: React.FC<Props> = ({ receipt, open, onClose, onSave }) => {
                       variant="standard"
                       error={item.needs_quantity_review}
                       helperText={
-                        item.quantity !== item.original_quantity
-                          ? `Original: ${item.original_quantity}`
+                        item.quantity !== (item.original_quantity || item.quantity)
+                          ? `Original: ${item.original_quantity || item.quantity}`
                           : undefined
                       }
                       inputProps={{ min: 1, style: { textAlign: 'right' } }}

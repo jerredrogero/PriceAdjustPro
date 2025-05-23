@@ -14,6 +14,7 @@ import {
   Alert,
   useTheme,
   alpha,
+  Chip,
 } from '@mui/material';
 import {
   MonetizationOn as SavingsIcon,
@@ -53,6 +54,37 @@ const Landing: React.FC = () => {
 
   return (
     <Box>
+      {/* Beta Disclaimer */}
+      <Alert 
+        severity="info" 
+        sx={{ 
+          backgroundColor: '#1976d2',
+          color: 'white',
+          borderRadius: 0,
+          py: 2,
+          '& .MuiAlert-icon': {
+            color: 'white'
+          }
+        }}
+      >
+        <Container maxWidth="lg">
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap', justifyContent: 'center' }}>
+            <Chip 
+              label="BETA" 
+              sx={{ 
+                backgroundColor: 'white',
+                color: '#1976d2',
+                fontWeight: 'bold',
+                fontSize: '0.75rem'
+              }} 
+            />
+            <Typography component="span" sx={{ fontWeight: 'bold', textAlign: 'center' }}>
+              The website is free to use while in BETA!
+            </Typography>
+          </Box>
+        </Container>
+      </Alert>
+
       {/* Hero Section */}
       <Box
         sx={{
@@ -69,7 +101,7 @@ const Landing: React.FC = () => {
                 Get Money Back on Your Costco Purchases
               </Typography>
               <Typography variant="h5" paragraph sx={{ mb: 4, opacity: 0.9 }}>
-                PriceAdjustPro tracks your Costco purchases and automatically notifies you when a price adjustment is available.
+                PriceAdjustPro tracks your Costco purchases and automatically notifies you when a price adjustment is available. The website is free to use while in BETA!
               </Typography>
               <Button
                 variant="contained"
@@ -193,6 +225,9 @@ const Landing: React.FC = () => {
                 <Typography variant="h6" gutterBottom>
                   Get Your Receipt
                 </Typography>
+                <Typography variant="body2" sx={{ mb: 2, fontStyle: 'italic' }}>
+                  Option 1: Download PDF from Costco.com
+                </Typography>
                 <List dense>
                   <ListItem>
                     <ListItemIcon>
@@ -231,6 +266,12 @@ const Landing: React.FC = () => {
                     <ListItemText primary="Choose Save as PDF" secondary="In the print dialog" />
                   </ListItem>
                 </List>
+                <Typography variant="body2" sx={{ mt: 2, mb: 1, fontStyle: 'italic', fontWeight: 'bold' }}>
+                  Option 2: Take a Photo (NEW!)
+                </Typography>
+                <Typography variant="body2" sx={{ mb: 2 }}>
+                  Simply take a photo of your physical receipt with your phone camera. Our system can read through strikethrough marks!
+                </Typography>
                 <Button
                   variant="outlined"
                   component="a"

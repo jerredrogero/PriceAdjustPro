@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Container, Typography, Box } from '@mui/material';
+import { Container, Typography, Box, Alert, Chip } from '@mui/material';
 import PriceAdjustmentBanner from '../components/PriceAdjustmentBanner';
 import ReceiptList from '../components/ReceiptList';
 
@@ -35,6 +35,31 @@ const Home: React.FC = () => {
 
   return (
     <Container maxWidth="lg">
+      {/* Beta Disclaimer */}
+      <Alert 
+        severity="info" 
+        sx={{ 
+          mb: 3, 
+          border: '2px solid',
+          borderColor: 'primary.main',
+          backgroundColor: 'primary.light',
+          color: 'primary.contrastText',
+          fontWeight: 'bold'
+        }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+          <Chip 
+            label="BETA" 
+            color="primary" 
+            variant="filled" 
+            sx={{ fontWeight: 'bold', fontSize: '0.75rem' }} 
+          />
+          <Typography component="span" sx={{ flex: 1 }}>
+            <strong>The website is free to use while in BETA.</strong> Features may change and data accuracy is being improved. Thank you for helping us test!
+          </Typography>
+        </Box>
+      </Alert>
+
       <Box sx={{ mb: 4 }}>
         <Typography variant="h4" component="h1" gutterBottom>
           Welcome to PriceAdjustPro

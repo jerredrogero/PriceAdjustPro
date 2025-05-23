@@ -46,8 +46,16 @@ def upload_receipt(request):
         # Validate file type - now accepting images too
         file_ext = receipt_file.name.lower()
         allowed_extensions = ['.pdf', '.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp']
-        if not any(file_ext.endswith(ext) for ext in allowed_extensions):
-            messages.error(request, 'Please upload a PDF or image file (JPG, PNG, etc.).')
+        
+        # Debug logging
+        logger.info(f"Uploaded file: {receipt_file.name}, extension check: {file_ext}")
+        
+        is_valid_file = any(file_ext.endswith(ext) for ext in allowed_extensions)
+        logger.info(f"File validation result: {is_valid_file}")
+        
+        if not is_valid_file:
+            logger.warning(f"Invalid file type uploaded: {file_ext}")
+            messages.error(request, f'Please upload a PDF or image file (JPG, PNG, WebP, etc.). Received: {file_ext}')
             return redirect('upload_receipt')
             
         try:
@@ -358,8 +366,16 @@ def api_receipt_upload(request):
     # Validate file type - now accepting images too
     file_ext = receipt_file.name.lower()
     allowed_extensions = ['.pdf', '.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp']
-    if not any(file_ext.endswith(ext) for ext in allowed_extensions):
-        return JsonResponse({'error': 'Please upload a PDF or image file (JPG, PNG, etc.)'}, status=400)
+    
+    # Debug logging
+    logger.info(f"Uploaded file: {receipt_file.name}, extension check: {file_ext}")
+    
+    is_valid_file = any(file_ext.endswith(ext) for ext in allowed_extensions)
+    logger.info(f"File validation result: {is_valid_file}")
+    
+    if not is_valid_file:
+        logger.warning(f"Invalid file type uploaded: {file_ext}")
+        return JsonResponse({'error': 'Please upload a PDF or image file (JPG, PNG, WebP, etc.)'}, status=400)
         
     try:
         # Save the uploaded file

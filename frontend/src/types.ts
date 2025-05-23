@@ -9,6 +9,7 @@ export interface LineItem {
   is_taxable: boolean;
   original_description?: string;
   original_quantity?: number;
+  original_item_code?: string;
   needs_quantity_review?: boolean;
   editable?: boolean;
 }

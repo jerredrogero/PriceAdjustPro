@@ -525,6 +525,21 @@ def extract_text_from_image(image_path: str) -> str:
         with open(image_path, 'rb') as file:
             image_content = file.read()
         
+        # Determine MIME type based on file extension
+        file_ext = os.path.splitext(image_path)[1].lower()
+        print(f"Processing image with extension: {file_ext}")
+        
+        mime_types = {
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg', 
+            '.png': 'image/png',
+            '.webp': 'image/webp',
+            '.gif': 'image/gif',
+            '.bmp': 'image/bmp'
+        }
+        mime_type = mime_types.get(file_ext, 'image/jpeg')
+        print(f"Using MIME type: {mime_type} for file extension: {file_ext}")
+        
         # Configure Gemini
         api_key = settings.GEMINI_API_KEY
         if not api_key:
@@ -558,26 +573,18 @@ E 1726362 POUCH 13.89 3
 
 Extract ALL visible text, maintaining line structure. If you're uncertain about a character, provide your best guess in [brackets]."""
         
-        # Determine MIME type based on file extension
-        file_ext = os.path.splitext(image_path)[1].lower()
-        mime_types = {
-            '.jpg': 'image/jpeg',
-            '.jpeg': 'image/jpeg', 
-            '.png': 'image/png',
-            '.webp': 'image/webp',
-            '.gif': 'image/gif',
-            '.bmp': 'image/bmp'
-        }
-        mime_type = mime_types.get(file_ext, 'image/jpeg')
-        
         # Create the image data
         image_data = {
             "mime_type": mime_type,
             "data": base64.b64encode(image_content).decode('utf-8')
         }
         
+        print(f"Sending image to Gemini with MIME type: {mime_type}")
+        
         # Generate response
         response = model.generate_content([prompt, image_data], stream=False)
+        
+        print(f"Successfully processed image: {image_path}")
         
         # Return the extracted text
         return response.text

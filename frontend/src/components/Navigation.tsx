@@ -13,6 +13,7 @@ import {
   useTheme,
   useMediaQuery,
   Link,
+  Chip,
 } from '@mui/material';
 import {
   Menu as MenuIcon,
@@ -124,6 +125,18 @@ const Navigation: React.FC<NavigationProps> = ({ user }) => {
           <Typography variant="h6" component="span">
             PriceAdjustPro
           </Typography>
+          <Chip 
+            label="BETA" 
+            size="small" 
+            sx={{ 
+              ml: 1, 
+              backgroundColor: 'secondary.main',
+              color: 'white',
+              fontSize: '0.7rem',
+              height: '20px',
+              fontWeight: 'bold'
+            }} 
+          />
         </Link>
 
         {!isAuthenticated ? (
