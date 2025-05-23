@@ -78,6 +78,7 @@ class LineItem(models.Model):
     quantity = models.IntegerField(default=1)
     discount = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     is_taxable = models.BooleanField(default=False)
+    on_sale = models.BooleanField(default=False, help_text="Mark this item as on sale if the parsing missed it")
     instant_savings = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     original_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     created_at = models.DateTimeField(default=timezone.now)

@@ -5,6 +5,7 @@ export interface ReceiptItem {
   price: string;
   quantity: number;
   total_price: string;
+  on_sale: boolean;
   instant_savings: string | null;
   original_price: string | null;
   // Optional fields for editing support

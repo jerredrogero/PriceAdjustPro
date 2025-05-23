@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
-import { ThemeProvider, createTheme, Box, CircularProgress } from '@mui/material';
+import { Box, CircularProgress } from '@mui/material';
+import { ThemeContextProvider } from './contexts/ThemeContext';
 import Layout from './components/Layout';
 import PrivateRoute from './components/PrivateRoute';
 import Login from './components/Login';
@@ -24,21 +25,6 @@ interface User {
   is_staff?: boolean;
   is_superuser?: boolean;
 }
-
-const theme = createTheme({
-  palette: {
-    primary: {
-      main: '#CF0A2C', // Costco red
-      light: '#E63950',
-      dark: '#B00020',
-    },
-    secondary: {
-      main: '#005DAA', // Costco blue
-      light: '#4286C5',
-      dark: '#003C7D',
-    },
-  },
-});
 
 // Wrapper component to handle auth check
 const AppContent: React.FC = () => {
@@ -91,39 +77,30 @@ const AppContent: React.FC = () => {
 
   return (
     <UserContext.Provider value={user}>
-      <Navigation user={user} />
-      <Box sx={{ mt: 8 }}>
-        <Routes>
-          {/* Public Routes */}
-          <Route path="/" element={<Landing />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-
-          {/* Protected Routes */}
-          <Route element={<Layout />}>
-            <Route path="/dashboard" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
-            <Route path="/receipts" element={<PrivateRoute><ReceiptList /></PrivateRoute>} />
-            <Route path="/receipts/:transactionNumber" element={<PrivateRoute><ReceiptDetail /></PrivateRoute>} />
-            <Route path="/upload" element={<PrivateRoute><ReceiptUpload /></PrivateRoute>} />
-            <Route path="/price-adjustments" element={<PrivateRoute><PriceAdjustments /></PrivateRoute>} />
-            <Route path="/analytics" element={<PrivateRoute><Analytics /></PrivateRoute>} />
-          </Route>
-
-          {/* Redirect unmatched routes to home */}
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </Box>
+      <Routes>
+        <Route path="/" element={user ? <Navigate to="/dashboard" /> : <Landing />} />
+        <Route path="/login" element={user ? <Navigate to="/dashboard" /> : <Login />} />
+        <Route path="/register" element={user ? <Navigate to="/dashboard" /> : <Register />} />
+        <Route element={<PrivateRoute><Layout /></PrivateRoute>}>
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/receipts" element={<ReceiptList />} />
+          <Route path="/receipts/:transactionNumber" element={<ReceiptDetail />} />
+          <Route path="/upload" element={<ReceiptUpload />} />
+          <Route path="/price-adjustments" element={<PriceAdjustments />} />
+          <Route path="/analytics" element={<Analytics />} />
+        </Route>
+      </Routes>
     </UserContext.Provider>
   );
 };
 
 const App: React.FC = () => {
   return (
-    <ThemeProvider theme={theme}>
+    <ThemeContextProvider>
       <Router>
         <AppContent />
       </Router>
-    </ThemeProvider>
+    </ThemeContextProvider>
   );
 };
 

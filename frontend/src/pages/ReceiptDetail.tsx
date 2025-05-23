@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Container,
@@ -16,7 +16,7 @@ import {
   TextField,
   Alert,
   LinearProgress,
-  useTheme,
+  Checkbox,
 } from '@mui/material';
 import {
   ArrowBack as BackIcon,
@@ -37,6 +37,7 @@ interface ReceiptItem {
   quantity: number;
   total_price: string;
   is_taxable: boolean;
+  on_sale: boolean;
   instant_savings: string | null;
   original_price: string | null;
 }
@@ -69,7 +70,6 @@ const formatCurrency = (value: string | null | undefined): string => {
 const ReceiptDetail: React.FC = () => {
   const { transactionNumber } = useParams<{ transactionNumber: string }>();
   const navigate = useNavigate();
-  const theme = useTheme();
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [editMode, setEditMode] = useState(false);
   const [editedItems, setEditedItems] = useState<ReceiptItem[]>([]);
@@ -79,15 +79,7 @@ const ReceiptDetail: React.FC = () => {
   const [searchParams] = useSearchParams();
   const [showUploadSuccess, setShowUploadSuccess] = useState(false);
 
-  useEffect(() => {
-    fetchReceipt();
-    // Check if this is a fresh upload
-    if (searchParams.get('uploaded') === 'true') {
-      setShowUploadSuccess(true);
-    }
-  }, [transactionNumber, searchParams]);
-
-  const fetchReceipt = async () => {
+  const fetchReceipt = useCallback(async () => {
     try {
       const response = await api.get(`/api/receipts/${transactionNumber}/`);
       setReceipt(response.data);
@@ -98,18 +90,48 @@ const ReceiptDetail: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [transactionNumber]);
+
+  useEffect(() => {
+    fetchReceipt();
+    // Check if this is a fresh upload
+    if (searchParams.get('uploaded') === 'true') {
+      setShowUploadSuccess(true);
+    }
+  }, [fetchReceipt, searchParams]);
 
   const handleItemChange = (index: number, field: keyof ReceiptItem, value: any) => {
     const newItems = [...editedItems];
-    newItems[index] = {
-      ...newItems[index],
-      [field]: value,
-      total_price: field === 'price' || field === 'quantity' 
-        ? (parseFloat(field === 'price' ? value : newItems[index].price) * 
-           (field === 'quantity' ? value : newItems[index].quantity)).toFixed(2)
-        : newItems[index].total_price
-    };
+    
+    // Handle special cases for on_sale and instant_savings
+    if (field === 'on_sale') {
+      newItems[index] = {
+        ...newItems[index],
+        [field]: value,
+        // Clear savings and original price when unchecking on_sale
+        instant_savings: value ? newItems[index].instant_savings : null,
+        original_price: value ? newItems[index].original_price : null
+      };
+    } else if (field === 'instant_savings') {
+      const savingsAmount = value && value !== '' ? parseFloat(value) : 0;
+      const currentPrice = parseFloat(newItems[index].price);
+      newItems[index] = {
+        ...newItems[index],
+        instant_savings: value && value !== '' ? value : null,
+        // Calculate original price as current price + savings
+        original_price: savingsAmount > 0 ? (currentPrice + savingsAmount).toFixed(2) : null
+      };
+    } else {
+      newItems[index] = {
+        ...newItems[index],
+        [field]: value,
+        total_price: field === 'price' || field === 'quantity' 
+          ? (parseFloat(field === 'price' ? value : newItems[index].price) * 
+             (field === 'quantity' ? value : newItems[index].quantity)).toFixed(2)
+          : newItems[index].total_price
+      };
+    }
+    
     setEditedItems(newItems);
   };
 
@@ -124,12 +146,15 @@ const ReceiptDetail: React.FC = () => {
         items: editedItems.map(item => ({
           ...item,
           price: parseFloat(item.price).toFixed(2),
-          total_price: (parseFloat(item.price) * item.quantity).toFixed(2)
+          total_price: (parseFloat(item.price) * item.quantity).toFixed(2),
+          instant_savings: item.instant_savings ? parseFloat(item.instant_savings).toFixed(2) : null,
+          original_price: item.original_price ? parseFloat(item.original_price).toFixed(2) : null
         })),
         total_items_sold: editedItems.reduce((sum, item) => sum + item.quantity, 0),
-        subtotal: editedItems.reduce((sum, item) => sum + parseFloat(item.total_price), 0).toFixed(2),
+        subtotal: calculateSubtotal(),
         tax: receipt?.tax,
-        total: calculateTotal()
+        total: calculateTotal(),
+        instant_savings: calculateTotalSavings()
       });
       setEditMode(false);
       fetchReceipt(); // Refresh data
@@ -150,6 +175,7 @@ const ReceiptDetail: React.FC = () => {
       quantity: 1,
       total_price: '0.00',
       is_taxable: true,
+      on_sale: false,
       instant_savings: null,
       original_price: null
     };
@@ -164,10 +190,25 @@ const ReceiptDetail: React.FC = () => {
   if (error) return <Alert severity="error">{error}</Alert>;
   if (!receipt) return <Alert severity="error">Receipt not found</Alert>;
 
+  const calculateSubtotal = () => {
+    return editedItems.reduce((sum, item) => {
+      // Use the actual price paid (already accounts for discounts)
+      return sum + (parseFloat(item.price) * item.quantity);
+    }, 0).toFixed(2);
+  };
+
   const calculateTotal = () => {
-    const subtotal = editedItems.reduce((sum, item) => sum + parseFloat(item.total_price), 0);
+    const subtotal = parseFloat(calculateSubtotal());
+    const totalSavings = parseFloat(calculateTotalSavings());
     const tax = parseFloat(receipt.tax);
-    return (subtotal + tax).toFixed(2);
+    return (subtotal - totalSavings + tax).toFixed(2);
+  };
+
+  const calculateTotalSavings = () => {
+    return editedItems.reduce((sum, item) => {
+      const savings = item.instant_savings ? parseFloat(item.instant_savings) : 0;
+      return sum + (isNaN(savings) ? 0 : savings);
+    }, 0).toFixed(2);
   };
 
   return (
@@ -260,6 +301,7 @@ const ReceiptDetail: React.FC = () => {
               <TableCell>Description</TableCell>
               <TableCell align="right">Price</TableCell>
               <TableCell align="right">Quantity</TableCell>
+              {editMode && <TableCell align="center">On Sale</TableCell>}
               <TableCell align="right">Total</TableCell>
               {editMode && <TableCell align="right">Actions</TableCell>}
             </TableRow>
@@ -318,11 +360,32 @@ const ReceiptDetail: React.FC = () => {
                     item.quantity
                   )}
                 </TableCell>
+                {editMode && (
+                  <TableCell align="center">
+                    <Checkbox
+                      checked={item.on_sale}
+                      onChange={(e) => handleItemChange(index, 'on_sale', e.target.checked)}
+                    />
+                    {item.on_sale && (
+                      <TextField
+                        type="number"
+                        placeholder="Sale amount"
+                        value={item.instant_savings || ''}
+                        onChange={(e) => handleItemChange(index, 'instant_savings', e.target.value)}
+                        variant="standard"
+                        size="small"
+                        inputProps={{ min: 0, step: 0.01, style: { textAlign: 'center' } }}
+                        sx={{ mt: 1, width: '80px' }}
+                        helperText="$ saved"
+                      />
+                    )}
+                  </TableCell>
+                )}
                 <TableCell align="right">
                   {formatCurrency(item.total_price)}
                   {item.instant_savings && (
                     <Typography variant="caption" color="success.main" display="block">
-                      Save: {formatCurrency(item.instant_savings)}
+                      🏷️ On Sale: {formatCurrency(item.instant_savings)}
                     </Typography>
                   )}
                   {item.instant_savings && item.original_price && (
@@ -351,33 +414,48 @@ const ReceiptDetail: React.FC = () => {
               </TableRow>
             ))}
             <TableRow>
-              <TableCell colSpan={editMode ? 4 : 3} />
-              <TableCell align="right">
-                <Typography variant="subtitle1">Subtotal:</Typography>
-                {receipt.instant_savings && (
-                  <Typography variant="subtitle1" color="success.main">
-                    Instant Savings:
-                  </Typography>
-                )}
-                <Typography variant="subtitle1">Tax:</Typography>
-                <Typography variant="h6">Total:</Typography>
-              </TableCell>
-              <TableCell align="right">
-                <Typography variant="subtitle1">
-                  {formatCurrency(editedItems.reduce((sum, item) => sum + parseFloat(item.total_price), 0).toString())}
-                </Typography>
-                {receipt.instant_savings && (
-                  <Typography variant="subtitle1" color="success.main">
-                    -{formatCurrency(receipt.instant_savings)}
-                  </Typography>
-                )}
-                <Typography variant="subtitle1">
-                  {formatCurrency(receipt.tax)}
-                </Typography>
-                <Typography variant="h6">
-                  {formatCurrency(calculateTotal())}
-                </Typography>
-              </TableCell>
+              {editMode ? (
+                <>
+                  <TableCell colSpan={5} />
+                  <TableCell align="right">
+                    <Typography variant="subtitle1">
+                      Subtotal: {formatCurrency(calculateSubtotal())}
+                    </Typography>
+                    {(parseFloat(calculateTotalSavings()) > 0 || receipt.instant_savings) && (
+                      <Typography variant="subtitle1" color="success.main">
+                        Instant Savings: -{formatCurrency(editMode ? calculateTotalSavings() : (receipt.instant_savings || '0'))}
+                      </Typography>
+                    )}
+                    <Typography variant="subtitle1">
+                      Tax: {formatCurrency(receipt.tax)}
+                    </Typography>
+                    <Typography variant="h6">
+                      Total: {formatCurrency(calculateTotal())}
+                    </Typography>
+                  </TableCell>
+                  <TableCell />
+                </>
+              ) : (
+                <>
+                  <TableCell colSpan={4} />
+                  <TableCell align="right">
+                    <Typography variant="subtitle1">
+                      Subtotal: {formatCurrency(calculateSubtotal())}
+                    </Typography>
+                    {(parseFloat(calculateTotalSavings()) > 0 || receipt.instant_savings) && (
+                      <Typography variant="subtitle1" color="success.main">
+                        Instant Savings: -{formatCurrency(editMode ? calculateTotalSavings() : (receipt.instant_savings || '0'))}
+                      </Typography>
+                    )}
+                    <Typography variant="subtitle1">
+                      Tax: {formatCurrency(receipt.tax)}
+                    </Typography>
+                    <Typography variant="h6">
+                      Total: {formatCurrency(calculateTotal())}
+                    </Typography>
+                  </TableCell>
+                </>
+              )}
             </TableRow>
           </TableBody>
         </Table>

@@ -14,17 +14,20 @@ import {
   useMediaQuery,
   Link,
   Chip,
+  Tooltip,
 } from '@mui/material';
 import {
   Menu as MenuIcon,
   Receipt as ReceiptIcon,
   LocalOffer as AdjustmentIcon,
   CloudUpload as UploadIcon,
-  Settings as SettingsIcon,
   Logout as LogoutIcon,
   Analytics as AnalyticsIcon,
   Dashboard as DashboardIcon,
+  DarkMode as DarkModeIcon,
+  LightMode as LightModeIcon,
 } from '@mui/icons-material';
+import { useThemeContext } from '../contexts/ThemeContext';
 
 // Define the User interface
 interface User {
@@ -43,6 +46,7 @@ interface NavigationProps {
 const Navigation: React.FC<NavigationProps> = ({ user }) => {
   const location = useLocation();
   const theme = useTheme();
+  const { mode, toggleTheme } = useThemeContext();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const isAuthenticated = !!user;
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
@@ -138,6 +142,17 @@ const Navigation: React.FC<NavigationProps> = ({ user }) => {
             }} 
           />
         </Link>
+
+        {/* Theme Toggle Button */}
+        <Tooltip title={`Switch to ${mode === 'light' ? 'dark' : 'light'} mode`}>
+          <IconButton
+            color="inherit"
+            onClick={toggleTheme}
+            sx={{ mr: 1 }}
+          >
+            {mode === 'light' ? <DarkModeIcon /> : <LightModeIcon />}
+          </IconButton>
+        </Tooltip>
 
         {!isAuthenticated ? (
           <Box>

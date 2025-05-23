@@ -4,7 +4,7 @@ from .models import Receipt, LineItem
 class LineItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = LineItem
-        fields = ['item_code', 'description', 'price', 'quantity', 'discount']
+        fields = ['item_code', 'description', 'price', 'quantity', 'discount', 'on_sale']
 
 class ReceiptSerializer(serializers.ModelSerializer):
     items = LineItemSerializer(many=True, read_only=True)
