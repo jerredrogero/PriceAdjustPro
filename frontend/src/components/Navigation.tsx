@@ -155,19 +155,18 @@ const Navigation: React.FC<NavigationProps> = ({ user }) => {
           />
         </Link>
 
-        {/* Theme Toggle Button */}
-        <Tooltip title={`Switch to ${mode === 'light' ? 'dark' : 'light'} mode`}>
-          <IconButton
-            color="inherit"
-            onClick={toggleTheme}
-            sx={{ mr: 1 }}
-          >
-            {mode === 'light' ? <DarkModeIcon /> : <LightModeIcon />}
-          </IconButton>
-        </Tooltip>
-
         {!isAuthenticated ? (
-          <Box>
+          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+            {/* Theme Toggle Button - always visible for non-authenticated users */}
+            <Tooltip title={`Switch to ${mode === 'light' ? 'dark' : 'light'} mode`}>
+              <IconButton
+                color="inherit"
+                onClick={toggleTheme}
+                sx={{ mr: 1 }}
+              >
+                {mode === 'light' ? <DarkModeIcon /> : <LightModeIcon />}
+              </IconButton>
+            </Tooltip>
             <Button color="inherit" component={RouterLink} to="/login">
               Login
             </Button>
@@ -179,6 +178,16 @@ const Navigation: React.FC<NavigationProps> = ({ user }) => {
           <>
             {!isMobile && (
               <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                {/* Theme Toggle Button - desktop only for authenticated users */}
+                <Tooltip title={`Switch to ${mode === 'light' ? 'dark' : 'light'} mode`}>
+                  <IconButton
+                    color="inherit"
+                    onClick={toggleTheme}
+                    sx={{ mr: 1 }}
+                  >
+                    {mode === 'light' ? <DarkModeIcon /> : <LightModeIcon />}
+                  </IconButton>
+                </Tooltip>
                 {menuItems.map((item) => (
                   <Button
                     key={item.path}
@@ -236,6 +245,11 @@ const Navigation: React.FC<NavigationProps> = ({ user }) => {
               </Box>
             </MenuItem>
           ))}
+          {/* Theme Toggle for mobile - inside hamburger menu */}
+          <MenuItem onClick={() => { handleMenuClose(); toggleTheme(); }}>
+            {mode === 'light' ? <DarkModeIcon sx={{ mr: 1 }} /> : <LightModeIcon sx={{ mr: 1 }} />}
+            <Typography>{mode === 'light' ? 'Dark Mode' : 'Light Mode'}</Typography>
+          </MenuItem>
           <MenuItem onClick={() => { handleMenuClose(); handleLogout(); }}>
             <LogoutIcon sx={{ mr: 1 }} />
             Logout

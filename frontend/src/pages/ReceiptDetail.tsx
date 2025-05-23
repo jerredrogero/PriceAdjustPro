@@ -290,20 +290,23 @@ const ReceiptDetail: React.FC = () => {
             Note that item numbers are used to match products across users for price adjustment alerts. 
             Incorrect item numbers may affect price matching accuracy.
           </Typography>
+          <Typography variant="body2" sx={{ mt: 1, fontSize: '0.8rem' }}>
+            💡 <em>On mobile: Scroll the table horizontally to access all columns including "On Sale" toggles.</em>
+          </Typography>
         </Alert>
       )}
 
-      <TableContainer component={Paper}>
-        <Table>
+      <TableContainer component={Paper} sx={{ overflowX: 'auto' }}>
+        <Table sx={{ minWidth: editMode ? 800 : 600 }}>
           <TableHead>
             <TableRow>
-              <TableCell>Item Code</TableCell>
-              <TableCell>Description</TableCell>
-              <TableCell align="right">Price</TableCell>
-              <TableCell align="right">Quantity</TableCell>
-              {editMode && <TableCell align="center">On Sale</TableCell>}
-              <TableCell align="right">Total</TableCell>
-              {editMode && <TableCell align="right">Actions</TableCell>}
+              <TableCell sx={{ minWidth: 100 }}>Item Code</TableCell>
+              <TableCell sx={{ minWidth: 200 }}>Description</TableCell>
+              <TableCell align="right" sx={{ minWidth: 80 }}>Price</TableCell>
+              <TableCell align="right" sx={{ minWidth: 80 }}>Quantity</TableCell>
+              {editMode && <TableCell align="center" sx={{ minWidth: 120 }}>On Sale</TableCell>}
+              <TableCell align="right" sx={{ minWidth: 100 }}>Total</TableCell>
+              {editMode && <TableCell align="right" sx={{ minWidth: 80 }}>Actions</TableCell>}
             </TableRow>
           </TableHead>
           <TableBody>
@@ -361,24 +364,41 @@ const ReceiptDetail: React.FC = () => {
                   )}
                 </TableCell>
                 {editMode && (
-                  <TableCell align="center">
-                    <Checkbox
-                      checked={item.on_sale}
-                      onChange={(e) => handleItemChange(index, 'on_sale', e.target.checked)}
-                    />
-                    {item.on_sale && (
-                      <TextField
-                        type="number"
-                        placeholder="Sale amount"
-                        value={item.instant_savings || ''}
-                        onChange={(e) => handleItemChange(index, 'instant_savings', e.target.value)}
-                        variant="standard"
+                  <TableCell align="center" sx={{ minWidth: 120, maxWidth: 150 }}>
+                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                      <Checkbox
+                        checked={item.on_sale}
+                        onChange={(e) => handleItemChange(index, 'on_sale', e.target.checked)}
                         size="small"
-                        inputProps={{ min: 0, step: 0.01, style: { textAlign: 'center' } }}
-                        sx={{ mt: 1, width: '80px' }}
-                        helperText="$ saved"
                       />
-                    )}
+                      {item.on_sale && (
+                        <TextField
+                          type="number"
+                          placeholder="0.00"
+                          value={item.instant_savings || ''}
+                          onChange={(e) => handleItemChange(index, 'instant_savings', e.target.value)}
+                          variant="standard"
+                          size="small"
+                          inputProps={{ 
+                            min: 0, 
+                            step: 0.01, 
+                            style: { textAlign: 'center' },
+                            'aria-label': 'Sale amount'
+                          }}
+                          sx={{ 
+                            mt: 0.5, 
+                            width: '70px',
+                            '& .MuiInput-input': {
+                              fontSize: '0.875rem'
+                            }
+                          }}
+                          helperText="$ saved"
+                          FormHelperTextProps={{
+                            sx: { fontSize: '0.7rem' }
+                          }}
+                        />
+                      )}
+                    </Box>
                   </TableCell>
                 )}
                 <TableCell align="right">
