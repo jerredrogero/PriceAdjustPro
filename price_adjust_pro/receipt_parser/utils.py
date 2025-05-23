@@ -516,4 +516,151 @@ def process_receipt_pdf(pdf_path: str, user=None) -> Dict:
             'needs_review': False,
             'parse_error': f"Failed to process PDF: {str(e)}",
             'parsed_successfully': False
-        } 
+        }
+
+def extract_text_from_image(image_path: str) -> str:
+    """Extract text from an image file using Gemini Vision with enhanced preprocessing."""
+    try:
+        # Read the image file as binary
+        with open(image_path, 'rb') as file:
+            image_content = file.read()
+        
+        # Configure Gemini
+        api_key = settings.GEMINI_API_KEY
+        if not api_key:
+            raise Exception("Gemini API key not configured")
+        
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel('gemini-2.0-flash')
+        
+        # Enhanced prompt for photo receipt processing
+        prompt = """This is a photo of a Costco receipt. Please extract all the text from this receipt with high accuracy. Pay special attention to:
+
+1. **Crossed-out/strikethrough text**: Some lines may have strikethrough marks from checkout - still extract the text underneath
+2. **Item lines**: Lines starting with 'E' followed by item codes and descriptions
+3. **Discount lines**: Lines that follow items and:
+   - End with a minus sign (e.g. "3.00-")
+   - Contain a forward slash followed by the item code (e.g. "/1726362")
+   - Show instant savings amounts
+4. **Store and transaction info**: Store location, number, date, and transaction number
+5. **Totals**: Subtotal, tax, total, and instant savings
+
+**IMPORTANT FOR PHOTO PROCESSING:**
+- The image may be tilted, blurry, or have shadows - do your best to read through these issues
+- Some text may be crossed out with lines - extract the text underneath the strikethrough
+- Look for watermarks or stamps that may overlay text
+- If numbers are partially obscured, make reasonable inferences based on context
+
+Example format to look for:
+E 1347776 KS WD FL HNY 12.99 3
+346014 /1347776 3.00-
+E 1726362 POUCH 13.89 3
+
+Extract ALL visible text, maintaining line structure. If you're uncertain about a character, provide your best guess in [brackets]."""
+        
+        # Determine MIME type based on file extension
+        file_ext = os.path.splitext(image_path)[1].lower()
+        mime_types = {
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg', 
+            '.png': 'image/png',
+            '.webp': 'image/webp',
+            '.gif': 'image/gif',
+            '.bmp': 'image/bmp'
+        }
+        mime_type = mime_types.get(file_ext, 'image/jpeg')
+        
+        # Create the image data
+        image_data = {
+            "mime_type": mime_type,
+            "data": base64.b64encode(image_content).decode('utf-8')
+        }
+        
+        # Generate response
+        response = model.generate_content([prompt, image_data], stream=False)
+        
+        # Return the extracted text
+        return response.text
+    except Exception as e:
+        print(f"Error extracting text from image: {str(e)}")
+        raise
+
+def process_receipt_image(image_path: str, user=None) -> Dict:
+    """Process a receipt image file and return parsed data."""
+    try:
+        text = extract_text_from_image(image_path)
+        print("Extracted text from image:", text)
+        parsed_data = parse_receipt(text)
+        
+        # Add confidence score for image-based receipts
+        parsed_data['source_type'] = 'image'
+        parsed_data['confidence_note'] = 'Extracted from photo - please verify accuracy'
+        
+        # Strict validation of item count
+        actual_item_count = len(parsed_data.get('items', []))
+        expected_item_count = parsed_data.get('total_items_sold', 0)
+        
+        if expected_item_count > 0:  # Only validate if we found the total items count
+            if actual_item_count != expected_item_count:
+                return {
+                    'store_location': parsed_data.get('store_location', 'Costco Warehouse'),
+                    'store_number': parsed_data.get('store_number', '0000'),
+                    'transaction_date': parsed_data.get('transaction_date', timezone.now()),
+                    'transaction_number': parsed_data.get('transaction_number'),
+                    'items': parsed_data.get('items', []),
+                    'subtotal': parsed_data.get('subtotal', Decimal('0.00')),
+                    'tax': parsed_data.get('tax', Decimal('0.00')),
+                    'total': parsed_data.get('total', Decimal('0.00')),
+                    'instant_savings': parsed_data.get('instant_savings'),
+                    'total_items_sold': expected_item_count,
+                    'source_type': 'image',
+                    'needs_review': True,
+                    'review_reason': f'Photo processing: Found {actual_item_count} items but receipt shows {expected_item_count} items sold. Please review and adjust.',
+                    'confidence_note': 'Extracted from photo - please verify accuracy',
+                    'parse_error': None,
+                    'parsed_successfully': False
+                }
+        
+        # Add metadata for editing to each item
+        for item in parsed_data.get('items', []):
+            item['editable'] = True
+            item['original_description'] = item['description']
+            item['original_quantity'] = item['quantity']
+            item['needs_quantity_review'] = True
+            item['source_confidence'] = 'medium'  # Photos generally have medium confidence
+        
+        # Only update price database if user confirms data
+        if parsed_data['parsed_successfully'] and user and not parsed_data.get('needs_review'):
+            update_price_database(parsed_data, user=user)
+            
+        return parsed_data
+    except Exception as e:
+        print(f"Image Processing Error: {str(e)}")
+        return {
+            'store_location': 'Costco Warehouse',
+            'store_number': '0000',
+            'transaction_date': timezone.now(),
+            'items': [],
+            'subtotal': Decimal('0.00'),
+            'tax': Decimal('0.00'),
+            'total': Decimal('0.00'),
+            'ebt_amount': None,
+            'instant_savings': None,
+            'source_type': 'image',
+            'needs_review': True,
+            'review_reason': 'Failed to process image - please verify all details',
+            'confidence_note': 'Image processing failed - manual review required',
+            'parse_error': f"Failed to process image: {str(e)}",
+            'parsed_successfully': False
+        }
+
+def process_receipt_file(file_path: str, user=None) -> Dict:
+    """Process any receipt file (PDF or image) and return parsed data."""
+    file_ext = os.path.splitext(file_path)[1].lower()
+    
+    if file_ext == '.pdf':
+        return process_receipt_pdf(file_path, user)
+    elif file_ext in ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp']:
+        return process_receipt_image(file_path, user)
+    else:
+        raise ValueError(f"Unsupported file type: {file_ext}") 

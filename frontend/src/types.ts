@@ -30,6 +30,8 @@ export interface Receipt {
   needs_review?: boolean;
   review_reason?: string;
   total_items_sold?: number;
+  source_type?: 'pdf' | 'image';
+  confidence_note?: string;
 }
 
 export interface PriceAdjustment {

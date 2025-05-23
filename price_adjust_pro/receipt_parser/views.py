@@ -31,7 +31,8 @@ from .models import (
 )
 from .utils import (
     process_receipt_pdf, extract_text_from_pdf, parse_receipt,
-    update_price_database, check_for_price_adjustments
+    update_price_database, check_for_price_adjustments,
+    process_receipt_image, process_receipt_file
 )
 from .serializers import ReceiptSerializer
 
@@ -42,9 +43,11 @@ def upload_receipt(request):
     if request.method == 'POST' and request.FILES.get('receipt_file'):
         receipt_file = request.FILES['receipt_file']
         
-        # Validate file type
-        if not receipt_file.name.lower().endswith('.pdf'):
-            messages.error(request, 'Please upload a PDF file.')
+        # Validate file type - now accepting images too
+        file_ext = receipt_file.name.lower()
+        allowed_extensions = ['.pdf', '.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp']
+        if not any(file_ext.endswith(ext) for ext in allowed_extensions):
+            messages.error(request, 'Please upload a PDF or image file (JPG, PNG, etc.).')
             return redirect('upload_receipt')
             
         try:
@@ -58,11 +61,15 @@ def upload_receipt(request):
             # Get the full path using the storage backend
             full_path = default_storage.path(file_path)
             
-            # Process the receipt
-            parsed_data = process_receipt_pdf(full_path, user=request.user)
+            # Process the receipt using the unified function
+            parsed_data = process_receipt_file(full_path, user=request.user)
             
             if parsed_data.get('parse_error'):
                 messages.warning(request, f"Warning: {parsed_data['parse_error']}")
+            
+            # Show additional warning for image uploads
+            if parsed_data.get('source_type') == 'image':
+                messages.info(request, 'Photo processed! Please review the extracted data for accuracy.')
             
             # Check if receipt already exists
             existing_receipt = Receipt.objects.filter(
@@ -348,9 +355,11 @@ def api_receipt_upload(request):
         
     receipt_file = request.FILES['receipt_file']
     
-    # Validate file type
-    if not receipt_file.name.lower().endswith('.pdf'):
-        return JsonResponse({'error': 'Please upload a PDF file'}, status=400)
+    # Validate file type - now accepting images too
+    file_ext = receipt_file.name.lower()
+    allowed_extensions = ['.pdf', '.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp']
+    if not any(file_ext.endswith(ext) for ext in allowed_extensions):
+        return JsonResponse({'error': 'Please upload a PDF or image file (JPG, PNG, etc.)'}, status=400)
         
     try:
         # Save the uploaded file
@@ -363,8 +372,8 @@ def api_receipt_upload(request):
         # Get the full path using the storage backend
         full_path = default_storage.path(file_path)
         
-        # Process the receipt
-        parsed_data = process_receipt_pdf(full_path, user=request.user)
+        # Process the receipt using the unified function
+        parsed_data = process_receipt_file(full_path, user=request.user)
 
         # Check for existing receipt
         existing_receipt = Receipt.objects.filter(

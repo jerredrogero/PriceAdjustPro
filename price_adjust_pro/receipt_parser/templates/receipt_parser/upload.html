@@ -11,9 +11,13 @@
             <form method="post" enctype="multipart/form-data">
                 {% csrf_token %}
                 <div class="mb-3">
-                    <label for="receipt_file" class="form-label">Choose PDF Receipt</label>
-                    <input type="file" class="form-control" id="receipt_file" name="receipt_file" accept=".pdf" required>
-                    <div class="form-text">Please upload a PDF file of your Costco receipt.</div>
+                    <label for="receipt_file" class="form-label">Choose Receipt File</label>
+                    <input type="file" class="form-control" id="receipt_file" name="receipt_file" 
+                           accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,.bmp" required>
+                    <div class="form-text">
+                        Upload a PDF or image file (JPG, PNG, etc.) of your Costco receipt.
+                        You can also take a photo with your phone camera.
+                    </div>
                 </div>
                 <button type="submit" class="btn btn-primary">Upload & Process</button>
             </form>
@@ -23,14 +27,24 @@
     <div class="mt-4">
         <h4>Instructions:</h4>
         <ol>
-            <li>Scan or download your Costco receipt as a PDF.</li>
-            <li>Make sure the text in the PDF is clear and readable.</li>
-            <li>Click "Choose File" to select your receipt PDF.</li>
+            <li><strong>Take a photo:</strong> Use your phone camera to snap a clear photo of your receipt.</li>
+            <li><strong>Or upload a file:</strong> Scan or download your receipt as a PDF or image.</li>
+            <li>Make sure the text is clear and readable (don't worry about strikethrough marks).</li>
+            <li>Click "Choose File" to select your receipt.</li>
             <li>Click "Upload & Process" to analyze your receipt.</li>
         </ol>
+        <div class="alert alert-info">
+            <strong>Photo Tips:</strong>
+            <ul class="mb-0 mt-2">
+                <li>Take photos in good lighting with minimal shadows</li>
+                <li>Keep the receipt flat and avoid creases when possible</li>
+                <li>The system can read through Costco's checkout strikethrough marks</li>
+                <li>Photo uploads may require manual review for accuracy</li>
+            </ul>
+        </div>
         <p class="text-muted">
-            Note: The system works best with text-based PDFs. If you're scanning a paper receipt,
-            make sure the scan is clear and straight.
+            <strong>Supported formats:</strong> PDF, JPG, PNG, WebP, GIF, BMP<br>
+            The system works best with clear, well-lit images and text-based PDFs.
         </p>
     </div>
 </div>

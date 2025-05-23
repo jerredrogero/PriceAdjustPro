@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDropzone } from 'react-dropzone';
 import {
@@ -24,6 +24,9 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  Chip,
+  Stack,
+  Divider,
 } from '@mui/material';
 import {
   CloudUpload as UploadIcon,
@@ -33,6 +36,10 @@ import {
   Delete as DeleteIcon,
   PictureAsPdf as PictureAsPdfIcon,
   Info as InfoIcon,
+  CameraAlt as CameraIcon,
+  Image as ImageIcon,
+  PhotoCamera as PhotoCameraIcon,
+  Warning as WarningIcon,
 } from '@mui/icons-material';
 import api from '../api/axios';
 import ReceiptReview from './ReceiptReview';
@@ -71,17 +78,65 @@ const ReceiptUpload: React.FC = () => {
   const [currentFile, setCurrentFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reviewData, setReviewData] = useState<UploadResponse | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
-    const pdfFiles = acceptedFiles.filter(file => file.name.toLowerCase().endsWith('.pdf'));
-    if (pdfFiles.length === 0) {
-      setErrors(prev => [...prev, { file: 'Upload', error: 'Please upload PDF files only' }]);
+    // Accept both PDFs and images
+    const validFiles = acceptedFiles.filter(file => {
+      const name = file.name.toLowerCase();
+      return name.endsWith('.pdf') || 
+             name.endsWith('.jpg') || name.endsWith('.jpeg') || 
+             name.endsWith('.png') || name.endsWith('.webp') ||
+             name.endsWith('.gif') || name.endsWith('.bmp');
+    });
+    
+    if (validFiles.length === 0) {
+      setErrors(prev => [...prev, { file: 'Upload', error: 'Please upload PDF files or images (JPG, PNG, etc.)' }]);
       return;
     }
 
-    setSelectedFiles(current => [...current, ...pdfFiles]);
+    setSelectedFiles(current => [...current, ...validFiles]);
     setErrors([]);
   }, []);
+
+  const handleCameraCapture = () => {
+    if (cameraInputRef.current) {
+      cameraInputRef.current.click();
+    }
+  };
+
+  const handleFileSelect = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.click();
+    }
+  };
+
+  const handleCameraChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (files && files.length > 0) {
+      setSelectedFiles(current => [...current, ...Array.from(files)]);
+      setErrors([]);
+    }
+  };
+
+  const getFileIcon = (fileName: string) => {
+    const name = fileName.toLowerCase();
+    if (name.endsWith('.pdf')) {
+      return <PictureAsPdfIcon color="error" />;
+    } else {
+      return <ImageIcon color="primary" />;
+    }
+  };
+
+  const getFileTypeChip = (fileName: string) => {
+    const name = fileName.toLowerCase();
+    if (name.endsWith('.pdf')) {
+      return <Chip label="PDF" size="small" color="secondary" />;
+    } else {
+      return <Chip label="Image" size="small" color="primary" />;
+    }
+  };
 
   const removeFile = (fileName: string) => {
     setSelectedFiles(current => current.filter(file => file.name !== fileName));
@@ -199,34 +254,90 @@ const ReceiptUpload: React.FC = () => {
     onDrop,
     accept: {
       'application/pdf': ['.pdf'],
+      'image/*': ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp']
     },
-    multiple: true,
     disabled: uploading,
   });
 
-  return (
-    <Container maxWidth="sm" sx={{ py: 4 }}>
-      <Card elevation={3}>
-        <CardContent sx={{ p: 4 }}>
-          <Box sx={{ textAlign: 'center', mb: 3 }}>
-            <UploadIcon sx={{ fontSize: 40, color: 'primary.main', mb: 2 }} />
-            <Typography variant="h4" component="h1" gutterBottom>
-              Upload Receipts
-            </Typography>
-            <Typography color="text.secondary">
-              Upload one or more Costco receipt PDFs
-            </Typography>
-          </Box>
+  if (reviewData) {
+    return <ReceiptReview data={reviewData} onSave={handleReviewSave} />;
+  }
 
-          {errors.length > 0 && (
-            <Box sx={{ mb: 3 }}>
-              {errors.map((error, index) => (
-                <Alert key={index} severity="error" sx={{ mb: 1 }}>
-                  {error.file}: {error.error}
-                </Alert>
-              ))}
-            </Box>
-          )}
+  return (
+    <Container maxWidth="md" sx={{ py: 4 }}>
+      <Box sx={{ mb: 4 }}>
+        <Button
+          startIcon={<BackIcon />}
+          onClick={() => navigate('/receipts')}
+          sx={{ mb: 2 }}
+        >
+          Back to Receipts
+        </Button>
+        <Typography variant="h4" component="h1" gutterBottom>
+          Upload Receipt
+        </Typography>
+        <Typography variant="body1" color="text.secondary">
+          Snap a photo or upload a PDF/image of your Costco receipt
+        </Typography>
+      </Box>
+
+      {error && (
+        <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
+          {error}
+        </Alert>
+      )}
+
+      <Card>
+        <CardContent>
+          {/* Quick Action Buttons */}
+          <Stack direction="row" spacing={2} sx={{ mb: 3 }}>
+            <Button
+              variant="contained"
+              startIcon={<PhotoCameraIcon />}
+              onClick={handleCameraCapture}
+              disabled={uploading}
+              sx={{ flex: 1 }}
+            >
+              Take Photo
+            </Button>
+            <Button
+              variant="outlined"
+              startIcon={<UploadIcon />}
+              onClick={handleFileSelect}
+              disabled={uploading}
+              sx={{ flex: 1 }}
+            >
+              Choose File
+            </Button>
+          </Stack>
+
+          <Divider sx={{ my: 3 }}>
+            <Typography variant="body2" color="text.secondary">
+              or drag and drop
+            </Typography>
+          </Divider>
+
+          {/* Hidden file inputs */}
+          <input
+            ref={cameraInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            style={{ display: 'none' }}
+            onChange={handleCameraChange}
+          />
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,.bmp"
+            multiple
+            style={{ display: 'none' }}
+            onChange={(e) => {
+              if (e.target.files) {
+                onDrop(Array.from(e.target.files));
+              }
+            }}
+          />
 
           <Paper
             {...getRootProps()}
@@ -258,97 +369,121 @@ const ReceiptUpload: React.FC = () => {
               </Box>
             ) : (
               <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                <UploadIcon sx={{ fontSize: 48, mb: 2, color: 'primary.main' }} />
+                <Stack direction="row" spacing={2} sx={{ mb: 2 }}>
+                  <CameraIcon sx={{ fontSize: 48, color: 'primary.main' }} />
+                  <UploadIcon sx={{ fontSize: 48, color: 'primary.main' }} />
+                </Stack>
                 <Typography variant="h6" gutterBottom>
-                  {isDragActive ? 'Drop the PDFs here' : 'Drag and drop receipt PDFs here'}
+                  {isDragActive ? 'Drop the files here' : 'Drag photos or PDFs here'}
                 </Typography>
                 <Typography color="text.secondary" gutterBottom>
-                  or
+                  Supports: PDF, JPG, PNG, and other image formats
                 </Typography>
-                <Button 
-                  variant="contained" 
-                  component="span" 
-                  disabled={uploading}
-                  sx={{ mt: 1 }}
-                >
-                  Browse Files
-                </Button>
               </Box>
             )}
           </Paper>
 
+          {/* File List */}
           {selectedFiles.length > 0 && (
-            <Box>
-              <Typography variant="h6" gutterBottom>
+            <Box sx={{ mt: 3 }}>
+              <Typography variant="subtitle2" gutterBottom>
                 Selected Files ({selectedFiles.length})
               </Typography>
-              <List>
-                {selectedFiles.map((file) => (
+              <List dense>
+                {selectedFiles.map((file, index) => (
                   <ListItem
-                    key={file.name}
+                    key={index}
                     secondaryAction={
-                      !uploading && (
-                        <IconButton edge="end" onClick={() => removeFile(file.name)}>
-                          <DeleteIcon />
-                        </IconButton>
-                      )
+                      <IconButton
+                        edge="end"
+                        onClick={() => removeFile(file.name)}
+                        disabled={uploading}
+                        color="error"
+                      >
+                        <DeleteIcon />
+                      </IconButton>
                     }
                   >
-                    <ListItemIcon>
-                      <PictureAsPdfIcon />
-                    </ListItemIcon>
-                    <ListItemText 
-                      primary={file.name}
-                      secondary={
-                        uploading && uploadProgress[file.name] !== undefined && (
-                          <LinearProgress 
-                            variant="determinate" 
-                            value={uploadProgress[file.name]} 
-                            sx={{ mt: 1 }}
-                          />
-                        )
+                    <ListItemIcon>{getFileIcon(file.name)}</ListItemIcon>
+                    <ListItemText
+                      primary={
+                        <Box display="flex" alignItems="center" gap={1}>
+                          <Typography variant="body2" sx={{ flex: 1 }}>
+                            {file.name}
+                          </Typography>
+                          {getFileTypeChip(file.name)}
+                        </Box>
                       }
+                      secondary={`${(file.size / 1024 / 1024).toFixed(2)} MB`}
                     />
+                    {uploadProgress[file.name] && (
+                      <Box sx={{ width: '100%', ml: 2 }}>
+                        <LinearProgress
+                          variant="determinate"
+                          value={uploadProgress[file.name]}
+                        />
+                      </Box>
+                    )}
                   </ListItem>
                 ))}
               </List>
+            </Box>
+          )}
 
+          {/* Upload Button */}
+          {selectedFiles.length > 0 && !uploading && (
+            <Box sx={{ mt: 3, textAlign: 'center' }}>
               <Button
                 variant="contained"
-                fullWidth
                 size="large"
                 onClick={handleUpload}
-                disabled={uploading}
-                startIcon={uploading ? <CircularProgress size={20} /> : <UploadIcon />}
-                sx={{ mt: 2 }}
+                startIcon={<UploadIcon />}
               >
-                {uploading ? 'Uploading...' : 'Upload Selected Files'}
+                Process {selectedFiles.length} File{selectedFiles.length > 1 ? 's' : ''}
               </Button>
             </Box>
           )}
 
+          {/* Error Messages */}
+          {errors.length > 0 && (
+            <Box sx={{ mt: 3 }}>
+              {errors.map((error, index) => (
+                <Alert key={index} severity="error" sx={{ mb: 1 }}>
+                  <strong>{error.file}:</strong> {error.error}
+                </Alert>
+              ))}
+            </Box>
+          )}
+
+          {/* Instructions */}
           <Box sx={{ mt: 4 }}>
             <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-              Instructions:
+              Tips for better results:
             </Typography>
             <List dense>
               <ListItem>
                 <ListItemIcon>
                   <InfoIcon color="primary" />
                 </ListItemIcon>
-                <ListItemText primary="Upload multiple PDF files at once" />
+                <ListItemText primary="Take photos in good lighting with minimal shadows" />
               </ListItem>
               <ListItem>
                 <ListItemIcon>
                   <InfoIcon color="primary" />
                 </ListItemIcon>
-                <ListItemText primary="Files must be in PDF format" />
+                <ListItemText primary="Keep the receipt flat and avoid creases when possible" />
               </ListItem>
               <ListItem>
                 <ListItemIcon>
                   <InfoIcon color="primary" />
                 </ListItemIcon>
-                <ListItemText primary="Each receipt will be processed individually" />
+                <ListItemText primary="Don't worry about strikethrough marks - the system can read through them" />
+              </ListItem>
+              <ListItem>
+                <ListItemIcon>
+                  <WarningIcon color="warning" />
+                </ListItemIcon>
+                <ListItemText primary="Photo uploads will require manual review for accuracy" />
               </ListItem>
             </List>
           </Box>
@@ -385,15 +520,6 @@ const ReceiptUpload: React.FC = () => {
           </Button>
         </DialogActions>
       </Dialog>
-
-      {reviewData && (
-        <ReceiptReview
-          receipt={reviewData}
-          open={!!reviewData}
-          onClose={() => setReviewData(null)}
-          onSave={handleReviewSave}
-        />
-      )}
     </Container>
   );
 };
