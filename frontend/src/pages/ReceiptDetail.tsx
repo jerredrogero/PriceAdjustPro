@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Container,
   Typography,
@@ -73,10 +73,16 @@ const ReceiptDetail: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [searchParams] = useSearchParams();
+  const [showUploadSuccess, setShowUploadSuccess] = useState(false);
 
   useEffect(() => {
     fetchReceipt();
-  }, [transactionNumber]);
+    // Check if this is a fresh upload
+    if (searchParams.get('uploaded') === 'true') {
+      setShowUploadSuccess(true);
+    }
+  }, [transactionNumber, searchParams]);
 
   const fetchReceipt = async () => {
     try {
@@ -183,6 +189,22 @@ const ReceiptDetail: React.FC = () => {
           </Box>
         )}
       </Box>
+
+      {showUploadSuccess && (
+        <Alert 
+          severity="success" 
+          sx={{ mb: 3 }}
+          onClose={() => setShowUploadSuccess(false)}
+        >
+          <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+            Receipt uploaded successfully! 🎉
+          </Typography>
+          <Typography variant="body2">
+            Please review the extracted details below and use the "Edit Receipt" button to make any corrections if needed. 
+            Accurate data ensures better price adjustment tracking.
+          </Typography>
+        </Alert>
+      )}
 
       <Paper sx={{ p: 3, mb: 3 }}>
         <Typography variant="h5" gutterBottom>

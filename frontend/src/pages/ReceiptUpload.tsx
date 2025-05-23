@@ -158,6 +158,8 @@ const ReceiptUpload: React.FC = () => {
     
     setUploading(true);
     setErrors([]);
+    const successfulUploads: string[] = []; // Track successful transaction numbers
+    const initialFileCount = selectedFiles.length;
     
     const uploadPromises = selectedFiles.map(async (file) => {
       const formData = new FormData();
@@ -180,6 +182,7 @@ const ReceiptUpload: React.FC = () => {
         });
 
         const data = response.data;
+        console.log('Upload response for', file.name, ':', data);
         
         if (data.parse_error) {
           setErrors(prev => [...prev, { file: file.name, error: data.parse_error }]);
@@ -187,6 +190,12 @@ const ReceiptUpload: React.FC = () => {
         
         if (data.error && !data.is_duplicate) {
           setErrors(prev => [...prev, { file: file.name, error: data.error }]);
+        }
+        
+        // Track successful uploads - check for transaction_number
+        if (data.transaction_number) {
+          console.log('Adding successful upload:', data.transaction_number);
+          successfulUploads.push(data.transaction_number);
         }
         
         // Remove file from list if:
@@ -197,6 +206,7 @@ const ReceiptUpload: React.FC = () => {
           removeFile(file.name);
         }
       } catch (err: any) {
+        console.error('Upload error for', file.name, ':', err);
         handleUploadError(err);
         removeFile(file.name);
       }
@@ -204,9 +214,18 @@ const ReceiptUpload: React.FC = () => {
 
     try {
       await Promise.all(uploadPromises);
-      if (selectedFiles.length === 0) {  // Only navigate if all files were processed
+      console.log('All uploads completed. Successful uploads:', successfulUploads);
+      console.log('Remaining selected files:', selectedFiles.length);
+      
+      // Navigate based on successful uploads, regardless of selectedFiles state
+      if (successfulUploads.length === 1) {
+        console.log('Navigating to receipt detail:', successfulUploads[0]);
+        navigate(`/receipts/${successfulUploads[0]}?uploaded=true`);
+      } else if (successfulUploads.length > 0) {
+        console.log('Multiple successful uploads, navigating to receipts list');
         navigate('/receipts');
       }
+      // If no successful uploads, stay on upload page to show errors
     } catch (err) {
       console.error('Upload failed:', err);
     } finally {
@@ -223,12 +242,17 @@ const ReceiptUpload: React.FC = () => {
     formData.append('force_update', 'true');
 
     try {
-      await api.post('/api/receipts/upload/', formData, {
+      const response = await api.post('/api/receipts/upload/', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         }
       });
       removeFile(currentFile.name);
+      
+      // Navigate to receipt detail page if we have a transaction number
+      if (response.data.transaction_number) {
+        navigate(`/receipts/${response.data.transaction_number}?uploaded=true`);
+      }
     } catch (err: any) {
       handleUploadError(err);
     }
