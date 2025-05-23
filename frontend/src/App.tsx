@@ -77,7 +77,7 @@ const AppContent: React.FC = () => {
 
   return (
     <UserContext.Provider value={user}>
-      <Routes>
+        <Routes>
         <Route path="/" element={user ? <Navigate to="/dashboard" /> : <Landing />} />
         <Route path="/login" element={user ? <Navigate to="/dashboard" /> : <Login />} />
         <Route path="/register" element={user ? <Navigate to="/dashboard" /> : <Register />} />
@@ -88,8 +88,8 @@ const AppContent: React.FC = () => {
           <Route path="/upload" element={<ReceiptUpload />} />
           <Route path="/price-adjustments" element={<PriceAdjustments />} />
           <Route path="/analytics" element={<Analytics />} />
-        </Route>
-      </Routes>
+          </Route>
+        </Routes>
     </UserContext.Provider>
   );
 };

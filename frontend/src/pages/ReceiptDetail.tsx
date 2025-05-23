@@ -122,14 +122,14 @@ const ReceiptDetail: React.FC = () => {
         original_price: savingsAmount > 0 ? (currentPrice + savingsAmount).toFixed(2) : null
       };
     } else {
-      newItems[index] = {
-        ...newItems[index],
-        [field]: value,
-        total_price: field === 'price' || field === 'quantity' 
-          ? (parseFloat(field === 'price' ? value : newItems[index].price) * 
-             (field === 'quantity' ? value : newItems[index].quantity)).toFixed(2)
-          : newItems[index].total_price
-      };
+    newItems[index] = {
+      ...newItems[index],
+      [field]: value,
+      total_price: field === 'price' || field === 'quantity' 
+        ? (parseFloat(field === 'price' ? value : newItems[index].price) * 
+           (field === 'quantity' ? value : newItems[index].quantity)).toFixed(2)
+        : newItems[index].total_price
+    };
     }
     
     setEditedItems(newItems);
@@ -417,7 +417,7 @@ const ReceiptDetail: React.FC = () => {
               {editMode ? (
                 <>
                   <TableCell colSpan={5} />
-                  <TableCell align="right">
+              <TableCell align="right">
                     <Typography variant="subtitle1">
                       Subtotal: {formatCurrency(calculateSubtotal())}
                     </Typography>
@@ -432,28 +432,28 @@ const ReceiptDetail: React.FC = () => {
                     <Typography variant="h6">
                       Total: {formatCurrency(calculateTotal())}
                     </Typography>
-                  </TableCell>
+              </TableCell>
                   <TableCell />
                 </>
               ) : (
                 <>
                   <TableCell colSpan={4} />
-                  <TableCell align="right">
-                    <Typography variant="subtitle1">
+              <TableCell align="right">
+                <Typography variant="subtitle1">
                       Subtotal: {formatCurrency(calculateSubtotal())}
                     </Typography>
                     {(parseFloat(calculateTotalSavings()) > 0 || receipt.instant_savings) && (
                       <Typography variant="subtitle1" color="success.main">
                         Instant Savings: -{formatCurrency(editMode ? calculateTotalSavings() : (receipt.instant_savings || '0'))}
-                      </Typography>
+                </Typography>
                     )}
-                    <Typography variant="subtitle1">
+                <Typography variant="subtitle1">
                       Tax: {formatCurrency(receipt.tax)}
-                    </Typography>
-                    <Typography variant="h6">
+                </Typography>
+                <Typography variant="h6">
                       Total: {formatCurrency(calculateTotal())}
-                    </Typography>
-                  </TableCell>
+                </Typography>
+              </TableCell>
                 </>
               )}
             </TableRow>

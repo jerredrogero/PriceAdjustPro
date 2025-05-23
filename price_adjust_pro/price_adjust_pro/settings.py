@@ -259,13 +259,14 @@ CORS_ALLOW_METHODS = [
     'PUT',
 ]
 
-# CSRF settings - relaxed for troubleshooting
-CSRF_COOKIE_SECURE = False  # Allow non-HTTPS for now
+# CSRF settings - properly configured for development and production
+CSRF_COOKIE_SECURE = not DEBUG  # False in development, True in production
 CSRF_USE_SESSIONS = False
 CSRF_COOKIE_HTTPONLY = False
 CSRF_COOKIE_SAMESITE = 'Lax'
 CSRF_COOKIE_NAME = 'csrftoken'
 CSRF_HEADER_NAME = 'HTTP_X_CSRFTOKEN'
+CSRF_FAILURE_VIEW = 'django.views.csrf.csrf_failure'
 
 # Add trusted origins for all subdomains
 CSRF_TRUSTED_ORIGINS = [
@@ -277,10 +278,16 @@ CSRF_TRUSTED_ORIGINS = [
     'http://127.0.0.1:3000',  # React frontend
 ]
 
-# Session settings - relaxed for troubleshooting
+# Additional CSRF settings for admin panel
+if DEBUG:
+    # In development, be more permissive with CSRF
+    CSRF_COOKIE_AGE = None  # Use session cookie age
+    CSRF_TOKEN_EXPIRES = None  # Don't expire CSRF tokens
+
+# Session settings - properly configured for development and production
 SESSION_COOKIE_SAMESITE = 'Lax'
 SESSION_COOKIE_HTTPONLY = True
-SESSION_COOKIE_SECURE = False  # Allow non-HTTPS for now
+SESSION_COOKIE_SECURE = not DEBUG  # False in development, True in production
 SESSION_COOKIE_AGE = 1209600  # 2 weeks in seconds
 SESSION_ENGINE = 'django.contrib.sessions.backends.db'  # Use database sessions
 

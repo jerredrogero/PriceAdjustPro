@@ -80,10 +80,22 @@ const Navigation: React.FC<NavigationProps> = ({ user }) => {
 
   const handleLogout = async () => {
     try {
-      // Redirect to logout URL with browser navigation
-      window.location.href = '/api/auth/logout/';
+      // Call the API logout endpoint with JSON request
+      await fetch('/api/auth/logout/', {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+      });
+      
+      // Force a full page reload to clear React state and redirect to login
+      window.location.href = '/login';
     } catch (error) {
       console.error('Failed to logout:', error);
+      // Even if logout fails, clear the session by redirecting
+      window.location.href = '/login';
     }
   };
 
