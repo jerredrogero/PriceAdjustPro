@@ -49,6 +49,7 @@ interface Receipt {
   subtotal: string;
   tax: string;
   total: string;
+  instant_savings: string | null;
   items: ReceiptItem[];
   parsed_successfully: boolean;
   parse_error: string | null;
@@ -232,7 +233,9 @@ const ReceiptDetail: React.FC = () => {
           {receipt.store_location}
         </Typography>
         <Typography variant="subtitle1" gutterBottom>
-          Transaction #: {receipt.transaction_number}
+          Transaction #: {receipt.transaction_number && receipt.transaction_number !== 'null' 
+            ? receipt.transaction_number 
+            : 'Not found on receipt'}
         </Typography>
         <Typography variant="subtitle1" gutterBottom>
           Date: {format(new Date(receipt.transaction_date), 'PPPp')}
@@ -317,6 +320,21 @@ const ReceiptDetail: React.FC = () => {
                 </TableCell>
                 <TableCell align="right">
                   {formatCurrency(item.total_price)}
+                  {item.instant_savings && (
+                    <Typography variant="caption" color="success.main" display="block">
+                      Save: {formatCurrency(item.instant_savings)}
+                    </Typography>
+                  )}
+                  {item.instant_savings && item.original_price && (
+                    <Typography 
+                      variant="caption" 
+                      color="text.secondary" 
+                      display="block"
+                      sx={{ textDecoration: 'line-through' }}
+                    >
+                      Was: {formatCurrency(item.original_price)}
+                    </Typography>
+                  )}
                 </TableCell>
                 {editMode && (
                   <TableCell align="right">
@@ -336,6 +354,11 @@ const ReceiptDetail: React.FC = () => {
               <TableCell colSpan={editMode ? 4 : 3} />
               <TableCell align="right">
                 <Typography variant="subtitle1">Subtotal:</Typography>
+                {receipt.instant_savings && (
+                  <Typography variant="subtitle1" color="success.main">
+                    Instant Savings:
+                  </Typography>
+                )}
                 <Typography variant="subtitle1">Tax:</Typography>
                 <Typography variant="h6">Total:</Typography>
               </TableCell>
@@ -343,6 +366,11 @@ const ReceiptDetail: React.FC = () => {
                 <Typography variant="subtitle1">
                   {formatCurrency(editedItems.reduce((sum, item) => sum + parseFloat(item.total_price), 0).toString())}
                 </Typography>
+                {receipt.instant_savings && (
+                  <Typography variant="subtitle1" color="success.main">
+                    -{formatCurrency(receipt.instant_savings)}
+                  </Typography>
+                )}
                 <Typography variant="subtitle1">
                   {formatCurrency(receipt.tax)}
                 </Typography>
