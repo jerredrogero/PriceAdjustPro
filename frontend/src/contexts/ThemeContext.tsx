@@ -43,7 +43,7 @@ export const ThemeContextProvider: React.FC<ThemeContextProviderProps> = ({ chil
   const costcoRed = '#E31837';
   const costcoBlue = '#005DAA';
   const darkRed = '#C41230';
-  const lightRed = '#FF1A1A';
+  const lightRed = '#E31837';
 
   const theme = createTheme({
     palette: {
@@ -178,6 +178,16 @@ export const ThemeContextProvider: React.FC<ThemeContextProviderProps> = ({ chil
         styleOverrides: {
           root: {
             padding: '16px',
+          },
+        },
+      },
+      MuiAppBar: {
+        styleOverrides: {
+          root: {
+            backgroundColor: '#E31837',
+          },
+          colorPrimary: {
+            backgroundColor: '#E31837',
           },
         },
       },

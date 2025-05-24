@@ -28,6 +28,8 @@ import {
   LightMode as LightModeIcon,
 } from '@mui/icons-material';
 import { useThemeContext } from '../contexts/ThemeContext';
+import LogoLight from '../assets/images/PAP_LM.svg';
+import LogoDark from '../assets/images/PAP_DM.svg';
 
 // Define the User interface
 interface User {
@@ -113,8 +115,32 @@ const Navigation: React.FC<NavigationProps> = ({ user }) => {
   ];
 
   return (
-    <AppBar position="fixed">
-      <Toolbar>
+    <AppBar 
+      position="fixed"
+      color="transparent"
+      elevation={0}
+      sx={{ 
+        backgroundColor: '#E31837',
+        boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+      }}
+    >
+      <Toolbar 
+        sx={{
+          color: mode === 'light' ? '#ffffff' : '#000000',
+          '& .MuiTypography-root': {
+            color: mode === 'light' ? '#ffffff' : '#000000',
+          },
+          '& .MuiButton-root': {
+            color: mode === 'light' ? '#ffffff' : '#000000',
+          },
+          '& .MuiIconButton-root': {
+            color: mode === 'light' ? '#ffffff' : '#000000',
+          },
+          '& .MuiChip-root': {
+            color: 'white', // Keep BETA chip white always
+          },
+        }}
+      >
         {isMobile && isAuthenticated && (
           <IconButton
             color="inherit"
@@ -128,7 +154,7 @@ const Navigation: React.FC<NavigationProps> = ({ user }) => {
 
         <Link
           component={RouterLink}
-          to="/"
+          to={isAuthenticated ? "/dashboard" : "/"}
           sx={{
             textDecoration: 'none',
             color: 'inherit',
@@ -137,7 +163,16 @@ const Navigation: React.FC<NavigationProps> = ({ user }) => {
             flexGrow: 1,
           }}
         >
-          <ReceiptIcon sx={{ mr: 1 }} />
+          <Box
+            component="img"
+            src={mode === 'light' ? LogoLight : LogoDark}
+            alt="PriceAdjustPro Logo"
+            sx={{
+              height: 48,
+              width: 'auto',
+              mr: 1.5,
+            }}
+          />
           <Typography variant="h6" component="span">
             PriceAdjustPro
           </Typography>
@@ -157,16 +192,6 @@ const Navigation: React.FC<NavigationProps> = ({ user }) => {
 
         {!isAuthenticated ? (
           <Box sx={{ display: 'flex', alignItems: 'center' }}>
-            {/* Theme Toggle Button - always visible for non-authenticated users */}
-            <Tooltip title={`Switch to ${mode === 'light' ? 'dark' : 'light'} mode`}>
-              <IconButton
-                color="inherit"
-                onClick={toggleTheme}
-                sx={{ mr: 1 }}
-              >
-                {mode === 'light' ? <DarkModeIcon /> : <LightModeIcon />}
-              </IconButton>
-            </Tooltip>
             <Button color="inherit" component={RouterLink} to="/login">
               Login
             </Button>
@@ -178,16 +203,6 @@ const Navigation: React.FC<NavigationProps> = ({ user }) => {
           <>
             {!isMobile && (
               <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                {/* Theme Toggle Button - desktop only for authenticated users */}
-                <Tooltip title={`Switch to ${mode === 'light' ? 'dark' : 'light'} mode`}>
-                  <IconButton
-                    color="inherit"
-                    onClick={toggleTheme}
-                    sx={{ mr: 1 }}
-                  >
-                    {mode === 'light' ? <DarkModeIcon /> : <LightModeIcon />}
-                  </IconButton>
-                </Tooltip>
                 {menuItems.map((item) => (
                   <Button
                     key={item.path}
@@ -220,6 +235,17 @@ const Navigation: React.FC<NavigationProps> = ({ user }) => {
             )}
           </>
         )}
+
+        {/* Theme Toggle Button - Always at far right */}
+        <Tooltip title={`Switch to ${mode === 'light' ? 'dark' : 'light'} mode`}>
+          <IconButton
+            color="inherit"
+            onClick={toggleTheme}
+            sx={{ ml: 1 }}
+          >
+            {mode === 'light' ? <DarkModeIcon /> : <LightModeIcon />}
+          </IconButton>
+        </Tooltip>
 
         <Menu
           anchorEl={menuAnchor}

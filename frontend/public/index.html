@@ -3,29 +3,17 @@
   <head>
     <meta charset="utf-8" />
     <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
+    <link rel="icon" type="image/png" sizes="32x32" href="%PUBLIC_URL%/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="%PUBLIC_URL%/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="%PUBLIC_URL%/apple-touch-icon.png" />
+    <link rel="manifest" href="%PUBLIC_URL%/site.webmanifest" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#000000" />
-    <meta
-      name="description"
-      content="PriceAdjustPro - Costco Receipt Parser and Price Tracker"
-    />
-    <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
-    <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
-    <link
-      rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap"
-    />
+    <meta name="theme-color" content="#E31837" />
+    <meta name="description" content="PriceAdjustPro - Costco Receipt Parser and Price Tracker" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet" />
     <title>PriceAdjustPro</title>
-    <!-- Prevent 404 errors for missing static files -->
-    <script>
-      // Handle missing static files
-      window.addEventListener('error', function(e) {
-        if (e.target.tagName === 'LINK' || e.target.tagName === 'IMG' || e.target.tagName === 'SCRIPT') {
-          e.preventDefault();
-          console.warn('Resource not found:', e.target.src || e.target.href);
-        }
-      }, true);
-    </script>
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>
