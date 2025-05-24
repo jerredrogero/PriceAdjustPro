@@ -30,7 +30,7 @@ interface User {
 const AppContent: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<User | null>(null);
-  const navigate = useNavigate();
+  const [authChecked, setAuthChecked] = useState(false);
   const location = useLocation();
 
   useEffect(() => {
@@ -43,32 +43,14 @@ const AppContent: React.FC = () => {
       } catch (error) {
         console.log('App.tsx: Authentication failed:', error);
         setUser(null);
-        // Don't redirect if on public paths or accessing static files
-        const publicPaths = ['/', '/login', '/register'];
-        const isPublicPath = publicPaths.includes(location.pathname);
-        const isStaticFile = location.pathname.startsWith('/static/') || 
-                           location.pathname.includes('favicon.ico') ||
-                           location.pathname.includes('manifest.json') ||
-                           location.pathname.includes('logo192.png');
-        
-        console.log('App.tsx: Path analysis:', { 
-          currentPath: location.pathname, 
-          isPublicPath, 
-          isStaticFile 
-        });
-        
-        // Only redirect to login if trying to access a protected route
-        if (!isPublicPath && !isStaticFile && !location.pathname.startsWith('/api/')) {
-          console.log('App.tsx: Redirecting to login from:', location.pathname);
-          navigate('/login', { state: { from: location.pathname } });
-        }
       } finally {
         setLoading(false);
+        setAuthChecked(true);
       }
     };
 
     checkAuth();
-  }, [navigate, location.pathname]);
+  }, [location.pathname]);
 
   if (loading) {
     return (
@@ -87,11 +69,12 @@ const AppContent: React.FC = () => {
 
   return (
     <UserContext.Provider value={user}>
+        <Navigation user={user} />
         <Routes>
-        <Route path="/" element={user ? <Navigate to="/dashboard" /> : <Landing />} />
+        <Route path="/" element={<Box component="main" sx={{ pt: 8, pb: 4 }}><Landing /></Box>} />
         <Route path="/login" element={user ? <Navigate to="/dashboard" /> : <Login />} />
         <Route path="/register" element={user ? <Navigate to="/dashboard" /> : <Register />} />
-        <Route element={<PrivateRoute><Layout /></PrivateRoute>}>
+        <Route element={<PrivateRoute authChecked={authChecked}><Layout /></PrivateRoute>}>
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/receipts" element={<ReceiptList />} />
           <Route path="/receipts/:transactionNumber" element={<ReceiptDetail />} />

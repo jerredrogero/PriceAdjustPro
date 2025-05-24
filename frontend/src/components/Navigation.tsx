@@ -154,7 +154,7 @@ const Navigation: React.FC<NavigationProps> = ({ user }) => {
 
         <Link
           component={RouterLink}
-          to={isAuthenticated ? "/dashboard" : "/"}
+          to="/"
           sx={{
             textDecoration: 'none',
             color: 'inherit',

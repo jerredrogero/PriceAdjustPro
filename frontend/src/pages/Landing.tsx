@@ -207,7 +207,10 @@ const Landing: React.FC = () => {
       </Container>
 
       {/* Features Section */}
-      <Box sx={{ bgcolor: 'grey.50', py: 8 }}>
+      <Box sx={{ 
+        bgcolor: theme.palette.mode === 'light' ? 'grey.50' : 'grey.900', 
+        py: 8 
+      }}>
         <Container maxWidth="lg">
           <Typography variant="h4" align="center" gutterBottom>
             How It Works
