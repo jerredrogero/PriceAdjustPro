@@ -953,6 +953,16 @@ def api_receipt_update(request, transaction_number):
         receipt.tax = Decimal(str(data.get('tax', receipt.tax)))
         receipt.total = Decimal(str(data.get('total', receipt.total)))
         receipt.instant_savings = Decimal(str(data.get('instant_savings', '0.00'))) if data.get('instant_savings') else None
+        
+        # Update transaction date if provided
+        if data.get('transaction_date'):
+            try:
+                # Parse the ISO format date from frontend
+                from datetime import datetime
+                receipt.transaction_date = datetime.fromisoformat(data['transaction_date'].replace('Z', '+00:00'))
+            except (ValueError, TypeError) as e:
+                logger.warning(f"Failed to parse transaction_date: {data.get('transaction_date')}, error: {str(e)}")
+        
         receipt.save()
         
         # Update items

@@ -35,10 +35,13 @@ const AppContent: React.FC = () => {
 
   useEffect(() => {
     const checkAuth = async () => {
+      console.log('App.tsx: Checking authentication for path:', location.pathname);
       try {
         const response = await api.get('/api/auth/user/');
+        console.log('App.tsx: Authentication successful:', response.data);
         setUser(response.data);
       } catch (error) {
+        console.log('App.tsx: Authentication failed:', error);
         setUser(null);
         // Don't redirect if on public paths or accessing static files
         const publicPaths = ['/', '/login', '/register'];
@@ -48,8 +51,15 @@ const AppContent: React.FC = () => {
                            location.pathname.includes('manifest.json') ||
                            location.pathname.includes('logo192.png');
         
+        console.log('App.tsx: Path analysis:', { 
+          currentPath: location.pathname, 
+          isPublicPath, 
+          isStaticFile 
+        });
+        
         // Only redirect to login if trying to access a protected route
         if (!isPublicPath && !isStaticFile && !location.pathname.startsWith('/api/')) {
+          console.log('App.tsx: Redirecting to login from:', location.pathname);
           navigate('/login', { state: { from: location.pathname } });
         }
       } finally {

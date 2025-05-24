@@ -12,11 +12,10 @@ import {
   Alert,
 } from '@mui/material';
 import { Login as LoginIcon } from '@mui/icons-material';
-import { useAuth } from '../contexts/AuthContext';
+import api from '../api/axios';
 
 const Login: React.FC = () => {
   const navigate = useNavigate();
-  const { login } = useAuth();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -28,11 +27,20 @@ const Login: React.FC = () => {
     setLoading(true);
 
     try {
-      await login(username, password);
-      navigate('/dashboard');
+      await api.post('/api/auth/login/', {
+        username,
+        password,
+      });
+      
+      // Give a small delay to ensure session cookies are properly set
+      setTimeout(() => {
+        // After successful login, force a page reload to trigger auth check in App.tsx
+        window.location.href = '/dashboard';
+      }, 100);
+      
+      // Don't set loading to false here since we're redirecting
     } catch (err) {
-      setError('Failed to log in');
-    } finally {
+      setError('Invalid username or password');
       setLoading(false);
     }
   };

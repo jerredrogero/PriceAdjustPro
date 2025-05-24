@@ -422,11 +422,15 @@ def update_price_database(parsed_data: Dict, user=None) -> None:
             'store_number': parsed_data['store_number'],
             'transaction_date': parsed_data['transaction_date']
         }
+        
+        # Always filter by user when provided to avoid duplicate receipts
+        lookup_fields = {'transaction_number': parsed_data['transaction_number']}
         if user:
             receipt_data['user'] = user
+            lookup_fields['user'] = user
 
         receipt, _ = Receipt.objects.get_or_create(
-            transaction_number=parsed_data['transaction_number'],
+            **lookup_fields,
             defaults=receipt_data
         )
 

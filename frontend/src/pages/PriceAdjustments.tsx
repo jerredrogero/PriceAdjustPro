@@ -12,13 +12,18 @@ import {
   Alert,
   Button,
   useTheme,
+  IconButton,
+  Tooltip,
+  Snackbar,
 } from '@mui/material';
 import {
   LocationOn as LocationIcon,
   CalendarToday as CalendarIcon,
   Timer as TimerIcon,
+  Close as CloseIcon,
 } from '@mui/icons-material';
 import { format } from 'date-fns';
+import api from '../api/axios';
 
 interface PriceAdjustment {
   item_code: string;
@@ -45,6 +50,9 @@ const PriceAdjustments: React.FC = () => {
   const [totalSavings, setTotalSavings] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [dismissing, setDismissing] = useState<string | null>(null);
+  const [snackbarOpen, setSnackbarOpen] = useState(false);
+  const [snackbarMessage, setSnackbarMessage] = useState('');
 
   useEffect(() => {
     fetchAdjustments();
@@ -52,16 +60,38 @@ const PriceAdjustments: React.FC = () => {
 
   const fetchAdjustments = async () => {
     try {
-      const response = await fetch('/api/price-adjustments/');
-      if (!response.ok) throw new Error('Failed to fetch price adjustments');
-      
-      const data: ApiResponse = await response.json();
-      setAdjustments(data.adjustments);
-      setTotalSavings(data.total_potential_savings);
+      const response = await api.get('/api/price-adjustments/');
+      setAdjustments(response.data.adjustments);
+      setTotalSavings(response.data.total_potential_savings);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDismissAdjustment = async (itemCode: string) => {
+    setDismissing(itemCode);
+    try {
+      await api.post(`/api/price-adjustments/dismiss/${itemCode}/`);
+      
+      // Remove the dismissed adjustment from the list
+      setAdjustments(prev => {
+        const updated = prev.filter(adj => adj.item_code !== itemCode);
+        // Recalculate total savings
+        const newTotal = updated.reduce((sum, adj) => sum + adj.price_difference, 0);
+        setTotalSavings(newTotal);
+        return updated;
+      });
+      
+      setSnackbarMessage('Price adjustment alert dismissed successfully');
+      setSnackbarOpen(true);
+    } catch (err) {
+      console.error('Error dismissing price adjustment:', err);
+      setSnackbarMessage('Failed to dismiss price adjustment alert');
+      setSnackbarOpen(true);
+    } finally {
+      setDismissing(null);
     }
   };
 
@@ -168,12 +198,28 @@ const PriceAdjustments: React.FC = () => {
                   </Box>
 
                   <Box sx={{ textAlign: 'right' }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
                       <TimerIcon color="warning" />
                       <Typography variant="body2" color="warning.main">
                         {adjustment.days_remaining} days remaining
                       </Typography>
                     </Box>
+                    <Tooltip title="Dismiss this price adjustment alert">
+                      <IconButton
+                        onClick={() => handleDismissAdjustment(adjustment.item_code)}
+                        disabled={dismissing === adjustment.item_code}
+                        color="default"
+                        size="small"
+                        sx={{
+                          backgroundColor: theme.palette.grey[100],
+                          '&:hover': {
+                            backgroundColor: theme.palette.grey[200],
+                          },
+                        }}
+                      >
+                        <CloseIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
                   </Box>
                 </Box>
               </CardContent>
@@ -181,6 +227,23 @@ const PriceAdjustments: React.FC = () => {
           </Grid>
         ))}
       </Grid>
+
+      <Snackbar
+        open={snackbarOpen}
+        autoHideDuration={4000}
+        onClose={() => setSnackbarOpen(false)}
+        message={snackbarMessage}
+        action={
+          <IconButton
+            size="small"
+            aria-label="close"
+            color="inherit"
+            onClick={() => setSnackbarOpen(false)}
+          >
+            <CloseIcon fontSize="small" />
+          </IconButton>
+        }
+      />
     </Container>
   );
 };

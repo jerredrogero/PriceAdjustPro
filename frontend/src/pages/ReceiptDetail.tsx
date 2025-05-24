@@ -73,6 +73,7 @@ const ReceiptDetail: React.FC = () => {
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [editMode, setEditMode] = useState(false);
   const [editedItems, setEditedItems] = useState<ReceiptItem[]>([]);
+  const [editedTransactionDate, setEditedTransactionDate] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -84,6 +85,9 @@ const ReceiptDetail: React.FC = () => {
       const response = await api.get(`/api/receipts/${transactionNumber}/`);
       setReceipt(response.data);
       setEditedItems(response.data.items);
+      // Set the transaction date for editing (convert to YYYY-MM-DDTHH:MM format for datetime-local input)
+      const isoDate = new Date(response.data.transaction_date).toISOString().slice(0, 16);
+      setEditedTransactionDate(isoDate);
     } catch (err) {
       setError('Failed to load receipt details');
       console.error('Error fetching receipt:', err);
@@ -142,7 +146,7 @@ const ReceiptDetail: React.FC = () => {
         transaction_number: transactionNumber,
         store_location: receipt?.store_location,
         store_number: receipt?.store_number,
-        transaction_date: receipt?.transaction_date,
+        transaction_date: new Date(editedTransactionDate).toISOString(),
         items: editedItems.map(item => ({
           ...item,
           price: parseFloat(item.price).toFixed(2),
@@ -237,6 +241,9 @@ const ReceiptDetail: React.FC = () => {
               onClick={() => {
                 setEditMode(false);
                 setEditedItems(receipt.items);
+                // Reset transaction date to original
+                const isoDate = new Date(receipt.transaction_date).toISOString().slice(0, 16);
+                setEditedTransactionDate(isoDate);
               }}
             >
               Cancel
@@ -278,15 +285,34 @@ const ReceiptDetail: React.FC = () => {
             ? receipt.transaction_number 
             : 'Not found on receipt'}
         </Typography>
-        <Typography variant="subtitle1" gutterBottom>
-          Date: {format(new Date(receipt.transaction_date), 'PPPp')}
-        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <Typography variant="subtitle1">
+            Date:
+          </Typography>
+          {editMode ? (
+            <TextField
+              type="datetime-local"
+              value={editedTransactionDate}
+              onChange={(e) => setEditedTransactionDate(e.target.value)}
+              variant="outlined"
+              size="small"
+              sx={{ minWidth: 200 }}
+              InputLabelProps={{
+                shrink: true,
+              }}
+            />
+          ) : (
+            <Typography variant="subtitle1">
+              {format(new Date(receipt.transaction_date), 'PPPp')}
+            </Typography>
+          )}
+        </Box>
       </Paper>
 
       {editMode && (
         <Alert severity="warning" sx={{ mb: 3 }}>
           <Typography variant="body2">
-            <strong>Beta Feature:</strong> Item number editing is enabled for testing. 
+            <strong>Edit Mode:</strong> You can now edit the transaction date, item details, and mark items as on sale. 
             Note that item numbers are used to match products across users for price adjustment alerts. 
             Incorrect item numbers may affect price matching accuracy.
           </Typography>

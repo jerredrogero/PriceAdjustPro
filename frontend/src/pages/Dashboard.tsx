@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link as RouterLink } from 'react-router-dom';
+import { Link as RouterLink, useLocation } from 'react-router-dom';
 import {
   Container,
   Grid,
@@ -103,6 +103,7 @@ const StatCard: React.FC<{
 
 const Dashboard: React.FC = () => {
   const theme = useTheme();
+  const location = useLocation();
   const [analytics, setAnalytics] = useState<AnalyticsSummary | null>(null);
   const [recentReceipts, setRecentReceipts] = useState<Receipt[]>([]);
   const [priceAdjustments, setPriceAdjustments] = useState<PriceAdjustment[]>([]);
@@ -116,6 +117,13 @@ const Dashboard: React.FC = () => {
       fetchPriceAdjustments(),
     ]).finally(() => setLoading(false));
   }, []);
+
+  // Refresh price adjustments when navigating back to dashboard
+  useEffect(() => {
+    if (location.pathname === '/') {
+      fetchPriceAdjustments();
+    }
+  }, [location.pathname]);
 
   const fetchAnalytics = async () => {
     try {
@@ -245,7 +253,7 @@ const Dashboard: React.FC = () => {
             value={priceAdjustments.length.toString()}
             icon={<TrendingDownIcon />}
             subtitle="Available opportunities"
-            to="/adjustments"
+            to="/price-adjustments"
           />
         </Grid>
 

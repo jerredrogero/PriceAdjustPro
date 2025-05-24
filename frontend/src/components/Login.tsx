@@ -28,10 +28,16 @@ const Login: React.FC = () => {
 
     try {
       await api.post('/api/auth/login/', { username, password });
-      navigate('/dashboard');
+      
+      // Give a small delay to ensure session cookies are properly set
+      setTimeout(() => {
+        // After successful login, force a page reload to trigger auth check in App.tsx
+        window.location.href = '/dashboard';
+      }, 100);
+      
+      // Don't set loading to false here since we're redirecting
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to login');
-    } finally {
+      setError(err.response?.data?.error || 'Invalid username or password');
       setLoading(false);
     }
   };
