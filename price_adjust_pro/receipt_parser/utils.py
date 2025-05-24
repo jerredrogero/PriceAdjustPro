@@ -5,6 +5,7 @@ from typing import Dict, Optional
 import json
 import os
 from django.conf import settings
+import logging
 
 # Try to import Google Generative AI, but provide a mock if not available
 try:
@@ -34,8 +35,11 @@ import base64
 from django.urls import reverse
 from .models import (
     CostcoItem, CostcoWarehouse, ItemWarehousePrice,
-    PriceAdjustmentAlert, Receipt, LineItem
+    PriceAdjustmentAlert, Receipt, LineItem,
+    CostcoPromotion, OfficialSaleItem
 )
+
+logger = logging.getLogger(__name__)
 
 def extract_text_from_pdf(pdf_path: str) -> str:
     """Extract text from a PDF file using Gemini Vision."""
@@ -340,20 +344,41 @@ Parse this receipt:
             'parsed_successfully': False
         }
 
-def check_for_price_adjustments(item: LineItem, receipt: Receipt) -> None:
+def check_for_price_adjustments(item: LineItem, receipt: Receipt, is_user_edited: bool = False) -> None:
     """
     When an item with instant savings is found, alert other users who bought 
     the same item at full price in the last 30 days.
+    
+    Args:
+        item: The line item to check
+        receipt: The receipt containing the item
+        is_user_edited: Whether this data comes from user edits (less trusted)
     """
     try:
         # Only check items that have a lower price (either through instant savings or regular price)
         if not item.item_code:
             return
 
+        # SECURITY: Be more conservative with user-edited data
+        if is_user_edited:
+            # For user edits, only allow "on sale" items with instant savings
+            # Don't allow arbitrary price changes to trigger alerts
+            if not (item.on_sale and item.instant_savings):
+                logger.info(f"Skipping price adjustment check for user-edited item without explicit sale marking: {item.description}")
+                return
+            
+            # Validate the discount is reasonable (not more than 75% off)
+            if item.original_price and item.instant_savings:
+                discount_percentage = (item.instant_savings / item.original_price) * 100
+                if discount_percentage > 75:
+                    logger.warning(f"Suspicious discount percentage ({discount_percentage:.1f}%) for item {item.description} - skipping price adjustment")
+                    return
+
         # Get the date 30 days ago
         thirty_days_ago = timezone.now() - timedelta(days=30)
 
         # Find users who bought this item at a higher price in the last 30 days
+        # across all warehouses
         full_price_purchases = LineItem.objects.filter(
             item_code=item.item_code,
             receipt__transaction_date__gte=thirty_days_ago,
@@ -371,6 +396,11 @@ def check_for_price_adjustments(item: LineItem, receipt: Receipt) -> None:
             
             # Only alert if the difference is significant (e.g., > $0.50)
             if price_difference >= Decimal('0.50'):
+                # For user-edited data, require larger minimum savings ($2.00)
+                min_savings = Decimal('2.00') if is_user_edited else Decimal('0.50')
+                if price_difference < min_savings:
+                    continue
+                    
                 # Create or update alert
                 alert, created = PriceAdjustmentAlert.objects.get_or_create(
                     user=purchase.receipt.user,
@@ -385,7 +415,8 @@ def check_for_price_adjustments(item: LineItem, receipt: Receipt) -> None:
                         'cheaper_store_city': receipt.store_city,  # Where the sale was found
                         'cheaper_store_number': receipt.store_number,
                         'is_active': True,
-                        'is_dismissed': False
+                        'is_dismissed': False,
+                        'data_source': 'user_edit' if is_user_edited else 'ocr_parsed'
                     }
                 )
 
@@ -395,11 +426,13 @@ def check_for_price_adjustments(item: LineItem, receipt: Receipt) -> None:
                     alert.cheaper_store_city = receipt.store_city
                     alert.cheaper_store_number = receipt.store_number
                     alert.is_dismissed = False  # Re-activate if user dismissed it before
+                    alert.data_source = 'user_edit' if is_user_edited else 'ocr_parsed'
                     alert.save()
 
                 # Log the alert creation/update
+                source_type = "user-edited" if is_user_edited else "OCR-parsed"
                 logger.info(
-                    f"Price adjustment alert created/updated for user {purchase.receipt.user.username} "
+                    f"Price adjustment alert created/updated ({source_type}) for user {purchase.receipt.user.username} "
                     f"on item {item.description} (${purchase.price} -> ${item.price})"
                 )
 
@@ -678,4 +711,336 @@ def process_receipt_file(file_path: str, user=None) -> Dict:
     elif file_ext in ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp']:
         return process_receipt_image(file_path, user)
     else:
-        raise ValueError(f"Unsupported file type: {file_ext}") 
+        raise ValueError(f"Unsupported file type: {file_ext}")
+
+def extract_promo_data_from_image(image_path: str) -> str:
+    """Extract promotional sale data from a Costco booklet page."""
+    try:
+        # Read the image file as binary
+        with open(image_path, 'rb') as file:
+            image_content = file.read()
+        
+        # Determine MIME type based on file extension
+        file_ext = os.path.splitext(image_path)[1].lower()
+        mime_types = {
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg', 
+            '.png': 'image/png',
+            '.webp': 'image/webp',
+        }
+        mime_type = mime_types.get(file_ext, 'image/jpeg')
+        
+        # Configure Gemini
+        api_key = settings.GEMINI_API_KEY
+        if not api_key:
+            raise Exception("Gemini API key not configured")
+        
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel('gemini-2.0-flash')
+        
+        # Specialized prompt for promotional booklet processing
+        prompt = """This is a page from an official Costco promotional booklet showing monthly member deals and instant rebates. 
+
+Extract ALL sale items from this page. There are TWO types of promotions:
+
+TYPE 1: "$X OFF" (discount amount only)
+- Example: "$40 OFF" means $40 discount, but no final price shown
+- For these: use "discount_only" as sale_type and put discount amount in REBATE_AMOUNT
+
+TYPE 2: "$X.XX AFTER $Y OFF" (final price after discount)  
+- Example: "$32.99 AFTER $7 OFF" means final price is $32.99, discount is $7
+- For these: use "instant_rebate" as sale_type
+
+Format each item as:
+ITEM_CODE | DESCRIPTION | REGULAR_PRICE | SALE_PRICE | REBATE_AMOUNT | SALE_TYPE
+
+FORMATTING RULES:
+- Use ONLY numbers for prices (no $ symbol, no commas)
+- If regular price isn't shown, use "null"
+- For TYPE 1 ($X OFF): SALE_PRICE should be "null", REBATE_AMOUNT is the discount
+- For TYPE 2 ($X.XX AFTER $Y OFF): SALE_PRICE is the final price, REBATE_AMOUNT is the discount
+- Use underscores in sale_type: "discount_only" or "instant_rebate"
+
+Examples from this image:
+1654628 | CORE Pop-up Canopy | null | null | 40.00 | discount_only
+1819555 | Timber Ridge Chair | null | null | 10.00 | discount_only
+1872066 | Titan Cooler | 39.99 | 32.99 | 7.00 | instant_rebate
+1671616 | DeWalt Vacuum | null | null | 20.00 | discount_only
+3640862 | Philips Shaver | 99.99 | 69.99 | 30.00 | instant_rebate
+
+Extract every visible sale item from this promotional page."""
+        
+        # Create the image data
+        image_data = {
+            "mime_type": mime_type,
+            "data": base64.b64encode(image_content).decode('utf-8')
+        }
+        
+        # Generate response
+        response = model.generate_content([prompt, image_data], stream=False)
+        
+        return response.text
+        
+    except Exception as e:
+        logger.error(f"Error extracting promo data from image: {str(e)}")
+        raise
+
+def parse_promo_text(text: str) -> list:
+    """Parse extracted promotional text into structured sale items."""
+    sale_items = []
+    
+    lines = text.strip().split('\n')
+    for line in lines:
+        line = line.strip()
+        if not line or '|' not in line:
+            continue
+            
+        try:
+            parts = [part.strip() for part in line.split('|')]
+            if len(parts) >= 6:
+                item_code = parts[0]
+                description = parts[1]
+                regular_price_str = parts[2]
+                sale_price_str = parts[3]
+                rebate_amount_str = parts[4]
+                sale_type = parts[5]
+                
+                # Parse prices
+                regular_price = None
+                if regular_price_str and regular_price_str.lower() != 'null':
+                    # Clean price string: remove $, commas, extra spaces
+                    clean_price = regular_price_str.replace('$', '').replace(',', '').strip()
+                    try:
+                        regular_price = Decimal(clean_price)
+                    except (ValueError, InvalidOperation):
+                        logger.warning(f"Could not parse regular price: '{regular_price_str}'")
+                
+                sale_price = None
+                instant_rebate = None
+                
+                # Handle different promotional formats based on sale_type
+                if sale_type == 'discount_only':
+                    # This is a "$X OFF" promotion - we only know the discount amount
+                    if rebate_amount_str and rebate_amount_str.lower() != 'null':
+                        clean_rebate = rebate_amount_str.replace('$', '').replace(',', '').strip()
+                        try:
+                            instant_rebate = Decimal(clean_rebate)
+                            # For discount_only, leave sale_price as None, store discount in instant_rebate
+                            sale_price = None  # No final price known
+                            logger.info(f"Processing discount-only promotion: ${instant_rebate} OFF for {description}")
+                        except (ValueError, InvalidOperation):
+                            logger.warning(f"Could not parse discount amount: '{rebate_amount_str}' - skipping item")
+                            continue
+                    else:
+                        logger.warning(f"No discount amount found for discount_only promotion - skipping item")
+                        continue
+                        
+                elif sale_price_str.lower() == 'null' or not sale_price_str.strip():
+                    # Legacy handling for null sale prices (fallback)
+                    if rebate_amount_str and rebate_amount_str.lower() != 'null':
+                        clean_rebate = rebate_amount_str.replace('$', '').replace(',', '').strip()
+                        try:
+                            instant_rebate = Decimal(clean_rebate)
+                            sale_price = instant_rebate
+                            logger.info(f"Treating legacy null sale price as discount: ${instant_rebate}")
+                        except (ValueError, InvalidOperation):
+                            logger.warning(f"Could not parse rebate amount: '{rebate_amount_str}' - skipping item")
+                            continue
+                    else:
+                        logger.warning(f"No sale price or rebate amount found - skipping item")
+                        continue
+                else:
+                    # Normal promotion with actual sale price
+                    clean_sale_price = sale_price_str.replace('$', '').replace(',', '').strip()
+                    try:
+                        sale_price = Decimal(clean_sale_price)
+                    except (ValueError, InvalidOperation):
+                        logger.warning(f"Could not parse sale price: '{sale_price_str}' - skipping item")
+                        continue
+                    
+                    # Parse rebate amount if provided
+                    if rebate_amount_str and rebate_amount_str.lower() != 'null':
+                        clean_rebate = rebate_amount_str.replace('$', '').replace(',', '').strip()
+                        try:
+                            instant_rebate = Decimal(clean_rebate)
+                        except (ValueError, InvalidOperation):
+                            logger.warning(f"Could not parse rebate amount: '{rebate_amount_str}'")
+                    elif regular_price:
+                        instant_rebate = regular_price - sale_price
+                
+                sale_items.append({
+                    'item_code': item_code,
+                    'description': description,
+                    'regular_price': regular_price,
+                    'sale_price': sale_price,
+                    'instant_rebate': instant_rebate,
+                    'sale_type': sale_type
+                })
+                
+        except (ValueError, IndexError) as e:
+            logger.warning(f"Error parsing promo line '{line}': {str(e)}")
+            continue
+    
+    return sale_items
+
+def process_official_promotion(promotion_id: int) -> dict:
+    """Process an official Costco promotion and create price adjustment alerts."""
+    try:
+        promotion = CostcoPromotion.objects.get(id=promotion_id)
+        results = {
+            'pages_processed': 0,
+            'items_extracted': 0,
+            'alerts_created': 0,
+            'errors': []
+        }
+        
+        # Process each page of the promotion
+        for page in promotion.pages.all():
+            try:
+                # Extract text from the image
+                extracted_text = extract_promo_data_from_image(page.image.path)
+                page.extracted_text = extracted_text
+                
+                # Parse the sale items
+                sale_items = parse_promo_text(extracted_text)
+                
+                # Create OfficialSaleItem records
+                for item_data in sale_items:
+                    official_item, created = OfficialSaleItem.objects.get_or_create(
+                        promotion=promotion,
+                        item_code=item_data['item_code'],
+                        defaults={
+                            'description': item_data['description'],
+                            'regular_price': item_data['regular_price'],
+                            'sale_price': item_data['sale_price'],
+                            'instant_rebate': item_data['instant_rebate'],
+                            'sale_type': item_data['sale_type']
+                        }
+                    )
+                    
+                    if created:
+                        results['items_extracted'] += 1
+                        
+                        # Create price adjustment alerts for users who bought this item
+                        alerts_created = create_official_price_alerts(official_item)
+                        official_item.alerts_created = alerts_created
+                        official_item.save()
+                        results['alerts_created'] += alerts_created
+                
+                page.is_processed = True
+                page.save()
+                results['pages_processed'] += 1
+                
+            except Exception as e:
+                error_msg = f"Error processing page {page.page_number}: {str(e)}"
+                results['errors'].append(error_msg)
+                page.processing_error = error_msg
+                page.save()
+                logger.error(error_msg)
+        
+        # Mark promotion as processed
+        promotion.is_processed = True
+        promotion.processed_date = timezone.now()
+        if results['errors']:
+            promotion.processing_error = '; '.join(results['errors'])
+        promotion.save()
+        
+        logger.info(f"Processed promotion '{promotion.title}': {results}")
+        return results
+        
+    except Exception as e:
+        error_msg = f"Error processing promotion {promotion_id}: {str(e)}"
+        logger.error(error_msg)
+        return {'error': error_msg}
+
+def create_official_price_alerts(official_sale_item) -> int:
+    """Create price adjustment alerts based on official sale data."""
+    alerts_created = 0
+    
+    try:
+        # Find users who bought this item at regular price in the last 30 days
+        thirty_days_ago = timezone.now() - timedelta(days=30)
+        
+        # Look for purchases where users paid more than the sale price
+        higher_price_purchases = LineItem.objects.filter(
+            item_code=official_sale_item.item_code,
+            receipt__transaction_date__gte=thirty_days_ago,
+            receipt__user__isnull=False
+        ).select_related('receipt', 'receipt__user')
+        
+        # For "OFF" promotions where sale_price represents the discount amount,
+        # we need to find users who could benefit from this discount
+        for purchase in higher_price_purchases:
+            # Check if user already has an alert for this item
+            existing_alert = PriceAdjustmentAlert.objects.filter(
+                user=purchase.receipt.user,
+                item_code=official_sale_item.item_code,
+                is_active=True,
+                is_dismissed=False
+            ).first()
+            
+            # Calculate potential savings
+            if official_sale_item.sale_type == 'discount_only':
+                # This is a "$X OFF" promotion - calculate savings as the discount amount
+                savings = official_sale_item.instant_rebate  # Use instant_rebate for discount amount
+                final_price = purchase.price - savings  # What they could pay after discount
+                
+                # Only create alert if the discount is meaningful and results in positive price
+                if final_price <= 0 or savings < Decimal('0.50'):
+                    continue  # Skip if discount is too large or too small
+                    
+                logger.info(f"Discount-only promotion: User paid ${purchase.price}, can save ${savings} (final: ${final_price})")
+                
+            elif official_sale_item.sale_price:
+                # Standard promotion with sale price (regular price optional)
+                if purchase.price > official_sale_item.sale_price:
+                    savings = purchase.price - official_sale_item.sale_price
+                    final_price = official_sale_item.sale_price
+                else:
+                    continue  # User already paid less
+            else:
+                # Skip if we don't have enough price information
+                logger.warning(f"Insufficient price data for {official_sale_item.description} - skipping")
+                continue
+            
+            # Only create alert if savings is significant ($0.50+)
+            if savings >= Decimal('0.50'):
+                if existing_alert:
+                    # Update existing alert if this is a better deal
+                    if final_price < existing_alert.lower_price:
+                        existing_alert.lower_price = final_price
+                        existing_alert.data_source = 'official_promo'
+                        existing_alert.official_sale_item = official_sale_item
+                        existing_alert.is_dismissed = False  # Re-activate
+                        existing_alert.save()
+                        alerts_created += 1
+                else:
+                    # Create new alert
+                    PriceAdjustmentAlert.objects.create(
+                        user=purchase.receipt.user,
+                        item_code=official_sale_item.item_code,
+                        item_description=official_sale_item.description,
+                        original_price=purchase.price,
+                        lower_price=final_price,  # Use calculated final price
+                        original_store_city=purchase.receipt.store_city,
+                        original_store_number=purchase.receipt.store_number,
+                        cheaper_store_city='All Costco Locations',  # Official promos apply everywhere
+                        cheaper_store_number='ALL',
+                        purchase_date=purchase.receipt.transaction_date,
+                        data_source='official_promo',
+                        official_sale_item=official_sale_item,
+                        is_active=True,
+                        is_dismissed=False
+                    )
+                    alerts_created += 1
+                    
+                    logger.info(
+                        f"Official price alert created for user {purchase.receipt.user.username} "
+                        f"on {official_sale_item.description} (${purchase.price} -> ${official_sale_item.sale_price})"
+                    )
+        
+        return alerts_created
+        
+    except Exception as e:
+        logger.error(f"Error creating official price alerts for {official_sale_item.description}: {str(e)}")
+        return 0 

@@ -17,8 +17,12 @@ import json
 from datetime import datetime
 from .models import (
     Receipt, LineItem, CostcoItem, CostcoWarehouse,
-    ItemPriceHistory, ItemWarehousePrice, PriceAdjustmentAlert
+    ItemPriceHistory, ItemWarehousePrice, PriceAdjustmentAlert,
+    CostcoPromotion, CostcoPromotionPage, OfficialSaleItem
 )
+from .utils import process_official_promotion
+from django.contrib import messages
+from django.utils.safestring import mark_safe
 
 # Customize admin site
 admin.site.site_header = 'PriceAdjustPro Administration'
@@ -677,3 +681,87 @@ class ItemWarehousePriceAdmin(BaseModelAdmin):
         json.dump(data, response, indent=2)
         return response
     export_as_json.short_description = "Export selected prices as JSON"
+
+class CostcoPromotionPageInline(admin.TabularInline):
+    model = CostcoPromotionPage
+    extra = 1
+    readonly_fields = ('uploaded_at', 'is_processed', 'processing_error')
+    fields = ('page_number', 'image', 'is_processed', 'processing_error')
+
+class OfficialSaleItemInline(admin.TabularInline):
+    model = OfficialSaleItem
+    extra = 0
+    readonly_fields = ('alerts_created', 'savings_amount', 'created_at')
+    fields = ('item_code', 'description', 'regular_price', 'sale_price', 'instant_rebate', 'sale_type', 'alerts_created')
+
+@admin.register(CostcoPromotion)
+class CostcoPromotionAdmin(admin.ModelAdmin):
+    list_display = ('title', 'sale_start_date', 'sale_end_date', 'is_processed', 'pages_count', 'items_count', 'alerts_count')
+    list_filter = ('is_processed', 'sale_start_date', 'uploaded_by')
+    search_fields = ('title',)
+    readonly_fields = ('upload_date', 'processed_date', 'uploaded_by', 'pages_count', 'items_count', 'alerts_count')
+    inlines = [CostcoPromotionPageInline, OfficialSaleItemInline]
+    
+    actions = ['process_promotions']
+    
+    def pages_count(self, obj):
+        return obj.pages.count()
+    pages_count.short_description = "Pages"
+    
+    def items_count(self, obj):
+        return obj.sale_items.count()
+    items_count.short_description = "Sale Items"
+    
+    def alerts_count(self, obj):
+        return sum(item.alerts_created for item in obj.sale_items.all())
+    alerts_count.short_description = "Alerts Created"
+    
+    def save_model(self, request, obj, form, change):
+        if not change:  # Only set on creation
+            obj.uploaded_by = request.user
+        super().save_model(request, obj, form, change)
+    
+    def process_promotions(self, request, queryset):
+        """Admin action to process selected promotions."""
+        processed_count = 0
+        for promotion in queryset:
+            if not promotion.is_processed:
+                try:
+                    results = process_official_promotion(promotion.id)
+                    if 'error' not in results:
+                        processed_count += 1
+                        messages.success(
+                            request, 
+                            f"Processed '{promotion.title}': {results['items_extracted']} items, {results['alerts_created']} alerts created"
+                        )
+                    else:
+                        messages.error(request, f"Failed to process '{promotion.title}': {results['error']}")
+                except Exception as e:
+                    messages.error(request, f"Error processing '{promotion.title}': {str(e)}")
+        
+        if processed_count > 0:
+            messages.success(request, f"Successfully processed {processed_count} promotion(s)")
+    
+    process_promotions.short_description = "Process selected promotions"
+
+@admin.register(CostcoPromotionPage)
+class CostcoPromotionPageAdmin(admin.ModelAdmin):
+    list_display = ('promotion', 'page_number', 'image_display', 'is_processed', 'uploaded_at')
+    list_filter = ('is_processed', 'uploaded_at', 'promotion')
+    readonly_fields = ('uploaded_at', 'extracted_text', 'processing_error')
+    
+    def image_display(self, obj):
+        if obj.image:
+            return format_html(
+                '<img src="{}" style="max-height: 100px; max-width: 150px;" />',
+                obj.image.url
+            )
+        return "No image"
+    image_display.short_description = "Preview"
+
+@admin.register(OfficialSaleItem)
+class OfficialSaleItemAdmin(admin.ModelAdmin):
+    list_display = ('item_code', 'description', 'regular_price', 'sale_price', 'savings_amount', 'sale_type', 'alerts_created', 'promotion')
+    list_filter = ('sale_type', 'promotion', 'created_at')
+    search_fields = ('item_code', 'description')
+    readonly_fields = ('savings_amount', 'alerts_created', 'created_at')

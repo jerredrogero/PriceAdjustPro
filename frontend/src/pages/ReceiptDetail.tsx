@@ -79,6 +79,7 @@ const ReceiptDetail: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [searchParams] = useSearchParams();
   const [showUploadSuccess, setShowUploadSuccess] = useState(false);
+  const [priceAdjustmentsCreated, setPriceAdjustmentsCreated] = useState<number>(0);
 
   const fetchReceipt = useCallback(async () => {
     try {
@@ -142,7 +143,7 @@ const ReceiptDetail: React.FC = () => {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await api.post(`/api/receipts/${transactionNumber}/update/`, {
+      const response = await api.post(`/api/receipts/${transactionNumber}/update/`, {
         transaction_number: transactionNumber,
         store_location: receipt?.store_location,
         store_number: receipt?.store_number,
@@ -160,6 +161,11 @@ const ReceiptDetail: React.FC = () => {
         total: calculateTotal(),
         instant_savings: calculateTotalSavings()
       });
+      
+      // Check if price adjustments were created
+      const adjustmentsCreated = response.data.price_adjustments_created || 0;
+      setPriceAdjustmentsCreated(adjustmentsCreated);
+      
       setEditMode(false);
       fetchReceipt(); // Refresh data
     } catch (err) {
@@ -276,6 +282,22 @@ const ReceiptDetail: React.FC = () => {
         </Alert>
       )}
 
+      {priceAdjustmentsCreated > 0 && (
+        <Alert 
+          severity="success" 
+          sx={{ mb: 3 }}
+          onClose={() => setPriceAdjustmentsCreated(0)}
+        >
+          <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+            Price Adjustments Created! 💰
+          </Typography>
+          <Typography variant="body2">
+            Your receipt edits created {priceAdjustmentsCreated} new price adjustment alert{priceAdjustmentsCreated > 1 ? 's' : ''} for other users. 
+            When items go on sale, other users who paid more will be notified to get their money back!
+          </Typography>
+        </Alert>
+      )}
+
       <Paper sx={{ p: 3, mb: 3 }}>
         <Typography variant="h5" gutterBottom>
           {receipt.store_location}
@@ -310,11 +332,13 @@ const ReceiptDetail: React.FC = () => {
       </Paper>
 
       {editMode && (
-        <Alert severity="warning" sx={{ mb: 3 }}>
+        <Alert severity="info" sx={{ mb: 3 }}>
           <Typography variant="body2">
             <strong>Edit Mode:</strong> You can now edit the transaction date, item details, and mark items as on sale. 
-            Note that item numbers are used to match products across users for price adjustment alerts. 
-            Incorrect item numbers may affect price matching accuracy.
+          </Typography>
+          <Typography variant="body2" sx={{ mt: 1 }}>
+            <strong>Price Adjustment Security:</strong> Only items explicitly marked "on sale" with reasonable discounts 
+            can create price adjustment alerts for other users. This prevents abuse while allowing you to help the community.
           </Typography>
           <Typography variant="body2" sx={{ mt: 1, fontSize: '0.8rem' }}>
             💡 <em>On mobile: Scroll the table horizontally to access all columns including "On Sale" toggles.</em>

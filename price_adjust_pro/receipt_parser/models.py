@@ -259,6 +259,24 @@ class PriceAdjustmentAlert(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     is_active = models.BooleanField(default=True)
     is_dismissed = models.BooleanField(default=False)
+    data_source = models.CharField(
+        max_length=20, 
+        choices=[
+            ('ocr_parsed', 'OCR Parsed'),
+            ('user_edit', 'User Edit'),
+            ('official_promo', 'Official Promotion')
+        ],
+        default='ocr_parsed',
+        help_text="Source of the price data that triggered this alert"
+    )
+    official_sale_item = models.ForeignKey(
+        'OfficialSaleItem', 
+        on_delete=models.CASCADE, 
+        null=True, 
+        blank=True,
+        related_name='generated_alerts',
+        help_text="Official sale item that generated this alert"
+    )
 
     class Meta:
         ordering = ['-created_at']
@@ -300,3 +318,88 @@ class PriceAdjustmentAlert(models.Model):
             is_dismissed=False,
             purchase_date__gte=timezone.now() - timezone.timedelta(days=30)
         )
+
+class CostcoPromotion(models.Model):
+    """
+    Stores official Costco promotional sale data from monthly booklets.
+    """
+    title = models.CharField(max_length=255, help_text="e.g., 'January 2024 Member Deals'")
+    upload_date = models.DateTimeField(auto_now_add=True)
+    processed_date = models.DateTimeField(null=True, blank=True)
+    sale_start_date = models.DateField(help_text="When the sale period begins")
+    sale_end_date = models.DateField(help_text="When the sale period ends")
+    is_processed = models.BooleanField(default=False)
+    processing_error = models.TextField(null=True, blank=True)
+    uploaded_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='uploaded_promotions')
+    
+    class Meta:
+        ordering = ['-sale_start_date']
+        verbose_name = 'Costco Promotion'
+        verbose_name_plural = 'Costco Promotions'
+    
+    def __str__(self):
+        return f"{self.title} ({self.sale_start_date} - {self.sale_end_date})"
+
+class CostcoPromotionPage(models.Model):
+    """
+    Individual pages/images from the promotional booklet.
+    """
+    promotion = models.ForeignKey(CostcoPromotion, on_delete=models.CASCADE, related_name='pages')
+    image = models.ImageField(upload_to='promo_booklets/%Y/%m/')
+    page_number = models.IntegerField(default=1)
+    extracted_text = models.TextField(null=True, blank=True)
+    is_processed = models.BooleanField(default=False)
+    processing_error = models.TextField(null=True, blank=True)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        ordering = ['promotion', 'page_number']
+        unique_together = ['promotion', 'page_number']
+        verbose_name = 'Promotion Page'
+        verbose_name_plural = 'Promotion Pages'
+    
+    def __str__(self):
+        return f"{self.promotion.title} - Page {self.page_number}"
+
+class OfficialSaleItem(models.Model):
+    """
+    Individual sale items extracted from promotional booklets.
+    """
+    promotion = models.ForeignKey(CostcoPromotion, on_delete=models.CASCADE, related_name='sale_items')
+    item_code = models.CharField(max_length=50, db_index=True)
+    description = models.CharField(max_length=255)
+    regular_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    sale_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    instant_rebate = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    sale_type = models.CharField(
+        max_length=20,
+        choices=[
+            ('instant_rebate', 'Instant Rebate'),
+            ('discount_only', 'Discount Only'),
+            ('markdown', 'Markdown Sale'),
+            ('member_only', 'Member Only Deal'),
+            ('manufacturer', 'Manufacturer Coupon')
+        ],
+        default='instant_rebate'
+    )
+    alerts_created = models.IntegerField(default=0, help_text="Number of price adjustment alerts created")
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        ordering = ['promotion', 'item_code']
+        unique_together = ['promotion', 'item_code']
+        indexes = [
+            models.Index(fields=['item_code', 'sale_price']),
+            models.Index(fields=['promotion', 'sale_type']),
+        ]
+        verbose_name = 'Official Sale Item'
+        verbose_name_plural = 'Official Sale Items'
+    
+    def __str__(self):
+        return f"{self.description} - ${self.sale_price} (was ${self.regular_price})"
+    
+    @property
+    def savings_amount(self):
+        if self.regular_price:
+            return self.regular_price - self.sale_price
+        return self.instant_rebate or Decimal('0.00')

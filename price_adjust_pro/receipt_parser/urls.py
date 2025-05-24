@@ -28,7 +28,7 @@ api_urlpatterns = [
     path('receipts/<str:transaction_number>/delete/', views.api_receipt_delete, name='api_receipt_delete'),
     path('receipts/<str:transaction_number>/update/', views.api_receipt_update, name='api_receipt_update'),
     path('price-adjustments/', views.api_price_adjustments, name='api_price_adjustments'),
-    path('price-adjustments/<str:item_code>/dismiss/', views.api_dismiss_price_adjustment, name='api_dismiss_price_adjustment'),
+    path('price-adjustments/dismiss/<str:item_code>/', views.api_dismiss_price_adjustment, name='api_dismiss_price_adjustment'),
     path('analytics/', views.api_user_analytics, name='api_user_analytics'),
 ]
 

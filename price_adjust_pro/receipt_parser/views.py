@@ -118,7 +118,7 @@ def upload_receipt(request):
                                     original_price=Decimal(str(item_data['original_price'])) if item_data.get('original_price') else None
                                 )
                                 # Check for potential price adjustments
-                                check_for_price_adjustments(line_item, existing_receipt)
+                                check_for_price_adjustments(line_item, existing_receipt, is_user_edited=False)
                             except Exception as e:
                                 logger.error(f"Line item error: {str(e)}")
                     
@@ -196,7 +196,7 @@ def upload_receipt(request):
                                 original_price=Decimal(str(item_data['original_price'])) if item_data.get('original_price') else None
                             )
                             # Check for potential price adjustments
-                            check_for_price_adjustments(line_item, receipt)
+                            check_for_price_adjustments(line_item, receipt, is_user_edited=False)
                         except Exception as e:
                             logger.error(f"Line item error: {str(e)}")
                             continue
@@ -487,7 +487,7 @@ def api_receipt_upload(request):
                         original_price=Decimal(str(item_data['original_price'])) if item_data.get('original_price') else None
                     )
                     # Check for potential price adjustments
-                    check_for_price_adjustments(line_item, receipt)
+                    check_for_price_adjustments(line_item, receipt, is_user_edited=True)
                 except Exception as e:
                     logger.error(f"Line item error: {str(e)}")
                     continue
@@ -783,7 +783,12 @@ def api_price_adjustments(request):
                 'purchase_date': alert.purchase_date.isoformat(),
                 'days_remaining': alert.days_remaining,
                 'original_store': f"Costco {alert.original_store_city}",
-                'original_store_number': alert.original_store_number
+                'original_store_number': alert.original_store_number,
+                'data_source': alert.data_source,
+                'is_official': alert.data_source == 'official_promo',
+                'promotion_title': alert.official_sale_item.promotion.title if alert.official_sale_item else None,
+                'sale_type': alert.official_sale_item.sale_type if alert.official_sale_item else None,
+                'confidence_level': 'high' if alert.data_source == 'official_promo' else 'medium' if alert.data_source == 'ocr_parsed' else 'low'
             })
 
         # Sort by price difference (highest savings first)
@@ -797,12 +802,15 @@ def api_price_adjustments(request):
         logger.error(f"Error checking price adjustments: {str(e)}")
         return JsonResponse({'error': str(e)}, status=500)
 
-@login_required
 @csrf_exempt
 def api_dismiss_price_adjustment(request, item_code):
     """Dismiss a price adjustment alert."""
     if request.method != 'POST':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
+    
+    # Check authentication manually for API endpoint
+    if not request.user.is_authenticated:
+        return JsonResponse({'error': 'Authentication required'}, status=401)
 
     try:
         alert = get_object_or_404(
@@ -967,6 +975,8 @@ def api_receipt_update(request, transaction_number):
         
         # Update items
         receipt.items.all().delete()  # Remove existing items
+        price_adjustments_created = 0
+        
         for item_data in data.get('items', []):
             try:
                 line_item = LineItem.objects.create(
@@ -980,8 +990,34 @@ def api_receipt_update(request, transaction_number):
                     instant_savings=Decimal(str(item_data['instant_savings'])) if item_data.get('instant_savings') else None,
                     original_price=Decimal(str(item_data['original_price'])) if item_data.get('original_price') else None
                 )
-                # Check for potential price adjustments
-                check_for_price_adjustments(line_item, receipt)
+                
+                # Check for potential price adjustments and count new alerts
+                try:
+                    # Get count of existing alerts before checking
+                    alerts_before = PriceAdjustmentAlert.objects.filter(
+                        item_code=line_item.item_code,
+                        is_active=True,
+                        is_dismissed=False
+                    ).count()
+                    
+                    # Check for price adjustments
+                    check_for_price_adjustments(line_item, receipt, is_user_edited=True)
+                    
+                    # Get count of alerts after checking
+                    alerts_after = PriceAdjustmentAlert.objects.filter(
+                        item_code=line_item.item_code,
+                        is_active=True,
+                        is_dismissed=False
+                    ).count()
+                    
+                    # Increment counter if new alerts were created
+                    if alerts_after > alerts_before:
+                        price_adjustments_created += (alerts_after - alerts_before)
+                        logger.info(f"Price adjustment alerts created for item {line_item.description} ({line_item.item_code})")
+                        
+                except Exception as e:
+                    logger.error(f"Error checking price adjustments for {line_item.description}: {str(e)}")
+                    
             except Exception as e:
                 logger.error(f"Error creating line item: {str(e)}")
                 continue
@@ -1000,6 +1036,7 @@ def api_receipt_update(request, transaction_number):
         
         return JsonResponse({
             'message': 'Receipt updated successfully',
+            'price_adjustments_created': price_adjustments_created,
             'receipt': {
                 'transaction_number': receipt.transaction_number,
                 'store_location': receipt.store_location,
