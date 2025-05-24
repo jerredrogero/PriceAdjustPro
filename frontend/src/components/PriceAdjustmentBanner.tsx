@@ -64,7 +64,7 @@ const PriceAdjustmentBanner: React.FC<Props> = ({ adjustmentCount, totalSavings 
             variant="contained"
             color="info"
             endIcon={<ArrowForwardIcon />}
-            onClick={() => navigate('/adjustments')}
+            onClick={() => navigate('/price-adjustments')}
             sx={{
               whiteSpace: 'nowrap',
               '&:hover': {

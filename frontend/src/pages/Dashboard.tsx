@@ -202,7 +202,7 @@ const Dashboard: React.FC = () => {
               color="info"
               endIcon={<ArrowForwardIcon />}
               component={RouterLink}
-              to="/adjustments"
+              to="/price-adjustments"
             >
               View Details
             </Button>
