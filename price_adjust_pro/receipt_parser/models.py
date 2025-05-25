@@ -24,7 +24,7 @@ class Receipt(models.Model):
         related_name='receipts',
         db_index=True  # Add index for user lookups
     )
-    file = models.FileField(upload_to='receipts/%Y/%m/%d/')  # Organize by date
+    file = models.FileField(upload_to='receipts/%Y/%m/%d/', blank=True, null=True)  # Optional file storage
     store_location = models.CharField(max_length=255, db_index=True)  # Add index for store lookups
     store_number = models.CharField(max_length=50, db_index=True)
     store_city = models.CharField(max_length=100, db_index=True)

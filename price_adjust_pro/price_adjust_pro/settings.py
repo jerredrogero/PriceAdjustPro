@@ -178,10 +178,14 @@ LOGGING = {
     },
 }
 
-# File upload settings
+# File upload settings - temporary processing only
 FILE_UPLOAD_MAX_MEMORY_SIZE = 5242880  # 5MB
 DATA_UPLOAD_MAX_MEMORY_SIZE = 5242880  # 5MB
 FILE_UPLOAD_PERMISSIONS = 0o644
+
+# Receipt processing - delete files after extraction
+RECEIPT_KEEP_FILES = False  # Set to True for debugging
+RECEIPT_TEMP_DIR = '/tmp/receipt_processing'
 
 # Internationalization
 # https://docs.djangoproject.com/en/5.1/topics/i18n/

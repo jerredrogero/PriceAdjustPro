@@ -169,7 +169,7 @@ def upload_receipt(request):
                 
                 receipt = Receipt.objects.create(
                     user=request.user,
-                    file=file_path,
+                    file=None,  # No file storage - data only
                     transaction_number=parsed_data.get('transaction_number'),
                     store_location=parsed_data.get('store_location', 'Unknown'),
                     store_number=parsed_data.get('store_number', ''),
@@ -406,9 +406,8 @@ def api_receipt_upload(request):
         ).first()
 
         if existing_receipt:
-            # Update existing receipt
-            existing_receipt.file.delete(save=False)  # Delete old file
-            existing_receipt.file = file_path
+            # Update existing receipt - no file storage
+            existing_receipt.file = None
             existing_receipt.store_location = parsed_data['store_location']
             existing_receipt.store_number = parsed_data['store_number']
             existing_receipt.transaction_date = parsed_data['transaction_date']
@@ -462,7 +461,7 @@ def api_receipt_upload(request):
         # Create Receipt object with default values if parsing failed
         receipt = Receipt.objects.create(
             user=request.user,
-            file=file_path,
+            file=None,  # No file storage - data only
             transaction_number=parsed_data.get('transaction_number'),
             store_location=parsed_data.get('store_location', 'Unknown'),
             store_number=parsed_data.get('store_number', ''),
