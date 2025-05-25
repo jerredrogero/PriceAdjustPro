@@ -211,9 +211,10 @@ const PriceAdjustments: React.FC = () => {
                         color="default"
                         size="small"
                         sx={{
-                          backgroundColor: theme.palette.grey[100],
+                          backgroundColor: theme.palette.mode === 'dark' ? theme.palette.grey[700] : theme.palette.grey[100],
+                          color: theme.palette.mode === 'dark' ? theme.palette.common.white : theme.palette.common.black,
                           '&:hover': {
-                            backgroundColor: theme.palette.grey[200],
+                            backgroundColor: theme.palette.mode === 'dark' ? theme.palette.grey[600] : theme.palette.grey[200],
                           },
                         }}
                       >

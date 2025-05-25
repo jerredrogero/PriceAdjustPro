@@ -117,8 +117,11 @@ def upload_receipt(request):
                                     instant_savings=Decimal(str(item_data['instant_savings'])) if item_data.get('instant_savings') else None,
                                     original_price=Decimal(str(item_data['original_price'])) if item_data.get('original_price') else None
                                 )
-                                # Check for potential price adjustments
+                                # Check for potential price adjustments for other users
                                 check_for_price_adjustments(line_item, existing_receipt, is_user_edited=False)
+                                # Check if current user can benefit from existing promotions/lower prices
+                                from .utils import check_current_user_for_price_adjustments
+                                check_current_user_for_price_adjustments(line_item, existing_receipt)
                             except Exception as e:
                                 logger.error(f"Line item error: {str(e)}")
                     
@@ -195,8 +198,11 @@ def upload_receipt(request):
                                 instant_savings=Decimal(str(item_data['instant_savings'])) if item_data.get('instant_savings') else None,
                                 original_price=Decimal(str(item_data['original_price'])) if item_data.get('original_price') else None
                             )
-                            # Check for potential price adjustments
+                            # Check for potential price adjustments for other users
                             check_for_price_adjustments(line_item, receipt, is_user_edited=False)
+                            # Check if current user can benefit from existing promotions/lower prices
+                            from .utils import check_current_user_for_price_adjustments
+                            check_current_user_for_price_adjustments(line_item, receipt)
                         except Exception as e:
                             logger.error(f"Line item error: {str(e)}")
                             continue
@@ -486,8 +492,11 @@ def api_receipt_upload(request):
                         instant_savings=Decimal(str(item_data['instant_savings'])) if item_data.get('instant_savings') else None,
                         original_price=Decimal(str(item_data['original_price'])) if item_data.get('original_price') else None
                     )
-                    # Check for potential price adjustments
+                    # Check for potential price adjustments for other users
                     check_for_price_adjustments(line_item, receipt, is_user_edited=True)
+                    # Check if current user can benefit from existing promotions/lower prices
+                    from .utils import check_current_user_for_price_adjustments
+                    check_current_user_for_price_adjustments(line_item, receipt)
                 except Exception as e:
                     logger.error(f"Line item error: {str(e)}")
                     continue
@@ -529,6 +538,26 @@ def api_receipt_delete(request, transaction_number):
     receipt = get_object_or_404(Receipt, transaction_number=transaction_number, user=request.user)
     
     try:
+        # Delete related price adjustment alerts first
+        from .models import PriceAdjustmentAlert
+        
+        # Find all price adjustment alerts that were created from this receipt
+        # Match by user, item codes, purchase date, and store information
+        item_codes = list(receipt.items.values_list('item_code', flat=True))
+        
+        alerts_to_delete = PriceAdjustmentAlert.objects.filter(
+            user=request.user,
+            item_code__in=item_codes,
+            purchase_date__date=receipt.transaction_date.date(),
+            original_store_number=receipt.store_number
+        )
+        
+        deleted_alerts_count = alerts_to_delete.count()
+        alerts_to_delete.delete()
+        
+        if deleted_alerts_count > 0:
+            logger.info(f"Deleted {deleted_alerts_count} price adjustment alerts for receipt {transaction_number}")
+        
         # Delete the physical file if it exists
         if receipt.file:
             # Get the full path using the storage backend
@@ -543,7 +572,10 @@ def api_receipt_delete(request, transaction_number):
         # Delete the receipt (this will cascade delete line items)
         receipt.delete()
         
-        return JsonResponse({'message': 'Receipt deleted successfully'})
+        return JsonResponse({
+            'message': 'Receipt deleted successfully',
+            'deleted_alerts': deleted_alerts_count
+        })
     except Exception as e:
         logger.error(f"Error deleting receipt: {str(e)}")
         return JsonResponse({'error': str(e)}, status=500)
@@ -557,6 +589,26 @@ def delete_receipt(request, transaction_number):
             user=request.user,
             transaction_number=transaction_number
         )
+        
+        # Delete related price adjustment alerts first
+        from .models import PriceAdjustmentAlert
+        
+        # Find all price adjustment alerts that were created from this receipt
+        item_codes = list(receipt.items.values_list('item_code', flat=True))
+        
+        alerts_to_delete = PriceAdjustmentAlert.objects.filter(
+            user=request.user,
+            item_code__in=item_codes,
+            purchase_date__date=receipt.transaction_date.date(),
+            original_store_number=receipt.store_number
+        )
+        
+        deleted_alerts_count = alerts_to_delete.count()
+        alerts_to_delete.delete()
+        
+        if deleted_alerts_count > 0:
+            logger.info(f"Deleted {deleted_alerts_count} price adjustment alerts for receipt {transaction_number}")
+        
         receipt.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
     except Receipt.DoesNotExist:
@@ -669,6 +721,12 @@ def delete_account(request):
         user = request.user
         
         if user.check_password(password):
+            # Delete user's price adjustment alerts first (will be cascade deleted anyway, but being explicit)
+            from .models import PriceAdjustmentAlert
+            alerts_count = PriceAdjustmentAlert.objects.filter(user=user).count()
+            if alerts_count > 0:
+                logger.info(f"Deleting {alerts_count} price adjustment alerts for user {user.username}")
+            
             # Delete user's files
             user_receipts = Receipt.objects.filter(user=user)
             for receipt in user_receipts:
@@ -678,7 +736,7 @@ def delete_account(request):
                     except Exception as e:
                         logger.warning(f"Failed to delete file for receipt {receipt.transaction_number}: {str(e)}")
             
-            # Delete the user account
+            # Delete the user account (this will cascade delete all related data)
             user.delete()
             messages.success(request, 'Your account has been deleted.')
             return redirect('login')
@@ -804,7 +862,7 @@ def api_price_adjustments(request):
 
 @csrf_exempt
 def api_dismiss_price_adjustment(request, item_code):
-    """Dismiss a price adjustment alert."""
+    """Dismiss all price adjustment alerts for a specific item code."""
     if request.method != 'POST':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
     
@@ -813,15 +871,26 @@ def api_dismiss_price_adjustment(request, item_code):
         return JsonResponse({'error': 'Authentication required'}, status=401)
 
     try:
-        alert = get_object_or_404(
-            PriceAdjustmentAlert,
+        # Get all active alerts for this item code and user
+        alerts = PriceAdjustmentAlert.objects.filter(
             user=request.user,
             item_code=item_code,
-            is_active=True
+            is_active=True,
+            is_dismissed=False
         )
-        alert.is_dismissed = True
-        alert.save()
-        return JsonResponse({'message': 'Alert dismissed successfully'})
+        
+        if not alerts.exists():
+            return JsonResponse({'error': 'No active alerts found for this item'}, status=404)
+        
+        # Dismiss all alerts for this item
+        dismissed_count = alerts.update(is_dismissed=True)
+        
+        logger.info(f"Dismissed {dismissed_count} price adjustment alerts for item {item_code} for user {request.user.username}")
+        
+        return JsonResponse({
+            'message': f'Successfully dismissed {dismissed_count} alert(s)',
+            'dismissed_count': dismissed_count
+        })
     except Exception as e:
         logger.error(f"Error dismissing price adjustment: {str(e)}")
         return JsonResponse({'error': str(e)}, status=500)
@@ -1000,8 +1069,13 @@ def api_receipt_update(request, transaction_number):
                         is_dismissed=False
                     ).count()
                     
-                    # Check for price adjustments
+                    # Check for price adjustments for OTHER users (original functionality)
                     check_for_price_adjustments(line_item, receipt, is_user_edited=True)
+                    
+                    # Check if CURRENT user can benefit from existing promotions/lower prices
+                    from .utils import check_current_user_for_price_adjustments
+                    current_user_alerts = check_current_user_for_price_adjustments(line_item, receipt)
+                    price_adjustments_created += current_user_alerts
                     
                     # Get count of alerts after checking
                     alerts_after = PriceAdjustmentAlert.objects.filter(
@@ -1010,10 +1084,10 @@ def api_receipt_update(request, transaction_number):
                         is_dismissed=False
                     ).count()
                     
-                    # Increment counter if new alerts were created
-                    if alerts_after > alerts_before:
-                        price_adjustments_created += (alerts_after - alerts_before)
-                        logger.info(f"Price adjustment alerts created for item {line_item.description} ({line_item.item_code})")
+                    # Increment counter if new alerts were created for other users
+                    if alerts_after > alerts_before + current_user_alerts:
+                        price_adjustments_created += (alerts_after - alerts_before - current_user_alerts)
+                        logger.info(f"Price adjustment alerts created for other users on item {line_item.description} ({line_item.item_code})")
                         
                 except Exception as e:
                     logger.error(f"Error checking price adjustments for {line_item.description}: {str(e)}")

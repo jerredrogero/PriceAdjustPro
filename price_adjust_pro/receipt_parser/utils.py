@@ -1044,3 +1044,157 @@ def create_official_price_alerts(official_sale_item) -> int:
     except Exception as e:
         logger.error(f"Error creating official price alerts for {official_sale_item.description}: {str(e)}")
         return 0 
+
+def check_current_user_for_price_adjustments(item: LineItem, receipt: Receipt) -> int:
+    """
+    Check if the current user can benefit from existing lower prices or official promotions.
+    This is called when a user edits their receipt to see if they overpaid.
+    
+    Returns the number of new alerts created for the current user.
+    """
+    alerts_created = 0
+    
+    try:
+        if not item.item_code:
+            return 0
+
+        # Check official promotions first (highest trust)
+        from .models import OfficialSaleItem, PriceAdjustmentAlert
+        thirty_days_ago = timezone.now() - timedelta(days=30)
+        
+        # Find active official promotions for this item
+        current_promotions = OfficialSaleItem.objects.filter(
+            item_code=item.item_code,
+            promotion__sale_start_date__lte=timezone.now().date(),
+            promotion__sale_end_date__gte=timezone.now().date(),
+            promotion__is_processed=True
+        ).select_related('promotion')
+        
+        for promotion_item in current_promotions:
+            # Calculate what the user could pay with the promotion
+            if promotion_item.sale_type == 'discount_only':
+                # This is a "$X OFF" promotion
+                if promotion_item.instant_rebate and item.price > promotion_item.instant_rebate:
+                    final_price = item.price - promotion_item.instant_rebate
+                    savings = promotion_item.instant_rebate
+                else:
+                    continue
+            elif promotion_item.sale_price and item.price > promotion_item.sale_price:
+                # Standard promotion with sale price
+                final_price = promotion_item.sale_price
+                savings = item.price - promotion_item.sale_price
+            else:
+                continue  # User already paid less or equal
+            
+            # Only create alert if savings is significant ($0.50+)
+            if savings >= Decimal('0.50'):
+                # Check if user already has an alert for this item
+                existing_alert = PriceAdjustmentAlert.objects.filter(
+                    user=receipt.user,
+                    item_code=item.item_code,
+                    is_active=True,
+                    is_dismissed=False,
+                    purchase_date=receipt.transaction_date
+                ).first()
+                
+                if existing_alert:
+                    # Update existing alert if this is a better deal
+                    if final_price < existing_alert.lower_price:
+                        existing_alert.lower_price = final_price
+                        existing_alert.data_source = 'official_promo'
+                        existing_alert.official_sale_item = promotion_item
+                        existing_alert.cheaper_store_city = 'All Costco Locations'
+                        existing_alert.cheaper_store_number = 'ALL'
+                        existing_alert.is_dismissed = False
+                        existing_alert.save()
+                        alerts_created += 1
+                else:
+                    # Create new alert
+                    PriceAdjustmentAlert.objects.create(
+                        user=receipt.user,
+                        item_code=item.item_code,
+                        item_description=promotion_item.description,
+                        original_price=item.price,
+                        lower_price=final_price,
+                        original_store_city=receipt.store_city,
+                        original_store_number=receipt.store_number,
+                        cheaper_store_city='All Costco Locations',
+                        cheaper_store_number='ALL',
+                        purchase_date=receipt.transaction_date,
+                        data_source='official_promo',
+                        official_sale_item=promotion_item,
+                        is_active=True,
+                        is_dismissed=False
+                    )
+                    alerts_created += 1
+                    
+                    logger.info(
+                        f"Official promotion alert created for current user {receipt.user.username} "
+                        f"on {promotion_item.description} (${item.price} -> ${final_price})"
+                    )
+        
+        # Check other users' lower prices in the last 30 days
+        lower_price_purchases = LineItem.objects.filter(
+            item_code=item.item_code,
+            receipt__transaction_date__gte=thirty_days_ago,
+            price__lt=item.price,  # Find lower prices
+            receipt__user__isnull=False
+        ).exclude(
+            receipt__user=receipt.user  # Exclude current user's own receipts
+        ).select_related('receipt').order_by('price')  # Get lowest price first
+        
+        if lower_price_purchases.exists():
+            lowest_purchase = lower_price_purchases.first()
+            price_difference = item.price - lowest_purchase.price
+            
+            # Only create alert if the difference is significant ($0.50+)
+            if price_difference >= Decimal('0.50'):
+                # Check if user already has an alert for this item from other sources
+                existing_alert = PriceAdjustmentAlert.objects.filter(
+                    user=receipt.user,
+                    item_code=item.item_code,
+                    is_active=True,
+                    is_dismissed=False,
+                    purchase_date=receipt.transaction_date,
+                    data_source__in=['ocr_parsed', 'user_edit']  # Don't override official promos
+                ).first()
+                
+                if existing_alert:
+                    # Update if this is a better deal
+                    if lowest_purchase.price < existing_alert.lower_price:
+                        existing_alert.lower_price = lowest_purchase.price
+                        existing_alert.cheaper_store_city = lowest_purchase.receipt.store_city
+                        existing_alert.cheaper_store_number = lowest_purchase.receipt.store_number
+                        existing_alert.data_source = 'ocr_parsed'
+                        existing_alert.is_dismissed = False
+                        existing_alert.save()
+                        alerts_created += 1
+                elif not current_promotions.exists():  # Only create if no official promotion alert was created
+                    # Create new alert
+                    PriceAdjustmentAlert.objects.create(
+                        user=receipt.user,
+                        item_code=item.item_code,
+                        item_description=item.description,
+                        original_price=item.price,
+                        lower_price=lowest_purchase.price,
+                        original_store_city=receipt.store_city,
+                        original_store_number=receipt.store_number,
+                        cheaper_store_city=lowest_purchase.receipt.store_city,
+                        cheaper_store_number=lowest_purchase.receipt.store_number,
+                        purchase_date=receipt.transaction_date,
+                        data_source='ocr_parsed',
+                        is_active=True,
+                        is_dismissed=False
+                    )
+                    alerts_created += 1
+                    
+                    logger.info(
+                        f"Community price alert created for current user {receipt.user.username} "
+                        f"on {item.description} (${item.price} -> ${lowest_purchase.price})"
+                    )
+        
+        return alerts_created
+        
+    except Exception as e:
+        logger.error(f"Error checking current user price adjustments for {item.description}: {str(e)}")
+        return 0 

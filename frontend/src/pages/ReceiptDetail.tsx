@@ -289,11 +289,10 @@ const ReceiptDetail: React.FC = () => {
           onClose={() => setPriceAdjustmentsCreated(0)}
         >
           <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
-            Price Adjustments Created! 💰
+            Receipt Updated Successfully! ✅
           </Typography>
           <Typography variant="body2">
-            Your receipt edits created {priceAdjustmentsCreated} new price adjustment alert{priceAdjustmentsCreated > 1 ? 's' : ''} for other users. 
-            When items go on sale, other users who paid more will be notified to get their money back!
+            Your receipt data has been saved and is now helping the community find better deals.
           </Typography>
         </Alert>
       )}
@@ -337,8 +336,7 @@ const ReceiptDetail: React.FC = () => {
             <strong>Edit Mode:</strong> You can now edit the transaction date, item details, and mark items as on sale. 
           </Typography>
           <Typography variant="body2" sx={{ mt: 1 }}>
-            <strong>Price Adjustment Security:</strong> Only items explicitly marked "on sale" with reasonable discounts 
-            can create price adjustment alerts for other users. This prevents abuse while allowing you to help the community.
+            <strong>Tip:</strong> Mark items as "on sale" if you got them at a discounted price to help track savings.
           </Typography>
           <Typography variant="body2" sx={{ mt: 1, fontSize: '0.8rem' }}>
             💡 <em>On mobile: Scroll the table horizontally to access all columns including "On Sale" toggles.</em>

@@ -67,6 +67,35 @@ class Receipt(models.Model):
     def get_total_savings(self):
         return self.instant_savings or Decimal('0.00')
 
+    def delete(self, *args, **kwargs):
+        """Override delete to also remove related price adjustment alerts."""
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Delete related price adjustment alerts
+        item_codes = list(self.items.values_list('item_code', flat=True))
+        
+        if item_codes:
+            # Use string reference to avoid issues with model order
+            from django.apps import apps
+            PriceAdjustmentAlert = apps.get_model('receipt_parser', 'PriceAdjustmentAlert')
+            
+            alerts_to_delete = PriceAdjustmentAlert.objects.filter(
+                user=self.user,
+                item_code__in=item_codes,
+                purchase_date__date=self.transaction_date.date(),
+                original_store_number=self.store_number
+            )
+            
+            deleted_count = alerts_to_delete.count()
+            alerts_to_delete.delete()
+            
+            if deleted_count > 0:
+                logger.info(f"Auto-deleted {deleted_count} price adjustment alerts for receipt {self.transaction_number}")
+        
+        # Call the parent delete method
+        super().delete(*args, **kwargs)
+
 class LineItem(models.Model):
     """
     Stores individual items from receipts with price tracking capabilities.
@@ -297,11 +326,22 @@ class PriceAdjustmentAlert(models.Model):
 
     @property
     def days_remaining(self):
+        # For official promotions, calculate days until promotion ends
+        if self.data_source == 'official_promo' and self.official_sale_item:
+            days_until_promo_ends = (self.official_sale_item.promotion.sale_end_date - timezone.now().date()).days
+            return max(0, days_until_promo_ends)
+        
+        # For regular price adjustments, use 30-day window from purchase
         days_since_purchase = (timezone.now() - self.purchase_date).days
         return max(0, 30 - days_since_purchase)
 
     @property
     def is_expired(self):
+        # For official promotions, check if promotion has ended
+        if self.data_source == 'official_promo' and self.official_sale_item:
+            return timezone.now().date() > self.official_sale_item.promotion.sale_end_date
+        
+        # For regular price adjustments, check if 30 days have passed
         return self.days_remaining == 0
 
     def save(self, *args, **kwargs):
@@ -312,12 +352,26 @@ class PriceAdjustmentAlert(models.Model):
     @classmethod
     def get_active_alerts(cls, user):
         """Get all active, non-dismissed alerts for a user."""
+        from django.db.models import Q
+        
+        # Get alerts that are either:
+        # 1. Regular price adjustments within 30 days of purchase
+        # 2. Official promotions that haven't ended yet
+        regular_alerts = Q(
+            data_source__in=['ocr_parsed', 'user_edit'],
+            purchase_date__gte=timezone.now() - timezone.timedelta(days=30)
+        )
+        
+        official_promo_alerts = Q(
+            data_source='official_promo',
+            official_sale_item__promotion__sale_end_date__gte=timezone.now().date()
+        )
+        
         return cls.objects.filter(
             user=user,
             is_active=True,
-            is_dismissed=False,
-            purchase_date__gte=timezone.now() - timezone.timedelta(days=30)
-        )
+            is_dismissed=False
+        ).filter(regular_alerts | official_promo_alerts)
 
 class CostcoPromotion(models.Model):
     """
