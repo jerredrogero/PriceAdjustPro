@@ -770,13 +770,14 @@ FORMATTING RULES:
 - For TYPE 1 ($X OFF): SALE_PRICE should be "null", REBATE_AMOUNT is the discount
 - For TYPE 2 ($X.XX AFTER $Y OFF): SALE_PRICE is the final price, REBATE_AMOUNT is the discount
 - Use underscores in sale_type: "discount_only" or "instant_rebate"
+- For ITEM_CODE: Use the specific item number if visible, otherwise use "Item Numbers Vary"
 
 Examples from this image:
 1654628 | CORE Pop-up Canopy | null | null | 40.00 | discount_only
-1819555 | Timber Ridge Chair | null | null | 10.00 | discount_only
+Item Numbers Vary | Timber Ridge Chair | null | null | 10.00 | discount_only
 1872066 | Titan Cooler | 39.99 | 32.99 | 7.00 | instant_rebate
 1671616 | DeWalt Vacuum | null | null | 20.00 | discount_only
-3640862 | Philips Shaver | 99.99 | 69.99 | 30.00 | instant_rebate
+Item Numbers Vary | Philips Shaver Family | null | null | 30.00 | discount_only
 
 Extract every visible sale item from this promotional page."""
         
@@ -809,6 +810,10 @@ def parse_promo_text(text: str) -> list:
             parts = [part.strip() for part in line.split('|')]
             if len(parts) >= 6:
                 item_code = parts[0]
+                # Handle missing or invalid item codes
+                if not item_code or item_code.lower() in ['null', 'none', '', 'n/a', 'varies', 'various']:
+                    item_code = "Item Numbers Vary"
+                
                 description = parts[1]
                 regular_price_str = parts[2]
                 sale_price_str = parts[3]
@@ -878,6 +883,10 @@ def parse_promo_text(text: str) -> list:
                     elif regular_price:
                         instant_rebate = regular_price - sale_price
                 
+                # Ensure item_code is never empty or null
+                if not item_code or item_code.lower() in ['null', 'none', '', 'n/a']:
+                    item_code = "Item Numbers Vary"
+                    
                 sale_items.append({
                     'item_code': item_code,
                     'description': description,

@@ -57,6 +57,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'receipt_parser.apps.ReceiptParserConfig',
     'rest_framework',
+    'hijack',
 ]
 
 # Add middleware to bypass authentication checks for admin and registration
@@ -69,6 +70,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'hijack.middleware.HijackUserMiddleware',
     'price_adjust_pro.middleware.AuthenticationMiddleware',  # Our custom middleware
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
@@ -308,4 +310,13 @@ if not DEBUG:
     MIDDLEWARE.insert(1, 'django.middleware.gzip.GZipMiddleware')
     
     # Cache control headers for static files
-    WHITENOISE_MAX_AGE = 31536000  # 1 year in second
+    WHITENOISE_MAX_AGE = 31536000  # 1 year in seconds
+
+# Django Hijack Settings
+HIJACK_LOGIN_REDIRECT_URL = '/'  # Redirect to home page after hijacking
+HIJACK_LOGOUT_REDIRECT_URL = '/admin/'  # Redirect to admin after releasing hijack
+HIJACK_REGISTER_ADMIN = True  # Register hijack admin buttons
+HIJACK_ALLOW_GET_REQUESTS = True  # Allow hijacking via GET requests (for convenience)
+HIJACK_AUTHORIZATION_CHECK = 'hijack.permissions.superusers_only'  # Only superusers can hijack
+HIJACK_DISPLAY_WARNING = True  # Show warning banner when hijacking
+HIJACK_USE_BOOTSTRAP = True  # Use Bootstrap styling

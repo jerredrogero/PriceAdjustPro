@@ -229,6 +229,9 @@ django_urlpatterns = [
     # Admin URLs must be first
     path('admin/', admin.site.urls),
     
+    # Hijack URLs
+    path('hijack/', include('hijack.urls')),
+    
     # API URLs
     path('api/', include(api_urlpatterns)),
 ]
