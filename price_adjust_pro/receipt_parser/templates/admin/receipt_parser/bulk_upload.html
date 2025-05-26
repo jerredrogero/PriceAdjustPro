@@ -165,6 +165,13 @@
                 <li>Page numbers will be assigned automatically</li>
                 <li>Files will be uploaded in the order they appear</li>
             </ul>
+            
+            <div class="success-message">
+                <strong>⚠️ Important:</strong> Uploading images does NOT automatically process them. 
+                After upload, use the <strong>"🛡️ Safe process"</strong> action to process 3 pages at a time, 
+                or use the management command for full processing: 
+                <code>python manage.py process_promotions --promotion-id {{ promotion.id }}</code>
+            </div>
         </div>
 
         <form method="post" enctype="multipart/form-data" id="uploadForm">

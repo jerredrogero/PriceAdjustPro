@@ -22,6 +22,11 @@ class Command(BaseCommand):
             action='store_true',
             help='Only process promotions with active sale dates'
         )
+        parser.add_argument(
+            '--max-pages',
+            type=int,
+            help='Maximum number of pages to process per promotion (for testing/safety)'
+        )
     
     def handle(self, *args, **options):
         if options['promotion_id']:
@@ -30,7 +35,11 @@ class Command(BaseCommand):
                 promotion = CostcoPromotion.objects.get(id=options['promotion_id'])
                 self.stdout.write(f"Processing promotion: {promotion.title}")
                 
-                results = process_official_promotion(promotion.id)
+                max_pages = options.get('max_pages')
+                if max_pages:
+                    self.stdout.write(f"Limited to {max_pages} pages")
+                
+                results = process_official_promotion(promotion.id, max_pages=max_pages)
                 
                 if 'error' in results:
                     raise CommandError(f"Failed to process promotion: {results['error']}")
@@ -83,7 +92,11 @@ class Command(BaseCommand):
                 self.stdout.write(f"\nProcessing: {promotion.title}")
                 
                 try:
-                    results = process_official_promotion(promotion.id)
+                    max_pages = options.get('max_pages')
+                    if max_pages:
+                        self.stdout.write(f"  Limited to {max_pages} pages")
+                        
+                    results = process_official_promotion(promotion.id, max_pages=max_pages)
                     
                     if 'error' in results:
                         self.stdout.write(
@@ -137,7 +150,8 @@ class Command(BaseCommand):
                 "Usage:\n"
                 "  --promotion-id ID    Process specific promotion\n"
                 "  --all-unprocessed    Process all unprocessed promotions\n"
-                "  --active-only        Only process active promotions"
+                "  --active-only        Only process active promotions\n"
+                "  --max-pages N        Limit processing to N pages per promotion"
             )
             
             if unprocessed_count > 0:

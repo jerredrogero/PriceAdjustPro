@@ -706,7 +706,7 @@ class CostcoPromotionAdmin(admin.ModelAdmin):
     readonly_fields = ('upload_date', 'processed_date', 'uploaded_by', 'pages_count', 'items_count', 'alerts_count')
     inlines = [CostcoPromotionPageInline, OfficialSaleItemInline]
     
-    actions = ['process_promotions']
+    actions = ['process_promotions', 'process_promotions_safe']
     
     def get_urls(self):
         urls = super().get_urls()
@@ -794,18 +794,38 @@ class CostcoPromotionAdmin(admin.ModelAdmin):
         super().save_model(request, obj, form, change)
     
     def process_promotions(self, request, queryset):
-        """Admin action to process selected promotions."""
+        """Admin action to process selected promotions with safety limits."""
         processed_count = 0
         for promotion in queryset:
             if not promotion.is_processed:
                 try:
-                    results = process_official_promotion(promotion.id)
+                    # Limit to 10 pages per request to prevent timeouts
+                    max_pages = 10
+                    total_pages = promotion.pages.count()
+                    
+                    if total_pages > max_pages:
+                        messages.warning(
+                            request,
+                            f"'{promotion.title}' has {total_pages} pages. Processing first {max_pages} to prevent timeout. "
+                            f"Use the management command for full processing: python manage.py process_promotions --promotion-id {promotion.id}"
+                        )
+                    
+                    results = process_official_promotion(promotion.id, max_pages=max_pages)
                     if 'error' not in results:
                         processed_count += 1
                         messages.success(
                             request, 
-                            f"Processed '{promotion.title}': {results['items_extracted']} items, {results['alerts_created']} alerts created"
+                            f"Processed '{promotion.title}': {results['pages_processed']}/{total_pages} pages, "
+                            f"{results['items_extracted']} items, {results['alerts_created']} alerts created"
                         )
+                        
+                        if total_pages > max_pages:
+                            remaining = total_pages - results['pages_processed']
+                            messages.info(
+                                request,
+                                f"'{promotion.title}' has {remaining} pages remaining. "
+                                f"Run the management command to process all pages."
+                            )
                     else:
                         messages.error(request, f"Failed to process '{promotion.title}': {results['error']}")
                 except Exception as e:
@@ -814,7 +834,49 @@ class CostcoPromotionAdmin(admin.ModelAdmin):
         if processed_count > 0:
             messages.success(request, f"Successfully processed {processed_count} promotion(s)")
     
-    process_promotions.short_description = "Process selected promotions"
+    process_promotions.short_description = "Process selected promotions (limited to 10 pages each)"
+    
+    def process_promotions_safe(self, request, queryset):
+        """Admin action to safely process selected promotions with very conservative limits."""
+        processed_count = 0
+        for promotion in queryset:
+            if not promotion.is_processed:
+                try:
+                    # Very conservative limit for admin interface
+                    max_pages = 3
+                    total_pages = promotion.pages.count()
+                    
+                    messages.info(
+                        request,
+                        f"Processing first {max_pages} pages of '{promotion.title}' ({total_pages} total pages). "
+                        f"This is safe for the admin interface."
+                    )
+                    
+                    results = process_official_promotion(promotion.id, max_pages=max_pages)
+                    if 'error' not in results:
+                        processed_count += 1
+                        messages.success(
+                            request, 
+                            f"Safely processed '{promotion.title}': {results['pages_processed']} pages, "
+                            f"{results['items_extracted']} items, {results['alerts_created']} alerts"
+                        )
+                        
+                        if total_pages > max_pages:
+                            remaining = total_pages - results['pages_processed']
+                            messages.warning(
+                                request,
+                                f"'{promotion.title}' has {remaining} pages remaining. "
+                                f"For full processing, use: python manage.py process_promotions --promotion-id {promotion.id}"
+                            )
+                    else:
+                        messages.error(request, f"Failed to process '{promotion.title}': {results['error']}")
+                except Exception as e:
+                    messages.error(request, f"Error processing '{promotion.title}': {str(e)}")
+        
+        if processed_count > 0:
+            messages.success(request, f"Safely processed {processed_count} promotion(s)")
+    
+    process_promotions_safe.short_description = "🛡️ Safe process (3 pages max each)"
     
     def change_view(self, request, object_id, form_url='', extra_context=None):
         """Override change view to add bulk upload button."""

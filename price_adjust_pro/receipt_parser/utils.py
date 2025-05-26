@@ -885,53 +885,90 @@ def parse_promo_text(text: str) -> list:
     
     return sale_items
 
-def process_official_promotion(promotion_id: int) -> dict:
+def process_official_promotion(promotion_id: int, max_pages: int = None) -> dict:
     """Process an official Costco promotion and create price adjustment alerts."""
+    import gc
+    import time
+    
     try:
         promotion = CostcoPromotion.objects.get(id=promotion_id)
         results = {
             'pages_processed': 0,
             'items_extracted': 0,
             'alerts_created': 0,
-            'errors': []
+            'errors': [],
+            'skipped_pages': 0
         }
         
+        # Get pages to process (limit if specified)
+        pages_queryset = promotion.pages.all()
+        if max_pages:
+            pages_queryset = pages_queryset[:max_pages]
+            logger.info(f"Processing limited to {max_pages} pages to prevent timeout")
+        
+        total_pages = pages_queryset.count()
+        logger.info(f"Starting to process {total_pages} pages for promotion '{promotion.title}'")
+        
         # Process each page of the promotion
-        for page in promotion.pages.all():
+        for page_num, page in enumerate(pages_queryset, 1):
             try:
+                logger.info(f"Processing page {page_num}/{total_pages}: {page.page_number}")
+                
+                # Memory cleanup between pages
+                if page_num % 5 == 0:  # Every 5 pages
+                    gc.collect()
+                    logger.info(f"Memory cleanup after page {page_num}")
+                
                 # Extract text from the image
                 extracted_text = extract_promo_data_from_image(page.image.path)
                 page.extracted_text = extracted_text
                 
                 # Parse the sale items
                 sale_items = parse_promo_text(extracted_text)
+                logger.info(f"Found {len(sale_items)} sale items on page {page.page_number}")
                 
                 # Create OfficialSaleItem records
+                page_items_created = 0
+                page_alerts_created = 0
+                
                 for item_data in sale_items:
-                    official_item, created = OfficialSaleItem.objects.get_or_create(
-                        promotion=promotion,
-                        item_code=item_data['item_code'],
-                        defaults={
-                            'description': item_data['description'],
-                            'regular_price': item_data['regular_price'],
-                            'sale_price': item_data['sale_price'],
-                            'instant_rebate': item_data['instant_rebate'],
-                            'sale_type': item_data['sale_type']
-                        }
-                    )
-                    
-                    if created:
-                        results['items_extracted'] += 1
+                    try:
+                        official_item, created = OfficialSaleItem.objects.get_or_create(
+                            promotion=promotion,
+                            item_code=item_data['item_code'],
+                            defaults={
+                                'description': item_data['description'],
+                                'regular_price': item_data['regular_price'],
+                                'sale_price': item_data['sale_price'],
+                                'instant_rebate': item_data['instant_rebate'],
+                                'sale_type': item_data['sale_type']
+                            }
+                        )
                         
-                        # Create price adjustment alerts for users who bought this item
-                        alerts_created = create_official_price_alerts(official_item)
-                        official_item.alerts_created = alerts_created
-                        official_item.save()
-                        results['alerts_created'] += alerts_created
+                        if created:
+                            page_items_created += 1
+                            
+                            # Create price adjustment alerts for users who bought this item
+                            alerts_created = create_official_price_alerts(official_item)
+                            official_item.alerts_created = alerts_created
+                            official_item.save()
+                            page_alerts_created += alerts_created
+                            
+                    except Exception as e:
+                        logger.error(f"Error creating item {item_data.get('item_code', 'unknown')}: {str(e)}")
+                        continue
+                
+                results['items_extracted'] += page_items_created
+                results['alerts_created'] += page_alerts_created
                 
                 page.is_processed = True
                 page.save()
                 results['pages_processed'] += 1
+                
+                logger.info(f"Page {page.page_number} complete: {page_items_created} items, {page_alerts_created} alerts")
+                
+                # Small delay to prevent overwhelming the system
+                time.sleep(0.1)
                 
             except Exception as e:
                 error_msg = f"Error processing page {page.page_number}: {str(e)}"
@@ -939,15 +976,21 @@ def process_official_promotion(promotion_id: int) -> dict:
                 page.processing_error = error_msg
                 page.save()
                 logger.error(error_msg)
+                
+                # Continue processing other pages
+                continue
         
-        # Mark promotion as processed
-        promotion.is_processed = True
-        promotion.processed_date = timezone.now()
+        # Mark promotion as processed if we processed all pages (or hit the limit)
+        remaining_pages = promotion.pages.filter(is_processed=False).count()
+        if remaining_pages == 0 or max_pages:
+            promotion.is_processed = True
+            promotion.processed_date = timezone.now()
+        
         if results['errors']:
             promotion.processing_error = '; '.join(results['errors'])
         promotion.save()
         
-        logger.info(f"Processed promotion '{promotion.title}': {results}")
+        logger.info(f"Promotion processing complete: {results}")
         return results
         
     except Exception as e:
