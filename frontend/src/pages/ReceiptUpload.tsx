@@ -89,7 +89,8 @@ const ReceiptUpload: React.FC = () => {
       const isValid = name.endsWith('.pdf') || 
              name.endsWith('.jpg') || name.endsWith('.jpeg') || 
              name.endsWith('.png') || name.endsWith('.webp') ||
-             name.endsWith('.gif') || name.endsWith('.bmp');
+             name.endsWith('.gif') || name.endsWith('.bmp') ||
+             name.endsWith('.avif');
       console.log(`File ${file.name}: ${isValid ? 'valid' : 'invalid'}`);
       return isValid;
     });
@@ -97,7 +98,7 @@ const ReceiptUpload: React.FC = () => {
     console.log('Valid files:', validFiles);
     
     if (validFiles.length === 0) {
-      setErrors(prev => [...prev, { file: 'Upload', error: 'Please upload PDF files or images (JPG, PNG, etc.)' }]);
+      setErrors(prev => [...prev, { file: 'Upload', error: 'Please upload PDF files or images (JPG, PNG, AVIF, etc.)' }]);
       return;
     }
 
@@ -274,7 +275,7 @@ const ReceiptUpload: React.FC = () => {
     disabled: uploading,
     accept: {
       'application/pdf': ['.pdf'],
-      'image/*': ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp']
+      'image/*': ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.avif']
     }
   });
 
@@ -345,7 +346,7 @@ const ReceiptUpload: React.FC = () => {
             ref={fileInputRef}
             type="file"
             multiple
-            accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,.bmp,image/*"
+            accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,.bmp,.avif,image/*"
             style={{ display: 'none' }}
             onChange={(e) => {
               if (e.target.files) {
@@ -393,7 +394,7 @@ const ReceiptUpload: React.FC = () => {
                   {isDragActive ? 'Drop the files here' : 'Drag photos or PDFs here'}
                 </Typography>
                 <Typography color="text.secondary" gutterBottom>
-                  Supports: PDF, JPG, PNG, and other image formats
+                  Supports: PDF, JPG, PNG, AVIF, and other image formats
                 </Typography>
               </Box>
             )}

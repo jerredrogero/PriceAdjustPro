@@ -107,7 +107,21 @@ const PriceAdjustments: React.FC = () => {
           <Typography color="text.secondary" paragraph>
             Costco offers price adjustments within 30 days of purchase. If an item you bought goes on sale within 30 days, you can request a refund for the difference.
           </Typography>
-          <Alert severity="info">
+          
+          {/* How to Request Price Adjustments */}
+          <Alert severity="info" sx={{ mb: 3, textAlign: 'left' }}>
+            <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 1 }}>
+              How to Request a Price Adjustment:
+            </Typography>
+            <Typography variant="body2" paragraph>
+              To request a price adjustment for something you bought in the warehouse, just visit the Returns desk at the Costco location where you made the purchase. For online purchases, complete the price adjustment request form online.
+            </Typography>
+            <Typography variant="body2" sx={{ fontStyle: 'italic' }}>
+              <strong>Note:</strong> Costco will never match their in-store prices to online prices and vice versa. Costco's online prices are usually a little higher to cover shipping and handling costs.
+            </Typography>
+          </Alert>
+
+          <Alert severity="success">
             No price adjustments available at this time. We'll notify you when we find better prices!
           </Alert>
         </Paper>
@@ -125,6 +139,20 @@ const PriceAdjustments: React.FC = () => {
           Costco offers price adjustments within 30 days of purchase. When an item you bought goes on sale within 30 days, 
           you can request a refund for the difference. Below are your current opportunities for price adjustments.
         </Typography>
+        
+        {/* How to Request Price Adjustments */}
+        <Alert severity="info" sx={{ mb: 3 }}>
+          <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 1 }}>
+            How to Request Your Price Adjustment:
+          </Typography>
+          <Typography variant="body2" paragraph>
+            To request a price adjustment for something you bought in the warehouse, just visit the Returns desk at the Costco location where you made the purchase. For online purchases, complete the price adjustment request form online.
+          </Typography>
+          <Typography variant="body2" sx={{ fontStyle: 'italic' }}>
+            <strong>Note:</strong> Costco will never match their in-store prices to online prices and vice versa. Costco's online prices are usually a little higher to cover shipping and handling costs.
+          </Typography>
+        </Alert>
+
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mt: 2 }}>
           <Typography variant="h6">
             Total Potential Savings:

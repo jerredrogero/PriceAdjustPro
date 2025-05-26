@@ -576,7 +576,8 @@ def extract_text_from_image(image_path: str) -> str:
             '.png': 'image/png',
             '.webp': 'image/webp',
             '.gif': 'image/gif',
-            '.bmp': 'image/bmp'
+            '.bmp': 'image/bmp',
+            '.avif': 'image/avif'
         }
         mime_type = mime_types.get(file_ext, 'image/jpeg')
         print(f"Using MIME type: {mime_type} for file extension: {file_ext}")
@@ -708,7 +709,7 @@ def process_receipt_file(file_path: str, user=None) -> Dict:
     
     if file_ext == '.pdf':
         return process_receipt_pdf(file_path, user)
-    elif file_ext in ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp']:
+    elif file_ext in ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.avif']:
         return process_receipt_image(file_path, user)
     else:
         raise ValueError(f"Unsupported file type: {file_ext}")
@@ -727,6 +728,7 @@ def extract_promo_data_from_image(image_path: str) -> str:
             '.jpeg': 'image/jpeg', 
             '.png': 'image/png',
             '.webp': 'image/webp',
+            '.avif': 'image/avif',
         }
         mime_type = mime_types.get(file_ext, 'image/jpeg')
         
