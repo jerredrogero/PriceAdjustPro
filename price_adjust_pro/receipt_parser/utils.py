@@ -562,6 +562,10 @@ def process_receipt_pdf(pdf_path: str, user=None) -> Dict:
 def extract_text_from_image(image_path: str) -> str:
     """Extract text from an image file using Gemini Vision with enhanced preprocessing."""
     try:
+        # Check if file exists
+        if not os.path.exists(image_path):
+            raise FileNotFoundError(f"Image file not found: {image_path}")
+        
         # Read the image file as binary
         with open(image_path, 'rb') as file:
             image_content = file.read()
@@ -717,6 +721,10 @@ def process_receipt_file(file_path: str, user=None) -> Dict:
 def extract_promo_data_from_image(image_path: str) -> str:
     """Extract promotional sale data from a Costco booklet page."""
     try:
+        # Check if file exists
+        if not os.path.exists(image_path):
+            raise FileNotFoundError(f"Image file not found: {image_path}")
+        
         # Read the image file as binary
         with open(image_path, 'rb') as file:
             image_content = file.read()
@@ -918,6 +926,15 @@ def process_official_promotion(promotion_id: int, max_pages: int = None) -> dict
                 if page_num % 5 == 0:  # Every 5 pages
                     gc.collect()
                     logger.info(f"Memory cleanup after page {page_num}")
+                
+                # Check if image file exists
+                if not page.image or not os.path.exists(page.image.path):
+                    error_msg = f"Image file not found for page {page.page_number}: {page.image.name if page.image else 'No image'}"
+                    results['errors'].append(error_msg)
+                    page.processing_error = error_msg
+                    page.save()
+                    logger.error(error_msg)
+                    continue
                 
                 # Extract text from the image
                 extracted_text = extract_promo_data_from_image(page.image.path)

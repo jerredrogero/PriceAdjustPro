@@ -26,7 +26,10 @@ from django.utils.safestring import mark_safe
 from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import path, reverse
 import os
+import logging
 from .utils import process_official_promotion
+
+logger = logging.getLogger(__name__)
 
 # Customize admin site
 admin.site.site_header = 'PriceAdjustPro Administration'
@@ -950,6 +953,16 @@ class CostcoPromotionPageAdmin(admin.ModelAdmin):
             try:
                 messages.info(request, f"Processing page {page.page_number} of '{page.promotion.title}'...")
                 
+                # Check if image file exists
+                if not page.image or not os.path.exists(page.image.path):
+                    error_msg = f"Image file not found for page {page.page_number}: {page.image.name if page.image else 'No image'}"
+                    errors.append(error_msg)
+                    page.processing_error = error_msg
+                    page.save()
+                    logger.error(error_msg)
+                    messages.error(request, error_msg)
+                    continue
+                
                 # Extract text from the image
                 extracted_text = extract_promo_data_from_image(page.image.path)
                 page.extracted_text = extracted_text
@@ -1040,6 +1053,16 @@ class CostcoPromotionPageAdmin(admin.ModelAdmin):
         for page in queryset:
             try:
                 messages.info(request, f"Reprocessing page {page.page_number} of '{page.promotion.title}'...")
+                
+                # Check if image file exists
+                if not page.image or not os.path.exists(page.image.path):
+                    error_msg = f"Image file not found for page {page.page_number}: {page.image.name if page.image else 'No image'}"
+                    errors.append(error_msg)
+                    page.processing_error = error_msg
+                    page.save()
+                    logger.error(error_msg)
+                    messages.error(request, error_msg)
+                    continue
                 
                 # Extract text from the image
                 extracted_text = extract_promo_data_from_image(page.image.path)
