@@ -40,10 +40,10 @@ admin.site.index_title = 'Dashboard'
 admin.site.unregister(User)
 admin.site.unregister(Group)
 
-# Custom User admin with limited fields
+# Custom User admin with limited fields and hijack functionality
 @admin.register(User)
 class CustomUserAdmin(UserAdmin):
-    list_display = ('username', 'email', 'date_joined', 'last_login', 'is_active', 'is_staff')
+    list_display = ('username', 'email', 'date_joined', 'last_login', 'is_active', 'is_staff', 'hijack_user_button')
     list_filter = ('is_active', 'is_staff', 'date_joined')
     readonly_fields = ('date_joined', 'last_login')
     ordering = ('-date_joined',)
@@ -62,6 +62,28 @@ class CustomUserAdmin(UserAdmin):
             'fields': ('username', 'email', 'password1', 'password2'),
         }),
     )
+    
+    def hijack_user_button(self, obj):
+        """Custom hijack button for user admin."""
+        if obj.pk == self.request.user.pk:
+            return format_html('<span style="color: grey;">Cannot hijack yourself</span>')
+        
+        if not self.request.user.is_superuser:
+            return format_html('<span style="color: grey;">Permission denied</span>')
+        
+        hijack_url = f'/hijack/{obj.pk}/?next=/'
+        return format_html(
+            '<a href="{}" class="button" style="background-color: #417690; color: white; padding: 4px 8px; '
+            'text-decoration: none; border-radius: 3px; font-size: 11px;">🔓 Hijack User</a>',
+            hijack_url
+        )
+    hijack_user_button.short_description = 'Hijack'
+    hijack_user_button.allow_tags = True
+    
+    def get_list_display(self, request):
+        """Store request for use in hijack_user_button method."""
+        self.request = request
+        return super().get_list_display(request)
 
 csrf_protect_m = method_decorator(csrf_protect)
 

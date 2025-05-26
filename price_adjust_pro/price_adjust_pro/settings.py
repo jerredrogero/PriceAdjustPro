@@ -243,7 +243,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Authentication settings
 LOGIN_URL = 'login'
-LOGIN_REDIRECT_URL = 'dashboard'
+LOGIN_REDIRECT_URL = '/'  # Redirect to home page
 LOGOUT_REDIRECT_URL = 'login'
 
 # CORS settings
@@ -320,3 +320,6 @@ HIJACK_ALLOW_GET_REQUESTS = True  # Allow hijacking via GET requests (for conven
 HIJACK_AUTHORIZATION_CHECK = 'hijack.permissions.superusers_only'  # Only superusers can hijack
 HIJACK_DISPLAY_WARNING = True  # Show warning banner when hijacking
 HIJACK_USE_BOOTSTRAP = True  # Use Bootstrap styling
+
+# Override the default success URL to avoid 'dashboard' lookup error
+HIJACK_SUCCESS_URL = '/'
