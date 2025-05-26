@@ -23,6 +23,10 @@ from .models import (
 from .utils import process_official_promotion
 from django.contrib import messages
 from django.utils.safestring import mark_safe
+from django.shortcuts import render, redirect, get_object_or_404
+from django.urls import path, reverse
+import os
+from .utils import process_official_promotion
 
 # Customize admin site
 admin.site.site_header = 'PriceAdjustPro Administration'
@@ -704,6 +708,74 @@ class CostcoPromotionAdmin(admin.ModelAdmin):
     
     actions = ['process_promotions']
     
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path(
+                '<int:promotion_id>/bulk-upload/',
+                self.admin_site.admin_view(self.bulk_upload_view),
+                name='receipt_parser_costcopromotion_bulk_upload',
+            ),
+        ]
+        return custom_urls + urls
+    
+    def bulk_upload_view(self, request, promotion_id):
+        """Custom view for bulk uploading promotional images."""
+        promotion = get_object_or_404(CostcoPromotion, id=promotion_id)
+        
+        if request.method == 'POST':
+            uploaded_files = request.FILES.getlist('images')
+            if not uploaded_files:
+                messages.error(request, 'No files were uploaded.')
+                return redirect(request.path)
+            
+            # Validate file types
+            allowed_extensions = ['.jpg', '.jpeg', '.png', '.webp', '.avif', '.gif', '.bmp']
+            valid_files = []
+            
+            for file in uploaded_files:
+                file_ext = os.path.splitext(file.name)[1].lower()
+                if file_ext in allowed_extensions:
+                    valid_files.append(file)
+                else:
+                    messages.warning(request, f'Skipped invalid file type: {file.name}')
+            
+            if not valid_files:
+                messages.error(request, 'No valid image files found.')
+                return redirect(request.path)
+            
+            # Get the next page number
+            last_page = promotion.pages.order_by('-page_number').first()
+            next_page_number = (last_page.page_number + 1) if last_page else 1
+            
+            # Create CostcoPromotionPage records
+            created_pages = 0
+            for i, file in enumerate(valid_files):
+                try:
+                    page = CostcoPromotionPage.objects.create(
+                        promotion=promotion,
+                        image=file,
+                        page_number=next_page_number + i
+                    )
+                    created_pages += 1
+                except Exception as e:
+                    messages.error(request, f'Error uploading {file.name}: {str(e)}')
+            
+            if created_pages > 0:
+                messages.success(request, f'Successfully uploaded {created_pages} promotional page(s).')
+            
+            # Redirect to the promotion change page
+            return redirect('admin:receipt_parser_costcopromotion_change', promotion.id)
+        
+        # GET request - show the upload form
+        context = {
+            'promotion': promotion,
+            'title': f'Bulk Upload Images for {promotion.title}',
+            'opts': self.model._meta,
+            'has_change_permission': self.has_change_permission(request, promotion),
+        }
+        return render(request, 'admin/receipt_parser/bulk_upload.html', context)
+    
     def pages_count(self, obj):
         return obj.pages.count()
     pages_count.short_description = "Pages"
@@ -743,6 +815,17 @@ class CostcoPromotionAdmin(admin.ModelAdmin):
             messages.success(request, f"Successfully processed {processed_count} promotion(s)")
     
     process_promotions.short_description = "Process selected promotions"
+    
+    def change_view(self, request, object_id, form_url='', extra_context=None):
+        """Override change view to add bulk upload button."""
+        extra_context = extra_context or {}
+        if object_id:
+            extra_context['show_bulk_upload'] = True
+            extra_context['bulk_upload_url'] = reverse(
+                'admin:receipt_parser_costcopromotion_bulk_upload',
+                args=[object_id]
+            )
+        return super().change_view(request, object_id, form_url, extra_context)
 
 @admin.register(CostcoPromotionPage)
 class CostcoPromotionPageAdmin(admin.ModelAdmin):
