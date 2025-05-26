@@ -364,14 +364,15 @@ class PriceAdjustmentAlertAdmin(BaseModelAdmin):
 @admin.register(LineItem)
 class LineItemAdmin(BaseModelAdmin):
     list_display = ('item_code', 'description', 'price', 'quantity', 'total_price', 
-                   'instant_savings_display', 'receipt_link')
+                   'instant_savings_display', 'username', 'receipt_link')
     list_filter = (
         'receipt__store_location',
+        'receipt__user__username',
         'is_taxable',
         ('instant_savings', admin.EmptyFieldListFilter),
         'receipt__transaction_date'
     )
-    search_fields = ('item_code', 'description', 'receipt__transaction_number')
+    search_fields = ('item_code', 'description', 'receipt__transaction_number', 'receipt__user__username')
     readonly_fields = ('total_price',)
     raw_id_fields = ('receipt',)
     list_per_page = 100
@@ -380,7 +381,7 @@ class LineItemAdmin(BaseModelAdmin):
 
     def get_queryset(self, request):
         return super().get_queryset(request)\
-            .select_related('receipt')\
+            .select_related('receipt', 'receipt__user')\
             .annotate(
                 price_with_savings=F('price') - F('instant_savings'),
                 total_with_savings=F('price_with_savings') * F('quantity')
@@ -392,6 +393,13 @@ class LineItemAdmin(BaseModelAdmin):
         return '-'
     instant_savings_display.short_description = 'Savings'
 
+    def username(self, obj):
+        if obj.receipt and obj.receipt.user:
+            return format_html('<a href="/admin/auth/user/{}/">{}</a>', 
+                             obj.receipt.user.id, obj.receipt.user.username)
+        return '-'
+    username.short_description = 'User'
+
     def receipt_link(self, obj):
         return format_html('<a href="/admin/receipt_parser/receipt/{}/">{}</a>', 
                          obj.receipt.id, obj.receipt.transaction_number)
@@ -399,18 +407,21 @@ class LineItemAdmin(BaseModelAdmin):
 
     def export_as_csv(self, request, queryset):
         field_names = ['item_code', 'description', 'price', 'quantity', 'discount',
-                      'is_taxable', 'instant_savings', 'original_price', 'receipt__transaction_number']
+                      'is_taxable', 'instant_savings', 'original_price', 'username', 'receipt__transaction_number']
 
         response = HttpResponse(content_type='text/csv')
         response['Content-Disposition'] = f'attachment; filename=line_items_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
         writer = csv.writer(response)
 
-        writer.writerow(field_names)
+        writer.writerow(['item_code', 'description', 'price', 'quantity', 'discount',
+                        'is_taxable', 'instant_savings', 'original_price', 'username', 'receipt_transaction_number'])
         for obj in queryset:
             row = []
             for field in field_names:
                 if field == 'receipt__transaction_number':
                     row.append(obj.receipt.transaction_number)
+                elif field == 'username':
+                    row.append(obj.receipt.user.username if obj.receipt and obj.receipt.user else '')
                 else:
                     value = getattr(obj, field)
                     row.append(str(value) if value is not None else '')
@@ -431,6 +442,7 @@ class LineItemAdmin(BaseModelAdmin):
                 'is_taxable': item.is_taxable,
                 'instant_savings': str(item.instant_savings) if item.instant_savings else None,
                 'original_price': str(item.original_price) if item.original_price else None,
+                'username': item.receipt.user.username if item.receipt and item.receipt.user else None,
                 'receipt': {
                     'transaction_number': item.receipt.transaction_number,
                     'store_location': item.receipt.store_location,
@@ -891,9 +903,10 @@ class CostcoPromotionAdmin(admin.ModelAdmin):
 
 @admin.register(CostcoPromotionPage)
 class CostcoPromotionPageAdmin(admin.ModelAdmin):
-    list_display = ('promotion', 'page_number', 'image_display', 'is_processed', 'uploaded_at')
+    list_display = ('promotion', 'page_number', 'image_display', 'is_processed', 'processing_status', 'uploaded_at')
     list_filter = ('is_processed', 'uploaded_at', 'promotion')
     readonly_fields = ('uploaded_at', 'extracted_text', 'processing_error')
+    actions = ['process_selected_pages', 'reprocess_pages', 'mark_as_unprocessed']
     
     def image_display(self, obj):
         if obj.image:
@@ -903,6 +916,237 @@ class CostcoPromotionPageAdmin(admin.ModelAdmin):
             )
         return "No image"
     image_display.short_description = "Preview"
+    
+    def processing_status(self, obj):
+        if obj.is_processed:
+            if obj.processing_error:
+                return format_html('<span style="color: orange">✓ Processed (with errors)</span>')
+            else:
+                return format_html('<span style="color: green">✓ Processed Successfully</span>')
+        else:
+            if obj.processing_error:
+                return format_html('<span style="color: red">✗ Failed</span>')
+            else:
+                return format_html('<span style="color: grey">⏳ Pending</span>')
+    processing_status.short_description = "Status"
+    
+    def process_selected_pages(self, request, queryset):
+        """Process selected promotion pages individually."""
+        from .utils import extract_promo_data_from_image, parse_promo_text, create_official_price_alerts
+        
+        processed_count = 0
+        total_items = 0
+        total_alerts = 0
+        errors = []
+        
+        # Only process unprocessed pages to avoid duplicates
+        unprocessed_pages = queryset.filter(is_processed=False)
+        
+        if not unprocessed_pages.exists():
+            messages.warning(request, "No unprocessed pages selected. Use 'Reprocess pages' to process already processed pages.")
+            return
+        
+        for page in unprocessed_pages:
+            try:
+                messages.info(request, f"Processing page {page.page_number} of '{page.promotion.title}'...")
+                
+                # Extract text from the image
+                extracted_text = extract_promo_data_from_image(page.image.path)
+                page.extracted_text = extracted_text
+                
+                # Parse the sale items
+                sale_items = parse_promo_text(extracted_text)
+                
+                # Create OfficialSaleItem records
+                page_items_created = 0
+                page_alerts_created = 0
+                
+                for item_data in sale_items:
+                    try:
+                        official_item, created = OfficialSaleItem.objects.get_or_create(
+                            promotion=page.promotion,
+                            item_code=item_data['item_code'],
+                            defaults={
+                                'description': item_data['description'],
+                                'regular_price': item_data['regular_price'],
+                                'sale_price': item_data['sale_price'],
+                                'instant_rebate': item_data['instant_rebate'],
+                                'sale_type': item_data['sale_type']
+                            }
+                        )
+                        
+                        if created:
+                            page_items_created += 1
+                            
+                            # Create price adjustment alerts for users who bought this item
+                            alerts_created = create_official_price_alerts(official_item)
+                            official_item.alerts_created = alerts_created
+                            official_item.save()
+                            page_alerts_created += alerts_created
+                            
+                    except Exception as e:
+                        error_msg = f"Error creating item {item_data.get('item_code', 'unknown')} on page {page.page_number}: {str(e)}"
+                        errors.append(error_msg)
+                        logger.error(error_msg)
+                        continue
+                
+                # Mark page as processed
+                page.is_processed = True
+                page.processing_error = None  # Clear any previous errors
+                page.save()
+                
+                processed_count += 1
+                total_items += page_items_created
+                total_alerts += page_alerts_created
+                
+                messages.success(
+                    request,
+                    f"Page {page.page_number}: {page_items_created} items extracted, {page_alerts_created} alerts created"
+                )
+                
+            except Exception as e:
+                error_msg = f"Error processing page {page.page_number}: {str(e)}"
+                errors.append(error_msg)
+                page.processing_error = error_msg
+                page.save()
+                logger.error(error_msg)
+                messages.error(request, error_msg)
+        
+        # Summary message
+        if processed_count > 0:
+            messages.success(
+                request,
+                f"Successfully processed {processed_count} page(s): "
+                f"{total_items} total items, {total_alerts} total alerts"
+            )
+        
+        if errors:
+            messages.warning(
+                request,
+                f"Encountered {len(errors)} error(s) during processing. Check individual page errors for details."
+            )
+    
+    process_selected_pages.short_description = "🔄 Process selected pages"
+    
+    def reprocess_pages(self, request, queryset):
+        """Reprocess selected pages (including already processed ones)."""
+        from .utils import extract_promo_data_from_image, parse_promo_text, create_official_price_alerts
+        
+        processed_count = 0
+        total_items = 0
+        total_alerts = 0
+        errors = []
+        
+        for page in queryset:
+            try:
+                messages.info(request, f"Reprocessing page {page.page_number} of '{page.promotion.title}'...")
+                
+                # Extract text from the image
+                extracted_text = extract_promo_data_from_image(page.image.path)
+                page.extracted_text = extracted_text
+                
+                # Parse the sale items
+                sale_items = parse_promo_text(extracted_text)
+                
+                # Create OfficialSaleItem records (get_or_create handles duplicates)
+                page_items_created = 0
+                page_alerts_created = 0
+                
+                for item_data in sale_items:
+                    try:
+                        official_item, created = OfficialSaleItem.objects.get_or_create(
+                            promotion=page.promotion,
+                            item_code=item_data['item_code'],
+                            defaults={
+                                'description': item_data['description'],
+                                'regular_price': item_data['regular_price'],
+                                'sale_price': item_data['sale_price'],
+                                'instant_rebate': item_data['instant_rebate'],
+                                'sale_type': item_data['sale_type']
+                            }
+                        )
+                        
+                        if created:
+                            page_items_created += 1
+                            
+                            # Create price adjustment alerts for users who bought this item
+                            alerts_created = create_official_price_alerts(official_item)
+                            official_item.alerts_created = alerts_created
+                            official_item.save()
+                            page_alerts_created += alerts_created
+                        else:
+                            # Update existing item if data changed
+                            updated = False
+                            if official_item.description != item_data['description']:
+                                official_item.description = item_data['description']
+                                updated = True
+                            if official_item.regular_price != item_data['regular_price']:
+                                official_item.regular_price = item_data['regular_price']
+                                updated = True
+                            if official_item.sale_price != item_data['sale_price']:
+                                official_item.sale_price = item_data['sale_price']
+                                updated = True
+                            if official_item.instant_rebate != item_data['instant_rebate']:
+                                official_item.instant_rebate = item_data['instant_rebate']
+                                updated = True
+                            if official_item.sale_type != item_data['sale_type']:
+                                official_item.sale_type = item_data['sale_type']
+                                updated = True
+                                
+                            if updated:
+                                official_item.save()
+                                messages.info(request, f"Updated existing item: {official_item.description}")
+                            
+                    except Exception as e:
+                        error_msg = f"Error processing item {item_data.get('item_code', 'unknown')} on page {page.page_number}: {str(e)}"
+                        errors.append(error_msg)
+                        logger.error(error_msg)
+                        continue
+                
+                # Mark page as processed
+                page.is_processed = True
+                page.processing_error = None  # Clear any previous errors
+                page.save()
+                
+                processed_count += 1
+                total_items += page_items_created
+                total_alerts += page_alerts_created
+                
+                messages.success(
+                    request,
+                    f"Page {page.page_number}: {page_items_created} new items, {page_alerts_created} new alerts"
+                )
+                
+            except Exception as e:
+                error_msg = f"Error reprocessing page {page.page_number}: {str(e)}"
+                errors.append(error_msg)
+                page.processing_error = error_msg
+                page.save()
+                logger.error(error_msg)
+                messages.error(request, error_msg)
+        
+        # Summary message
+        if processed_count > 0:
+            messages.success(
+                request,
+                f"Reprocessed {processed_count} page(s): "
+                f"{total_items} new items, {total_alerts} new alerts"
+            )
+        
+        if errors:
+            messages.warning(
+                request,
+                f"Encountered {len(errors)} error(s) during reprocessing."
+            )
+    
+    reprocess_pages.short_description = "🔄 Reprocess pages (including processed ones)"
+    
+    def mark_as_unprocessed(self, request, queryset):
+        """Mark selected pages as unprocessed to allow reprocessing."""
+        updated = queryset.update(is_processed=False, processing_error=None)
+        messages.success(request, f"Marked {updated} page(s) as unprocessed.")
+    
+    mark_as_unprocessed.short_description = "↩️ Mark as unprocessed"
 
 @admin.register(OfficialSaleItem)
 class OfficialSaleItemAdmin(admin.ModelAdmin):
