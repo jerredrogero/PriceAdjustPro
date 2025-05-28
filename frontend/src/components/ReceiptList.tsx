@@ -108,6 +108,16 @@ const ReceiptList: React.FC = () => {
   };
 
   const handleDeleteClick = (receipt: Receipt) => {
+    // Validate transaction number before allowing delete
+    if (!receipt.transaction_number || 
+        receipt.transaction_number === 'N/A' || 
+        receipt.transaction_number === 'null' || 
+        receipt.transaction_number === '' ||
+        receipt.transaction_number === 'None') {
+      setError('Cannot delete receipt with invalid transaction number. Please refresh the page.');
+      return;
+    }
+    
     setSelectedReceipt(receipt);
     setDeleteDialogOpen(true);
   };
@@ -115,14 +125,37 @@ const ReceiptList: React.FC = () => {
   const handleDeleteConfirm = async () => {
     if (!selectedReceipt) return;
 
+    // Double-check transaction number before making API call
+    if (!selectedReceipt.transaction_number || 
+        selectedReceipt.transaction_number === 'N/A' || 
+        selectedReceipt.transaction_number === 'null' || 
+        selectedReceipt.transaction_number === '' ||
+        selectedReceipt.transaction_number === 'None') {
+      setError('Cannot delete receipt with invalid transaction number. Please refresh the page.');
+      setDeleteDialogOpen(false);
+      setSelectedReceipt(null);
+      return;
+    }
+
     try {
       await api.delete(`/api/receipts/${selectedReceipt.transaction_number}/delete/`);
       setReceipts(receipts.filter(r => r.transaction_number !== selectedReceipt.transaction_number));
       setDeleteDialogOpen(false);
       setSelectedReceipt(null);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error deleting receipt:', err);
-      setError('Failed to delete receipt');
+      
+      // Provide more specific error messages
+      if (err.response?.status === 404) {
+        setError('Receipt not found. It may have already been deleted.');
+        // Remove from local state since it doesn't exist on server
+        setReceipts(receipts.filter(r => r.transaction_number !== selectedReceipt.transaction_number));
+      } else {
+        setError('Failed to delete receipt. Please try again.');
+      }
+      
+      setDeleteDialogOpen(false);
+      setSelectedReceipt(null);
     }
   };
 
@@ -271,6 +304,18 @@ const ReceiptList: React.FC = () => {
                           <Box>
                             <Typography variant="h6" component="div">
                               Costco #{receipt.transaction_number.slice(-4)}
+                              {(!receipt.parsed_successfully || receipt.parse_error) && (
+                                <Tooltip title={receipt.parse_error || "Parsing issues detected - please review"}>
+                                  <WarningIcon 
+                                    sx={{ 
+                                      ml: 1, 
+                                      fontSize: 16, 
+                                      color: 'warning.main',
+                                      verticalAlign: 'middle'
+                                    }} 
+                                  />
+                                </Tooltip>
+                              )}
                             </Typography>
                             <Typography variant="caption" color="text.secondary">
                               {receipt.store_location}
@@ -295,7 +340,18 @@ const ReceiptList: React.FC = () => {
                           </Tooltip>
                           <Tooltip title="View Details">
                             <IconButton
-                              onClick={() => navigate(`/receipt/${receipt.transaction_number}`)}
+                              onClick={() => {
+                                // Validate transaction number before navigation
+                                if (!receipt.transaction_number || 
+                                    receipt.transaction_number === 'N/A' || 
+                                    receipt.transaction_number === 'null' || 
+                                    receipt.transaction_number === '' ||
+                                    receipt.transaction_number === 'None') {
+                                  setError('Cannot view receipt with invalid transaction number. Please refresh the page.');
+                                  return;
+                                }
+                                navigate(`/receipt/${receipt.transaction_number}`);
+                              }}
                               color="primary"
                               sx={{
                                 backgroundColor: 'action.hover',

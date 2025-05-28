@@ -160,7 +160,20 @@ def upload_receipt(request):
                 # 2. Items with valid prices
                 # 3. Valid total amount
                 # 4. Valid transaction date
-                if (parsed_data.get('transaction_number') and 
+                transaction_number = parsed_data.get('transaction_number')
+                
+                # Ensure we have a valid transaction number
+                if not transaction_number or transaction_number in ['null', 'N/A', '', 'None']:
+                    # Generate a unique fallback transaction number
+                    import uuid
+                    timestamp = timezone.now().strftime("%Y%m%d%H%M%S")
+                    store_number = parsed_data.get('store_number', '0000')
+                    random_suffix = str(uuid.uuid4().hex)[:4].upper()
+                    transaction_number = f"{store_number}{timestamp}{random_suffix}"
+                    parsed_data['transaction_number'] = transaction_number
+                    logger.warning(f"Generated fallback transaction number for upload: {transaction_number}")
+                
+                if (transaction_number and 
                     parsed_data.get('items') and 
                     parsed_data.get('total') and 
                     parsed_data.get('transaction_date')):
@@ -170,7 +183,7 @@ def upload_receipt(request):
                 receipt = Receipt.objects.create(
                     user=request.user,
                     file=None,  # No file storage - data only
-                    transaction_number=parsed_data.get('transaction_number'),
+                    transaction_number=transaction_number,  # Use validated transaction number
                     store_location=parsed_data.get('store_location', 'Unknown'),
                     store_number=parsed_data.get('store_number', ''),
                     transaction_date=parsed_data.get('transaction_date', timezone.now()),
@@ -534,7 +547,14 @@ def api_receipt_delete(request, transaction_number):
     if request.method != 'DELETE':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
     
-    receipt = get_object_or_404(Receipt, transaction_number=transaction_number, user=request.user)
+    # Validate transaction number
+    if not transaction_number or transaction_number in ['null', 'N/A', '', 'None']:
+        return JsonResponse({'error': 'Invalid transaction number'}, status=400)
+    
+    try:
+        receipt = Receipt.objects.get(transaction_number=transaction_number, user=request.user)
+    except Receipt.DoesNotExist:
+        return JsonResponse({'error': 'Receipt not found'}, status=404)
     
     try:
         # Delete related price adjustment alerts first

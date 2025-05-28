@@ -6,6 +6,7 @@ import json
 import os
 from django.conf import settings
 import logging
+import uuid
 
 # Try to import Google Generative AI, but provide a mock if not available
 try:
@@ -276,19 +277,23 @@ Parse this receipt:
             parsed_data['store_location'] = 'Costco Athens #1621'
 
         # Ensure transaction number is present
-        if not parsed_data.get('transaction_number'):
+        if not parsed_data.get('transaction_number') or parsed_data.get('transaction_number') in ['null', 'N/A', '', 'None']:
             # Try to extract from text directly as fallback
             matches = re.findall(r'Whse:\s*\d+\s*Trm:\s*(\d+)\s*Trn:\s*(\d+)', text)
             if matches:
                 trm, trn = matches[0]
                 store_number = parsed_data.get('store_number', '0000')
                 parsed_data['transaction_number'] = f"{store_number}{trm}{trn}"
+                logger.info(f"Extracted transaction number from text: {parsed_data['transaction_number']}")
             else:
-                # Generate a fallback transaction number using timestamp and store info
+                # Generate a unique fallback transaction number using timestamp and store info
                 timestamp = timezone.now().strftime("%Y%m%d%H%M%S")
                 store_number = parsed_data.get('store_number', '0000')
-                parsed_data['transaction_number'] = f"{store_number}{timestamp}"
-                parsed_data['parse_error'] = "Transaction number not found - generated fallback ID"
+                # Add a short random component to ensure uniqueness
+                random_suffix = str(uuid.uuid4().hex)[:4].upper()
+                parsed_data['transaction_number'] = f"{store_number}{timestamp}{random_suffix}"
+                parsed_data['parse_error'] = "Transaction number not found - generated unique fallback ID"
+                logger.warning(f"Generated fallback transaction number: {parsed_data['transaction_number']}")
                 # Don't mark as failed since we have a valid fallback
 
         # Validate item count against total_items_sold
@@ -1042,6 +1047,17 @@ def create_official_price_alerts(official_sale_item) -> int:
         # For "OFF" promotions where sale_price represents the discount amount,
         # we need to find users who could benefit from this discount
         for purchase in higher_price_purchases:
+            # IMPORTANT: Skip items that were already bought on sale
+            # If the purchase has instant_savings, they already got a deal
+            if purchase.instant_savings and purchase.instant_savings > 0:
+                logger.info(f"Skipping {purchase.description} - user already bought on sale (saved ${purchase.instant_savings})")
+                continue
+            
+            # Also skip if the item was marked as on_sale
+            if hasattr(purchase, 'on_sale') and purchase.on_sale:
+                logger.info(f"Skipping {purchase.description} - item was already marked as on sale")
+                continue
+            
             # Check if user already has an alert for this item
             existing_alert = PriceAdjustmentAlert.objects.filter(
                 user=purchase.receipt.user,
@@ -1068,7 +1084,9 @@ def create_official_price_alerts(official_sale_item) -> int:
                     savings = purchase.price - official_sale_item.sale_price
                     final_price = official_sale_item.sale_price
                 else:
-                    continue  # User already paid less
+                    # User already paid the same or less - no benefit
+                    logger.info(f"Skipping {purchase.description} - user paid ${purchase.price}, sale price is ${official_sale_item.sale_price}")
+                    continue
             else:
                 # Skip if we don't have enough price information
                 logger.warning(f"Insufficient price data for {official_sale_item.description} - skipping")
@@ -1085,6 +1103,7 @@ def create_official_price_alerts(official_sale_item) -> int:
                         existing_alert.is_dismissed = False  # Re-activate
                         existing_alert.save()
                         alerts_created += 1
+                        logger.info(f"Updated price alert for {purchase.receipt.user.username} on {official_sale_item.description}")
                 else:
                     # Create new alert
                     PriceAdjustmentAlert.objects.create(
@@ -1107,14 +1126,13 @@ def create_official_price_alerts(official_sale_item) -> int:
                     
                     logger.info(
                         f"Official price alert created for user {purchase.receipt.user.username} "
-                        f"on {official_sale_item.description} (${purchase.price} -> ${official_sale_item.sale_price})"
+                        f"on {official_sale_item.description} (${purchase.price} -> ${final_price}, saved ${savings})"
                     )
-        
-        return alerts_created
         
     except Exception as e:
         logger.error(f"Error creating official price alerts for {official_sale_item.description}: {str(e)}")
-        return 0 
+        
+    return alerts_created
 
 def check_current_user_for_price_adjustments(item: LineItem, receipt: Receipt) -> int:
     """
@@ -1127,6 +1145,15 @@ def check_current_user_for_price_adjustments(item: LineItem, receipt: Receipt) -
     
     try:
         if not item.item_code:
+            return 0
+
+        # IMPORTANT: Don't create alerts for items already bought on sale
+        if item.instant_savings and item.instant_savings > 0:
+            logger.info(f"Skipping price adjustment check for {item.description} - user already got instant savings of ${item.instant_savings}")
+            return 0
+            
+        if hasattr(item, 'on_sale') and item.on_sale:
+            logger.info(f"Skipping price adjustment check for {item.description} - item was marked as on sale")
             return 0
 
         # Check official promotions first (highest trust)
@@ -1155,7 +1182,9 @@ def check_current_user_for_price_adjustments(item: LineItem, receipt: Receipt) -
                 final_price = promotion_item.sale_price
                 savings = item.price - promotion_item.sale_price
             else:
-                continue  # User already paid less or equal
+                # User already paid the same or less
+                logger.info(f"Skipping promotion for {item.description} - user paid ${item.price}, sale price is ${promotion_item.sale_price}")
+                continue
             
             # Only create alert if savings is significant ($0.50+)
             if savings >= Decimal('0.50'):
@@ -1179,6 +1208,7 @@ def check_current_user_for_price_adjustments(item: LineItem, receipt: Receipt) -
                         existing_alert.is_dismissed = False
                         existing_alert.save()
                         alerts_created += 1
+                        logger.info(f"Updated official promotion alert for {receipt.user.username} on {item.description}")
                 else:
                     # Create new alert
                     PriceAdjustmentAlert.objects.create(
@@ -1212,7 +1242,7 @@ def check_current_user_for_price_adjustments(item: LineItem, receipt: Receipt) -
             receipt__user__isnull=False
         ).exclude(
             receipt__user=receipt.user  # Exclude current user's own receipts
-        ).select_related('receipt').order_by('price')  # Get lowest price first
+        ).select_related('receipt').order_by('price')
         
         if lower_price_purchases.exists():
             lowest_purchase = lower_price_purchases.first()
@@ -1240,6 +1270,7 @@ def check_current_user_for_price_adjustments(item: LineItem, receipt: Receipt) -
                         existing_alert.is_dismissed = False
                         existing_alert.save()
                         alerts_created += 1
+                        logger.info(f"Updated community price alert for {receipt.user.username} on {item.description}")
                 elif not current_promotions.exists():  # Only create if no official promotion alert was created
                     # Create new alert
                     PriceAdjustmentAlert.objects.create(
@@ -1267,5 +1298,5 @@ def check_current_user_for_price_adjustments(item: LineItem, receipt: Receipt) -
         return alerts_created
         
     except Exception as e:
-        logger.error(f"Error checking current user price adjustments for {item.description}: {str(e)}")
+        logger.error(f"Error checking current user price adjustments for {item.description if item else 'unknown item'}: {str(e)}")
         return 0 
