@@ -9,6 +9,7 @@ class AuthenticationMiddleware:
         self.exempt_urls = [
             re.compile(r'^/admin/.*$'),
             re.compile(r'^/api/auth/.*$'),
+            re.compile(r'^/hijack/.*$'),  # Allow hijack URLs
             re.compile(r'^/login/$'),
             re.compile(r'^/register/$'),
             re.compile(r'^/static/.*$'),

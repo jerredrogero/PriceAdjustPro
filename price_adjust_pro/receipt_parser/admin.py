@@ -28,6 +28,7 @@ from django.urls import path, reverse
 import os
 import logging
 from .utils import process_official_promotion
+from django.middleware.csrf import get_token
 
 logger = logging.getLogger(__name__)
 
@@ -71,11 +72,20 @@ class CustomUserAdmin(UserAdmin):
         if not self.request.user.is_superuser:
             return format_html('<span style="color: grey;">Permission denied</span>')
         
-        hijack_url = f'/hijack/{obj.pk}/?next=/'
+        # Get CSRF token from request
+        csrf_token = get_token(self.request)
+        
+        # Use a simple form to POST to the hijack URL with CSRF token
         return format_html(
-            '<a href="{}" class="button" style="background-color: #417690; color: white; padding: 4px 8px; '
-            'text-decoration: none; border-radius: 3px; font-size: 11px;">🔓 Hijack User</a>',
-            hijack_url
+            '<form method="post" action="/hijack/acquire/" style="display: inline;">'
+            '<input type="hidden" name="csrfmiddlewaretoken" value="{}">'
+            '<input type="hidden" name="user_pk" value="{}">'
+            '<input type="hidden" name="next" value="/">'
+            '<button type="submit" class="button" style="background-color: #417690; color: white; padding: 4px 8px; '
+            'border: none; border-radius: 3px; font-size: 11px; cursor: pointer;" '
+            'onclick="return confirm(\'Are you sure you want to hijack user {}?\');">🔓 Hijack</button>'
+            '</form>',
+            csrf_token, obj.pk, obj.username
         )
     hijack_user_button.short_description = 'Hijack'
     hijack_user_button.allow_tags = True
