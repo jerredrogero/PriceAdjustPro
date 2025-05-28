@@ -1162,7 +1162,7 @@ def api_receipt_update(request, transaction_number):
 @permission_classes([IsAuthenticated])
 def analytics(request):
     """Get analytics summary for the dashboard."""
-    receipts = Receipt.objects.filter(user=request.user)
+    receipts = Receipt.objects.filter(user=request.user).prefetch_related('items')
     
     # Calculate totals
     total_spent = receipts.aggregate(
@@ -1174,9 +1174,11 @@ def analytics(request):
     )['savings']
     
     total_receipts = receipts.count()
-    total_items = receipts.aggregate(
-        items=Sum('items_count', default=0)
-    )['items']
+    
+    # Calculate total items by summing quantities from line items
+    total_items = 0
+    for receipt in receipts:
+        total_items += sum(item.quantity for item in receipt.items.all())
     
     # Calculate average receipt total
     average_receipt = receipts.aggregate(

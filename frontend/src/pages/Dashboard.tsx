@@ -157,12 +157,35 @@ const Dashboard: React.FC = () => {
 
   const monthlySpending = analytics?.spending_by_month
     ? Object.entries(analytics.spending_by_month)
-        .map(([month, data]) => ({
-          month: format(new Date(month + '-01'), 'MMM yyyy'),
-          total: parseFloat(data.total),
-          visits: data.count,
-        }))
-        .sort((a, b) => a.month.localeCompare(b.month))
+        .map(([month, data]) => {
+          // Parse month string safely to avoid timezone issues
+          const [year, monthNum] = month.split('-');
+          const monthNames = [
+            'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+            'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+          ];
+          const monthName = monthNames[parseInt(monthNum) - 1];
+          
+          return {
+            month: `${monthName} ${year}`,
+            total: parseFloat(data.total),
+            visits: data.count,
+          };
+        })
+        .sort((a, b) => {
+          // Sort by year-month for proper chronological order
+          const monthNames = [
+            'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+            'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+          ];
+          const getYearMonth = (item: { month: string }) => {
+            const parts = item.month.split(' ');
+            const year = parseInt(parts[1]);
+            const monthIndex = monthNames.findIndex(m => m === parts[0]);
+            return year * 12 + monthIndex;
+          };
+          return getYearMonth(a) - getYearMonth(b);
+        })
         .slice(-6)
     : [];
 
