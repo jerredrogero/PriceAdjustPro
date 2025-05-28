@@ -203,7 +203,7 @@ const ReceiptDetail: React.FC = () => {
                 {receipt.store_location}
                 {receipt.store_number && (
                   <Typography component="span" variant="subtitle1" sx={{ ml: 1, color: 'text.secondary' }}>
-                    #{receipt.store_number}
+                    #{receipt.store_number && receipt.store_number.toLowerCase() !== 'null' ? receipt.store_number : 'Unknown'}
                   </Typography>
                 )}
               </Typography>

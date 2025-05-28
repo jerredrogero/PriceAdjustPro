@@ -272,29 +272,56 @@ Parse this receipt:
                 else:
                     parsed_data[key] = value
 
-        # Normalize store location format
-        if parsed_data.get('store_number') == '1621':
+        # Normalize store location format and handle null store numbers
+        store_number = parsed_data.get('store_number', '')
+        if not store_number or store_number.lower() in ['null', 'n/a', '', 'none']:
+            store_number = '0000'  # Default fallback
+            parsed_data['store_number'] = store_number
+            
+        # Handle null store locations
+        store_location = parsed_data.get('store_location', '')
+        if not store_location or store_location.lower() in ['null', 'n/a', '', 'none']:
+            store_location = f'Costco Warehouse #{store_number}'
+            parsed_data['store_location'] = store_location
+        elif store_number != '0000' and store_number not in store_location:
+            # If we have a valid store number but it's not in the location, add it
+            if not store_location.endswith(f'#{store_number}'):
+                store_location = f'{store_location} #{store_number}'
+                parsed_data['store_location'] = store_location
+            
+        # Special case for known stores
+        if store_number == '1621':
             parsed_data['store_location'] = 'Costco Athens #1621'
 
-        # Ensure transaction number is present
-        if not parsed_data.get('transaction_number') or parsed_data.get('transaction_number') in ['null', 'N/A', '', 'None']:
+        # Ensure transaction number is present and clean
+        transaction_number = parsed_data.get('transaction_number', '')
+        if not transaction_number or transaction_number.lower() in ['null', 'n/a', '', 'none']:
             # Try to extract from text directly as fallback
             matches = re.findall(r'Whse:\s*\d+\s*Trm:\s*(\d+)\s*Trn:\s*(\d+)', text)
             if matches:
                 trm, trn = matches[0]
-                store_number = parsed_data.get('store_number', '0000')
-                parsed_data['transaction_number'] = f"{store_number}{trm}{trn}"
-                logger.info(f"Extracted transaction number from text: {parsed_data['transaction_number']}")
+                transaction_number = f"{store_number}{trm}{trn}"
+                logger.info(f"Extracted transaction number from text: {transaction_number}")
             else:
                 # Generate a unique fallback transaction number using timestamp and store info
                 timestamp = timezone.now().strftime("%Y%m%d%H%M%S")
-                store_number = parsed_data.get('store_number', '0000')
                 # Add a short random component to ensure uniqueness
                 random_suffix = str(uuid.uuid4().hex)[:4].upper()
-                parsed_data['transaction_number'] = f"{store_number}{timestamp}{random_suffix}"
+                transaction_number = f"{store_number}{timestamp}{random_suffix}"
                 parsed_data['parse_error'] = "Transaction number not found - generated unique fallback ID"
-                logger.warning(f"Generated fallback transaction number: {parsed_data['transaction_number']}")
+                logger.warning(f"Generated fallback transaction number: {transaction_number}")
                 # Don't mark as failed since we have a valid fallback
+            
+            parsed_data['transaction_number'] = transaction_number
+        else:
+            # Clean existing transaction number if it contains "null"
+            if 'null' in transaction_number.lower():
+                # Extract the meaningful part and regenerate
+                timestamp = timezone.now().strftime("%Y%m%d%H%M%S")
+                random_suffix = str(uuid.uuid4().hex)[:4].upper()
+                transaction_number = f"{store_number}{timestamp}{random_suffix}"
+                parsed_data['transaction_number'] = transaction_number
+                logger.warning(f"Cleaned malformed transaction number, generated: {transaction_number}")
 
         # Validate item count against total_items_sold
         actual_item_count = len(parsed_data['items'])

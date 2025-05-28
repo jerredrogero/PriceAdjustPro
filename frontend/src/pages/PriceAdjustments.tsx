@@ -188,8 +188,8 @@ const PriceAdjustments: React.FC = () => {
                       <Grid item xs={12} sm={6}>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                           <LocationIcon color="action" />
-                          <Typography variant="body2">
-                            Original Purchase: {adjustment.original_store} #{adjustment.original_store_number}
+                          <Typography variant="body2" color="text.secondary">
+                            Original Purchase: {adjustment.original_store} #{adjustment.original_store_number && adjustment.original_store_number.toLowerCase() !== 'null' ? adjustment.original_store_number : 'Unknown'}
                           </Typography>
                         </Box>
                       </Grid>
@@ -219,8 +219,8 @@ const PriceAdjustments: React.FC = () => {
 
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                       <LocationIcon color="success" />
-                      <Typography variant="body2" color="success.main">
-                        Available at: {adjustment.store_location} #{adjustment.store_number}
+                      <Typography variant="body2" color="text.secondary">
+                        Available at: {adjustment.store_location} #{adjustment.store_number && adjustment.store_number.toLowerCase() !== 'null' ? adjustment.store_number : 'Unknown'}
                       </Typography>
                     </Box>
                   </Box>

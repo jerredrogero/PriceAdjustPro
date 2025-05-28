@@ -90,7 +90,12 @@ def upload_receipt(request):
                 try:
                     # Update existing receipt with new data
                     existing_receipt.store_location = parsed_data.get('store_location', existing_receipt.store_location)
-                    existing_receipt.store_number = parsed_data.get('store_number', existing_receipt.store_number)
+                    # Clean store location if it's null
+                    if not existing_receipt.store_location or existing_receipt.store_location.lower() in ['null', 'n/a', '', 'none']:
+                        store_number = parsed_data.get('store_number', '0000')
+                        existing_receipt.store_location = f'Costco Warehouse #{store_number}' if store_number != '0000' else 'Costco Warehouse'
+                    
+                    existing_receipt.store_number = parsed_data.get('store_number', '0000') if parsed_data.get('store_number') and parsed_data.get('store_number').lower() not in ['null', '', 'none', 'n/a'] else '0000'
                     existing_receipt.transaction_date = parsed_data.get('transaction_date', existing_receipt.transaction_date)
                     existing_receipt.total = parsed_data.get('total', existing_receipt.total)
                     existing_receipt.subtotal = parsed_data.get('subtotal', existing_receipt.subtotal)
@@ -173,6 +178,13 @@ def upload_receipt(request):
                     parsed_data['transaction_number'] = transaction_number
                     logger.warning(f"Generated fallback transaction number for upload: {transaction_number}")
                 
+                # Clean up store location
+                store_location = parsed_data.get('store_location', '')
+                store_number = parsed_data.get('store_number', '0000')
+                if not store_location or store_location.lower() in ['null', 'n/a', '', 'none']:
+                    store_location = f'Costco Warehouse #{store_number}' if store_number != '0000' else 'Costco Warehouse'
+                    parsed_data['store_location'] = store_location
+                
                 if (transaction_number and 
                     parsed_data.get('items') and 
                     parsed_data.get('total') and 
@@ -184,8 +196,8 @@ def upload_receipt(request):
                     user=request.user,
                     file=None,  # No file storage - data only
                     transaction_number=transaction_number,  # Use validated transaction number
-                    store_location=parsed_data.get('store_location', 'Unknown'),
-                    store_number=parsed_data.get('store_number', ''),
+                    store_location=parsed_data.get('store_location', 'Costco Warehouse'),
+                    store_number=parsed_data.get('store_number', '0000') if parsed_data.get('store_number') and parsed_data.get('store_number').lower() not in ['null', '', 'none', 'n/a'] else '0000',
                     transaction_date=parsed_data.get('transaction_date', timezone.now()),
                     subtotal=parsed_data.get('subtotal', Decimal('0.00')),
                     total=parsed_data.get('total', Decimal('0.00')),
@@ -422,7 +434,12 @@ def api_receipt_upload(request):
             # Update existing receipt - no file storage
             existing_receipt.file = None
             existing_receipt.store_location = parsed_data['store_location']
-            existing_receipt.store_number = parsed_data['store_number']
+            # Clean store location if it's null
+            if not existing_receipt.store_location or existing_receipt.store_location.lower() in ['null', 'n/a', '', 'none']:
+                store_number = parsed_data.get('store_number', '0000')
+                existing_receipt.store_location = f'Costco Warehouse #{store_number}' if store_number != '0000' else 'Costco Warehouse'
+            
+            existing_receipt.store_number = parsed_data.get('store_number', '0000') if parsed_data.get('store_number') and parsed_data.get('store_number').lower() not in ['null', '', 'none', 'n/a'] else '0000'
             existing_receipt.transaction_date = parsed_data['transaction_date']
             existing_receipt.subtotal = Decimal(str(parsed_data['subtotal']))
             existing_receipt.tax = Decimal(str(parsed_data['tax']))
@@ -471,13 +488,20 @@ def api_receipt_upload(request):
             parsed_data['parsed_successfully'] = True
             parsed_data['parse_error'] = None
         
+        # Clean up store location for API uploads too
+        store_location = parsed_data.get('store_location', '')
+        store_number = parsed_data.get('store_number', '0000')
+        if not store_location or store_location.lower() in ['null', 'n/a', '', 'none']:
+            store_location = f'Costco Warehouse #{store_number}' if store_number != '0000' else 'Costco Warehouse'
+            parsed_data['store_location'] = store_location
+        
         # Create Receipt object with default values if parsing failed
         receipt = Receipt.objects.create(
             user=request.user,
             file=None,  # No file storage - data only
             transaction_number=parsed_data.get('transaction_number'),
-            store_location=parsed_data.get('store_location', 'Unknown'),
-            store_number=parsed_data.get('store_number', ''),
+            store_location=parsed_data.get('store_location', 'Costco Warehouse'),
+            store_number=parsed_data.get('store_number', '0000') if parsed_data.get('store_number') and parsed_data.get('store_number').lower() not in ['null', '', 'none', 'n/a'] else '0000',
             transaction_date=parsed_data.get('transaction_date', timezone.now()),
             subtotal=parsed_data.get('subtotal', Decimal('0.00')),
             total=parsed_data.get('total', Decimal('0.00')),
@@ -958,7 +982,8 @@ def api_user_analytics(request):
             analytics['spending_by_month'][month_key]['count'] += 1
 
             # Track store visits
-            store_key = f"{receipt.store_location} #{receipt.store_number}"
+            store_number = receipt.store_number if receipt.store_number and receipt.store_number.lower() not in ['null', '', 'none', 'n/a'] else 'Unknown'
+            store_key = f"{receipt.store_location} #{store_number}"
             analytics['most_visited_stores'][store_key] = analytics['most_visited_stores'].get(store_key, 0) + 1
 
             # Process items

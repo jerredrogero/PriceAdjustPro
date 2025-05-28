@@ -302,7 +302,9 @@ const ReceiptDetail: React.FC = () => {
           {receipt.store_location}
         </Typography>
         <Typography variant="subtitle1" gutterBottom>
-          Transaction #: {receipt.transaction_number && receipt.transaction_number !== 'null' 
+          Transaction #: {receipt.transaction_number && 
+                          receipt.transaction_number !== 'null' && 
+                          !receipt.transaction_number.toLowerCase().includes('null')
             ? receipt.transaction_number 
             : 'Not found on receipt'}
         </Typography>

@@ -95,13 +95,13 @@ const PriceAdjustmentAlert: React.FC<Props> = ({ adjustments, onDismiss }) => {
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                   <StoreIcon color="error" />
                   <Typography variant="body2">
-                    Purchased at: {adjustment.original_store} #{adjustment.original_store_number}
+                    Purchased at: {adjustment.original_store} #{adjustment.original_store_number && adjustment.original_store_number.toLowerCase() !== 'null' ? adjustment.original_store_number : 'Unknown'}
                   </Typography>
                 </Box>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                   <StoreIcon color="success" />
                   <Typography variant="body2">
-                    Lower price at: {adjustment.store_location} #{adjustment.store_number}
+                    Lower price at: {adjustment.store_location} #{adjustment.store_number && adjustment.store_number.toLowerCase() !== 'null' ? adjustment.store_number : 'Unknown'}
                   </Typography>
                 </Box>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
