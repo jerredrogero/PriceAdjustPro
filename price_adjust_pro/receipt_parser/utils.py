@@ -230,7 +230,8 @@ Parse this receipt:
                                 'quantity': 1,  # Each line represents one item
                                 'is_taxable': item_parts[3].strip().upper() == 'Y',
                                 'instant_savings': Decimal(instant_savings) if instant_savings != 'null' else None,
-                                'price': price - Decimal(instant_savings) if instant_savings != 'null' else price  # Final price after discount
+                                'price': price - Decimal(instant_savings) if instant_savings != 'null' else price,  # Final price after discount
+                                'total_price': str(price)  # Store original receipt total for this line
                             }
                             parsed_data['items'].append(item)
                         except (ValueError, IndexError, InvalidOperation) as e:

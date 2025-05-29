@@ -37,15 +37,24 @@ const ReceiptReview: React.FC<Props> = ({ receipt, open, onClose, onSave }) => {
       original_description: item.original_description || item.description,
       original_quantity: item.original_quantity || item.quantity,
       original_item_code: item.original_item_code || item.item_code,
+      original_total_price: item.total_price || (parseFloat(item.price) * item.quantity).toFixed(2)
     }))
   );
   const [error, setError] = useState<string>('');
 
   const handleQuantityChange = (index: number, newQuantity: number) => {
     const newItems = [...items];
+    const item = newItems[index];
+    
+    // Calculate per-unit price from the original total price from receipt
+    const originalTotalPrice = parseFloat(item.original_total_price || item.total_price || (parseFloat(item.price) * item.quantity).toString());
+    const perUnitPrice = originalTotalPrice / newQuantity;
+    
     newItems[index] = {
       ...newItems[index],
       quantity: newQuantity,
+      price: perUnitPrice.toFixed(2), // Store per-unit price for comparisons
+      total_price: originalTotalPrice.toFixed(2) // Keep original total from receipt
     };
     setItems(newItems);
   };

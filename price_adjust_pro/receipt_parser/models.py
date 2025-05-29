@@ -110,6 +110,7 @@ class LineItem(models.Model):
     on_sale = models.BooleanField(default=False, help_text="Mark this item as on sale if the parsing missed it")
     instant_savings = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     original_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    original_total_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text="Original total from receipt, separate from calculated price * quantity")
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
 

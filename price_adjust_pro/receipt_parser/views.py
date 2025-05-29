@@ -327,16 +327,18 @@ def api_receipt_list(request):
                     'subtotal': str(receipt.subtotal),
                     'tax': str(receipt.tax),
                     'instant_savings': str(receipt.instant_savings) if receipt.instant_savings else None,
-                    'items': [{  # Include item details
+                    'items': [{
                         'id': item.id,
                         'item_code': item.item_code,
                         'description': item.description,
                         'price': str(item.price),
                         'quantity': item.quantity,
                         'total_price': str(item.total_price),
+                        'is_taxable': item.is_taxable,
                         'on_sale': item.on_sale,
                         'instant_savings': str(item.instant_savings) if item.instant_savings else None,
                         'original_price': str(item.original_price) if item.original_price else None,
+                        'original_total_price': str(item.original_total_price) if item.original_total_price else None
                     } for item in receipt.items.all()]
                 } for receipt in receipts],
                 'price_adjustments_count': adjustments_count
@@ -366,7 +368,8 @@ def api_receipt_detail(request, transaction_number):
         'is_taxable': item.is_taxable,
         'on_sale': item.on_sale,
         'instant_savings': str(item.instant_savings) if item.instant_savings else None,
-        'original_price': str(item.original_price) if item.original_price else None
+        'original_price': str(item.original_price) if item.original_price else None,
+        'original_total_price': str(item.original_total_price) if item.original_total_price else None
     } for item in receipt.items.all()]
     
     return JsonResponse({
@@ -526,7 +529,8 @@ def api_receipt_upload(request):
                         is_taxable=item_data.get('is_taxable', False),
                         on_sale=item_data.get('on_sale', False),
                         instant_savings=Decimal(str(item_data['instant_savings'])) if item_data.get('instant_savings') else None,
-                        original_price=Decimal(str(item_data['original_price'])) if item_data.get('original_price') else None
+                        original_price=Decimal(str(item_data['original_price'])) if item_data.get('original_price') else None,
+                        original_total_price=Decimal(str(item_data['total_price'])) if item_data.get('total_price') else None
                     )
                     # Check for potential price adjustments for other users
                     check_for_price_adjustments(line_item, receipt, is_user_edited=True)
@@ -1101,7 +1105,8 @@ def api_receipt_update(request, transaction_number):
                     is_taxable=item_data.get('is_taxable', False),
                     on_sale=item_data.get('on_sale', False),
                     instant_savings=Decimal(str(item_data['instant_savings'])) if item_data.get('instant_savings') else None,
-                    original_price=Decimal(str(item_data['original_price'])) if item_data.get('original_price') else None
+                    original_price=Decimal(str(item_data['original_price'])) if item_data.get('original_price') else None,
+                    original_total_price=Decimal(str(item_data['total_price'])) if item_data.get('total_price') else None
                 )
                 
                 # Check for potential price adjustments and count new alerts
@@ -1174,7 +1179,8 @@ def api_receipt_update(request, transaction_number):
                     'is_taxable': item.is_taxable,
                     'on_sale': item.on_sale,
                     'instant_savings': str(item.instant_savings) if item.instant_savings else None,
-                    'original_price': str(item.original_price) if item.original_price else None
+                    'original_price': str(item.original_price) if item.original_price else None,
+                    'original_total_price': str(item.original_total_price) if item.original_total_price else None
                 } for item in receipt.items.all()]
             }
         })

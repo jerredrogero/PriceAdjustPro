@@ -7,9 +7,13 @@ export interface LineItem {
   discount?: string | null;
   total_price?: string;
   is_taxable: boolean;
+  on_sale?: boolean;
+  instant_savings?: string | null;
+  original_price?: string | null;
   original_description?: string;
   original_quantity?: number;
   original_item_code?: string;
+  original_total_price?: string;
   needs_quantity_review?: boolean;
   editable?: boolean;
 }

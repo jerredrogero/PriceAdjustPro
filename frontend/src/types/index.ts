@@ -12,6 +12,7 @@ export interface ReceiptItem {
   original_item_code?: string;
   original_description?: string;
   original_quantity?: number;
+  original_total_price?: string;
   needs_quantity_review?: boolean;
 }
 

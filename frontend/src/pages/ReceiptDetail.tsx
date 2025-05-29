@@ -40,6 +40,7 @@ interface ReceiptItem {
   on_sale: boolean;
   instant_savings: string | null;
   original_price: string | null;
+  original_total_price: string;
 }
 
 interface Receipt {
@@ -85,7 +86,10 @@ const ReceiptDetail: React.FC = () => {
     try {
       const response = await api.get(`/api/receipts/${transactionNumber}/`);
       setReceipt(response.data);
-      setEditedItems(response.data.items);
+      setEditedItems(response.data.items.map((item: ReceiptItem) => ({
+        ...item,
+        original_total_price: item.total_price || (parseFloat(item.price) * item.quantity).toFixed(2)
+      })));
       // Set the transaction date for editing (convert to YYYY-MM-DDTHH:MM format for datetime-local input)
       const isoDate = new Date(response.data.transaction_date).toISOString().slice(0, 16);
       setEditedTransactionDate(isoDate);
@@ -108,14 +112,14 @@ const ReceiptDetail: React.FC = () => {
   const handleItemChange = (index: number, field: keyof ReceiptItem, value: any) => {
     const newItems = [...editedItems];
     
-    // Handle special cases for on_sale and instant_savings
-    if (field === 'on_sale') {
+    if (field === 'price') {
+      const priceValue = value && value !== '' ? parseFloat(value) : 0;
+      const currentSavings = newItems[index].instant_savings ? parseFloat(newItems[index].instant_savings!) : 0;
       newItems[index] = {
         ...newItems[index],
-        [field]: value,
-        // Clear savings and original price when unchecking on_sale
-        instant_savings: value ? newItems[index].instant_savings : null,
-        original_price: value ? newItems[index].original_price : null
+        price: value,
+        // Calculate original price as current price + savings
+        original_price: currentSavings > 0 ? (priceValue + currentSavings).toFixed(2) : null
       };
     } else if (field === 'instant_savings') {
       const savingsAmount = value && value !== '' ? parseFloat(value) : 0;
@@ -126,15 +130,23 @@ const ReceiptDetail: React.FC = () => {
         // Calculate original price as current price + savings
         original_price: savingsAmount > 0 ? (currentPrice + savingsAmount).toFixed(2) : null
       };
+    } else if (field === 'quantity') {
+      // When quantity changes, calculate per-unit price from total price
+      const newQuantity = parseInt(value) || 1;
+      const originalTotalPrice = parseFloat(newItems[index].original_total_price || newItems[index].total_price || (parseFloat(newItems[index].price) * newItems[index].quantity).toString());
+      const perUnitPrice = originalTotalPrice / newQuantity;
+      
+      newItems[index] = {
+        ...newItems[index],
+        quantity: newQuantity,
+        price: perUnitPrice.toFixed(2), // Store per-unit price
+        total_price: originalTotalPrice.toFixed(2) // Keep original total price
+      };
     } else {
-    newItems[index] = {
-      ...newItems[index],
-      [field]: value,
-      total_price: field === 'price' || field === 'quantity' 
-        ? (parseFloat(field === 'price' ? value : newItems[index].price) * 
-           (field === 'quantity' ? value : newItems[index].quantity)).toFixed(2)
-        : newItems[index].total_price
-    };
+      newItems[index] = {
+        ...newItems[index],
+        [field]: value
+      };
     }
     
     setEditedItems(newItems);
@@ -143,7 +155,7 @@ const ReceiptDetail: React.FC = () => {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const response = await api.post(`/api/receipts/${transactionNumber}/update/`, {
+      const saveData = {
         transaction_number: transactionNumber,
         store_location: receipt?.store_location,
         store_number: receipt?.store_number,
@@ -151,7 +163,7 @@ const ReceiptDetail: React.FC = () => {
         items: editedItems.map(item => ({
           ...item,
           price: parseFloat(item.price).toFixed(2),
-          total_price: (parseFloat(item.price) * item.quantity).toFixed(2),
+          total_price: item.original_total_price || item.total_price || (parseFloat(item.price) * item.quantity).toFixed(2), // Preserve original total
           instant_savings: item.instant_savings ? parseFloat(item.instant_savings).toFixed(2) : null,
           original_price: item.original_price ? parseFloat(item.original_price).toFixed(2) : null
         })),
@@ -160,17 +172,29 @@ const ReceiptDetail: React.FC = () => {
         tax: receipt?.tax,
         total: calculateTotal(),
         instant_savings: calculateTotalSavings()
-      });
+      };
+      
+      console.log('Saving data:', saveData); // Debug: what we're sending
+      console.log('Original editedItems:', editedItems); // Debug: current state
+      
+      const response = await api.post(`/api/receipts/${transactionNumber}/update/`, saveData);
+      
+      console.log('Save response:', response.data); // Debug logging
       
       // Check if price adjustments were created
       const adjustmentsCreated = response.data.price_adjustments_created || 0;
       setPriceAdjustmentsCreated(adjustmentsCreated);
       
       setEditMode(false);
-      fetchReceipt(); // Refresh data
-    } catch (err) {
+      
+      console.log('About to refresh data...'); // Debug
+      await fetchReceipt(); // Refresh data
+      console.log('Data refreshed'); // Debug
+      
+    } catch (err: any) {
       setError('Failed to save changes');
       console.error('Save error:', err);
+      console.error('Error details:', err.response?.data); // Better error logging
     } finally {
       setSaving(false);
     }
@@ -187,7 +211,8 @@ const ReceiptDetail: React.FC = () => {
       is_taxable: true,
       on_sale: false,
       instant_savings: null,
-      original_price: null
+      original_price: null,
+      original_total_price: '0.00'
     };
     setEditedItems(prev => [...prev, newItem]);
   };
@@ -202,8 +227,10 @@ const ReceiptDetail: React.FC = () => {
 
   const calculateSubtotal = () => {
     return editedItems.reduce((sum, item) => {
-      // Use the actual price paid (already accounts for discounts)
-      return sum + (parseFloat(item.price) * item.quantity);
+      // Use per-unit price * quantity for accurate calculation
+      const perUnitPrice = parseFloat(item.price);
+      const quantity = item.quantity;
+      return sum + (perUnitPrice * quantity);
     }, 0).toFixed(2);
   };
 
@@ -246,7 +273,10 @@ const ReceiptDetail: React.FC = () => {
               variant="outlined"
               onClick={() => {
                 setEditMode(false);
-                setEditedItems(receipt.items);
+                setEditedItems(receipt.items.map(item => ({
+                  ...item,
+                  original_total_price: item.total_price || (parseFloat(item.price) * item.quantity).toFixed(2)
+                })));
                 // Reset transaction date to original
                 const isoDate = new Date(receipt.transaction_date).toISOString().slice(0, 16);
                 setEditedTransactionDate(isoDate);
@@ -268,17 +298,38 @@ const ReceiptDetail: React.FC = () => {
 
       {showUploadSuccess && (
         <Alert 
-          severity="success" 
-          sx={{ mb: 3 }}
+          severity="warning" 
+          sx={{ mb: 3, border: '2px solid #ed6c02' }}
           onClose={() => setShowUploadSuccess(false)}
         >
-          <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
-            Receipt uploaded successfully! 🎉
+          <Typography variant="h6" sx={{ mb: 1, fontWeight: 'bold' }}>
+            ⚠️ IMPORTANT: Please Verify All Receipt Data
           </Typography>
-          <Typography variant="body2">
-            Please review the extracted details below and use the "Edit Receipt" button to make any corrections if needed. 
-            Accurate data ensures better price adjustment tracking.
+          <Typography variant="body2" sx={{ mb: 2 }}>
+            Receipt parsing is automated but <strong>may contain errors</strong>. Please carefully review and correct:
           </Typography>
+          <Box component="ul" sx={{ mb: 2, pl: 2 }}>
+            <Typography component="li" variant="body2" sx={{ mb: 0.5 }}>
+              <strong>Item Quantities:</strong> Costco receipts don't show quantities - verify each item count
+            </Typography>
+            <Typography component="li" variant="body2" sx={{ mb: 0.5 }}>
+              <strong>Prices:</strong> Ensure per-unit prices are correct (divide total by quantity if needed)
+            </Typography>
+            <Typography component="li" variant="body2" sx={{ mb: 0.5 }}>
+              <strong>Sale Items:</strong> Mark items as "on sale" and enter savings amount if you got discounts
+            </Typography>
+            <Typography component="li" variant="body2" sx={{ mb: 0.5 }}>
+              <strong>Item Codes & Descriptions:</strong> Verify these match your receipt
+            </Typography>
+            <Typography component="li" variant="body2">
+              <strong>Transaction Details:</strong> Check store location, date, and totals
+            </Typography>
+          </Box>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 2, bgcolor: 'rgba(237, 108, 2, 0.1)', borderRadius: 1 }}>
+            <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
+              👉 Use the "Edit Receipt" button below to make corrections
+            </Typography>
+          </Box>
         </Alert>
       )}
 
@@ -330,21 +381,8 @@ const ReceiptDetail: React.FC = () => {
             </Typography>
           )}
         </Box>
+        
       </Paper>
-
-      {editMode && (
-        <Alert severity="info" sx={{ mb: 3 }}>
-          <Typography variant="body2">
-            <strong>Edit Mode:</strong> You can now edit the transaction date, item details, and mark items as on sale. 
-          </Typography>
-          <Typography variant="body2" sx={{ mt: 1 }}>
-            <strong>Tip:</strong> Mark items as "on sale" if you got them at a discounted price to help track savings.
-          </Typography>
-          <Typography variant="body2" sx={{ mt: 1, fontSize: '0.8rem' }}>
-            💡 <em>On mobile: Scroll the table horizontally to access all columns including "On Sale" toggles.</em>
-          </Typography>
-        </Alert>
-      )}
 
       <TableContainer component={Paper} sx={{ overflowX: 'auto' }}>
         <Table sx={{ minWidth: editMode ? 800 : 600 }}>
@@ -353,7 +391,14 @@ const ReceiptDetail: React.FC = () => {
               <TableCell sx={{ minWidth: 100 }}>Item Code</TableCell>
               <TableCell sx={{ minWidth: 200 }}>Description</TableCell>
               <TableCell align="right" sx={{ minWidth: 80 }}>Price</TableCell>
-              <TableCell align="right" sx={{ minWidth: 80 }}>Quantity</TableCell>
+              <TableCell align="right" sx={{ minWidth: 80 }}>
+                Quantity
+                {editMode && (
+                  <Typography variant="caption" color="warning.main" display="block" sx={{ fontSize: '0.7rem', fontWeight: 'bold' }}>
+                    ⚠️ Verify Count
+                  </Typography>
+                )}
+              </TableCell>
               {editMode && <TableCell align="center" sx={{ minWidth: 120 }}>On Sale</TableCell>}
               <TableCell align="right" sx={{ minWidth: 100 }}>Total</TableCell>
               {editMode && <TableCell align="right" sx={{ minWidth: 80 }}>Actions</TableCell>}
@@ -452,7 +497,7 @@ const ReceiptDetail: React.FC = () => {
                   </TableCell>
                 )}
                 <TableCell align="right">
-                  {formatCurrency(item.total_price)}
+                  {formatCurrency(item.original_total_price || item.total_price || (parseFloat(item.price) * item.quantity).toFixed(2))}
                   {item.instant_savings && (
                     <Typography variant="caption" color="success.main" display="block">
                       🏷️ On Sale: {formatCurrency(item.instant_savings)}
