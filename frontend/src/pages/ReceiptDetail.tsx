@@ -88,7 +88,9 @@ const ReceiptDetail: React.FC = () => {
       setReceipt(response.data);
       setEditedItems(response.data.items.map((item: ReceiptItem) => ({
         ...item,
-        original_total_price: item.total_price || (parseFloat(item.price) * item.quantity).toFixed(2)
+        original_total_price: item.total_price || (parseFloat(item.price) * item.quantity).toFixed(2),
+        // Auto-check "on_sale" if item has instant_savings
+        on_sale: Boolean(item.on_sale || (item.instant_savings && parseFloat(item.instant_savings) > 0))
       })));
       // Set the transaction date for editing (convert to YYYY-MM-DDTHH:MM format for datetime-local input)
       const isoDate = new Date(response.data.transaction_date).toISOString().slice(0, 16);
@@ -275,7 +277,9 @@ const ReceiptDetail: React.FC = () => {
                 setEditMode(false);
                 setEditedItems(receipt.items.map(item => ({
                   ...item,
-                  original_total_price: item.total_price || (parseFloat(item.price) * item.quantity).toFixed(2)
+                  original_total_price: item.total_price || (parseFloat(item.price) * item.quantity).toFixed(2),
+                  // Auto-check "on_sale" if item has instant_savings
+                  on_sale: Boolean(item.on_sale || (item.instant_savings && parseFloat(item.instant_savings) > 0))
                 })));
                 // Reset transaction date to original
                 const isoDate = new Date(receipt.transaction_date).toISOString().slice(0, 16);

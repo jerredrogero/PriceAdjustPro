@@ -108,6 +108,7 @@ def upload_receipt(request):
                     existing_receipt.items.all().delete()
                     
                     # Create new line items
+                    price_adjustments_created = 0  # Initialize counter for tracking price adjustment alerts
                     if parsed_data.get('items'):
                         for item_data in parsed_data['items']:
                             try:
@@ -209,6 +210,7 @@ def upload_receipt(request):
                 )
                 
                 # Create LineItem objects only if we have valid items
+                price_adjustments_created = 0  # Initialize counter for tracking price adjustment alerts
                 if parsed_data.get('items'):
                     for item_data in parsed_data['items']:
                         try:
@@ -457,6 +459,7 @@ def api_receipt_upload(request):
             existing_receipt.items.all().delete()
 
             # Create new line items
+            price_adjustments_created = 0  # Initialize counter for tracking price adjustment alerts
             for item_data in parsed_data['items']:
                 LineItem.objects.create(
                     receipt=existing_receipt,
@@ -516,6 +519,7 @@ def api_receipt_upload(request):
         )
         
         # Create LineItem objects only if we have valid items
+        price_adjustments_created = 0  # Initialize counter for tracking price adjustment alerts
         if parsed_data.get('items'):
             for item_data in parsed_data['items']:
                 try:
@@ -532,13 +536,42 @@ def api_receipt_upload(request):
                         original_price=Decimal(str(item_data['original_price'])) if item_data.get('original_price') else None,
                         original_total_price=Decimal(str(item_data['total_price'])) if item_data.get('total_price') else None
                     )
-                    # Check for potential price adjustments for other users
-                    check_for_price_adjustments(line_item, receipt, is_user_edited=True)
-                    # Check if current user can benefit from existing promotions/lower prices
-                    from .utils import check_current_user_for_price_adjustments
-                    check_current_user_for_price_adjustments(line_item, receipt)
+                    # Check for potential price adjustments and count new alerts
+                    try:
+                        # Get count of existing alerts before checking
+                        alerts_before = PriceAdjustmentAlert.objects.filter(
+                            item_code=line_item.item_code,
+                            is_active=True,
+                            is_dismissed=False
+                        ).count()
+                        
+                        logger.info(f"Checking price adjustments for edited item: {line_item.description} (${line_item.price})")
+                        
+                        # Check for price adjustments for ALL users (including same user from different receipts)
+                        check_for_price_adjustments(line_item, receipt, is_user_edited=True)
+                        
+                        # Check if CURRENT user can benefit from existing promotions/lower prices
+                        from .utils import check_current_user_for_price_adjustments
+                        current_user_alerts = check_current_user_for_price_adjustments(line_item, receipt)
+                        price_adjustments_created += current_user_alerts
+                        
+                        # Get count of alerts after checking
+                        alerts_after = PriceAdjustmentAlert.objects.filter(
+                            item_code=line_item.item_code,
+                            is_active=True,
+                            is_dismissed=False
+                        ).count()
+                        
+                        # Increment counter if new alerts were created for other users
+                        if alerts_after > alerts_before + current_user_alerts:
+                            price_adjustments_created += (alerts_after - alerts_before - current_user_alerts)
+                            logger.info(f"Price adjustment alerts created for other users on item {line_item.description} ({line_item.item_code})")
+                            
+                    except Exception as e:
+                        logger.error(f"Error checking price adjustments for {line_item.description}: {str(e)}")
+                    
                 except Exception as e:
-                    logger.error(f"Line item error: {str(e)}")
+                    logger.error(f"Error creating line item: {str(e)}")
                     continue
         
         return JsonResponse({
@@ -861,7 +894,23 @@ def api_check_price_adjustments(request):
 @login_required
 def api_price_adjustments(request):
     """Get active price adjustment alerts for the current user."""
+    
+    def get_transaction_number_for_purchase(alert):
+        """Helper function to find the transaction number for the original purchase."""
+        try:
+            # Find the receipt for this purchase
+            receipt = Receipt.objects.filter(
+                user=alert.user,
+                transaction_date=alert.purchase_date,
+                items__item_code=alert.item_code
+            ).first()
+            return receipt.transaction_number if receipt else None
+        except Exception:
+            return None
+    
     try:
+        logger.info(f"Getting price adjustments for user: {request.user.username}")
+        
         # Get all active alerts for the user
         alerts = PriceAdjustmentAlert.objects.filter(
             user=request.user,
@@ -869,11 +918,14 @@ def api_price_adjustments(request):
             is_dismissed=False
         ).select_related('user')  # Add select_related to optimize queries
 
+        logger.info(f"Found {alerts.count()} active alerts for user {request.user.username}")
+
         # Convert to list and sort by price difference
         alert_data = []
         total_savings = Decimal('0.00')
 
         for alert in alerts:
+            logger.info(f"Processing alert: {alert.item_description} - ${alert.original_price} -> ${alert.lower_price}")
             price_diff = alert.original_price - alert.lower_price
             total_savings += price_diff
             
@@ -893,11 +945,14 @@ def api_price_adjustments(request):
                 'is_official': alert.data_source == 'official_promo',
                 'promotion_title': alert.official_sale_item.promotion.title if alert.official_sale_item else None,
                 'sale_type': alert.official_sale_item.sale_type if alert.official_sale_item else None,
-                'confidence_level': 'high' if alert.data_source == 'official_promo' else 'medium' if alert.data_source == 'ocr_parsed' else 'low'
+                'confidence_level': 'high' if alert.data_source == 'official_promo' else 'medium' if alert.data_source == 'ocr_parsed' else 'low',
+                'transaction_number': get_transaction_number_for_purchase(alert)
             })
 
         # Sort by price difference (highest savings first)
         alert_data.sort(key=lambda x: x['price_difference'], reverse=True)
+
+        logger.info(f"Returning {len(alert_data)} alerts with total savings: ${total_savings}")
 
         return JsonResponse({
             'adjustments': alert_data,
@@ -1092,7 +1147,7 @@ def api_receipt_update(request, transaction_number):
         
         # Update items
         receipt.items.all().delete()  # Remove existing items
-        price_adjustments_created = 0
+        price_adjustments_created = 0  # Initialize counter for tracking price adjustment alerts
         
         for item_data in data.get('items', []):
             try:
@@ -1118,7 +1173,9 @@ def api_receipt_update(request, transaction_number):
                         is_dismissed=False
                     ).count()
                     
-                    # Check for price adjustments for OTHER users (original functionality)
+                    logger.info(f"Checking price adjustments for edited item: {line_item.description} (${line_item.price})")
+                    
+                    # Check for price adjustments for ALL users (including same user from different receipts)
                     check_for_price_adjustments(line_item, receipt, is_user_edited=True)
                     
                     # Check if CURRENT user can benefit from existing promotions/lower prices
@@ -1240,3 +1297,70 @@ def analytics(request):
         'average_receipt_total': str(average_receipt),
         'spending_by_month': spending_by_month,
     })
+
+@login_required
+def debug_alerts(request):
+    """Debug endpoint to check price adjustment alerts."""
+    try:
+        from .models import PriceAdjustmentAlert
+        
+        # Get all alerts for the user
+        all_alerts = PriceAdjustmentAlert.objects.filter(user=request.user)
+        active_alerts = PriceAdjustmentAlert.objects.filter(
+            user=request.user,
+            is_active=True,
+            is_dismissed=False
+        )
+        
+        debug_data = {
+            'user': request.user.username,
+            'total_alerts': all_alerts.count(),
+            'active_alerts': active_alerts.count(),
+            'alerts': []
+        }
+        
+        for alert in all_alerts:
+            debug_data['alerts'].append({
+                'item_description': alert.item_description,
+                'original_price': str(alert.original_price),
+                'lower_price': str(alert.lower_price),
+                'price_difference': str(alert.price_difference),
+                'purchase_date': alert.purchase_date.isoformat(),
+                'days_remaining': alert.days_remaining,
+                'is_active': alert.is_active,
+                'is_dismissed': alert.is_dismissed,
+                'data_source': alert.data_source,
+                'is_expired': alert.is_expired
+            })
+        
+        return JsonResponse(debug_data)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+@login_required
+def reactivate_alerts(request):
+    """Reactivate alerts that should be active under the updated logic."""
+    try:
+        from .models import PriceAdjustmentAlert
+        
+        # Get all alerts for the user that are currently inactive but not dismissed
+        inactive_alerts = PriceAdjustmentAlert.objects.filter(
+            user=request.user,
+            is_active=False,
+            is_dismissed=False
+        )
+        
+        reactivated_count = 0
+        for alert in inactive_alerts:
+            # Check if it should be active under the new logic
+            if not alert.is_expired:
+                alert.is_active = True
+                alert.save()
+                reactivated_count += 1
+        
+        return JsonResponse({
+            'reactivated_count': reactivated_count,
+            'message': f'Reactivated {reactivated_count} alerts'
+        })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)

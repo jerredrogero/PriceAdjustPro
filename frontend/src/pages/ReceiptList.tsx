@@ -48,6 +48,12 @@ interface PriceAdjustmentInfo {
   days_remaining: number;
   original_store: string;
   original_store_number: string;
+  data_source: string;
+  is_official: boolean;
+  promotion_title?: string;
+  sale_type?: string;
+  confidence_level: string;
+  transaction_number?: string;
 }
 
 interface ReceiptItem {

@@ -332,7 +332,14 @@ class PriceAdjustmentAlert(models.Model):
             days_until_promo_ends = (self.official_sale_item.promotion.sale_end_date - timezone.now().date()).days
             return max(0, days_until_promo_ends)
         
-        # For regular price adjustments, use 30-day window from purchase
+        # For same-user price adjustments (user_edit), they're valid for 30 days from creation
+        # Use the alert creation date as the reference point, not current date
+        if self.data_source == 'user_edit':
+            days_since_alert_created = (timezone.now() - self.created_at).days
+            # Costco's price adjustment policy is 30 days
+            return max(0, 30 - days_since_alert_created)
+        
+        # For regular price adjustments (ocr_parsed), use 30-day window from purchase
         days_since_purchase = (timezone.now() - self.purchase_date).days
         return max(0, 30 - days_since_purchase)
 
@@ -342,13 +349,26 @@ class PriceAdjustmentAlert(models.Model):
         if self.data_source == 'official_promo' and self.official_sale_item:
             return timezone.now().date() > self.official_sale_item.promotion.sale_end_date
         
-        # For regular price adjustments, check if 30 days have passed
+        # For same-user price adjustments, check if alert was created more than 30 days ago
+        if self.data_source == 'user_edit':
+            days_since_alert_created = (timezone.now() - self.created_at).days
+            return days_since_alert_created > 30
+        
+        # For regular price adjustments, check if 30 days have passed since purchase
         return self.days_remaining == 0
 
     def save(self, *args, **kwargs):
-        if self.is_expired:
-            self.is_active = False
+        # Don't check expiration on initial creation since created_at won't be set yet
+        is_new_record = self.pk is None
+        
+        # Call super save first so created_at gets set
         super().save(*args, **kwargs)
+        
+        # Now check expiration after the record has been saved and created_at is set
+        if not is_new_record and self.is_expired:
+            self.is_active = False
+            # Save again to update the is_active field, but avoid recursion
+            super().save(update_fields=['is_active'])
 
     @classmethod
     def get_active_alerts(cls, user):
