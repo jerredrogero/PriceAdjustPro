@@ -467,23 +467,23 @@ class PriceAdjustmentAlert(models.Model):
     def confidence_level(self):
         """Get confidence level for this price adjustment."""
         if self.data_source == 'official_promo':
-            return 'high'  # Official promotions are highly reliable
+            return 'High'  # Official promotions are highly reliable
         elif self.data_source == 'user_edit':
-            return 'high'  # User's own receipts are highly reliable
+            return 'High'  # User's own receipts are highly reliable
         elif self.data_source == 'ocr_parsed':
-            return 'medium'  # OCR data from other users is medium confidence
+            return 'Medium'  # OCR data from other users is medium confidence
         else:
-            return 'low'
+            return 'Low'
 
     @property
     def action_required(self):
         """Get the recommended action for this price adjustment."""
         if self.data_source == 'official_promo':
-            return f"Visit any Costco customer service with your membership card and item #{self.item_code}. They'll refund the difference to your original payment method."
+            return f"Visit any Costco customer service with your membership card and list of eligible item #'s. This item's number is {self.item_code}."
         elif self.data_source == 'user_edit':
-            return f"Visit any Costco customer service with your membership card and item #{self.item_code}. They'll refund the difference to your original payment method."
+            return f"Visit any Costco customer service with your membership card and list of eligible item #'s. This item's number is {self.item_code}."
         else:
-            return f"Visit any Costco customer service with your membership card and item #{self.item_code}. They'll verify the current price and refund any difference to your original payment method."
+            return f"Visit any Costco customer service with your membership card and list of eligible item #'s. This item's number is {self.item_code}."
 
     @property
     def location_context(self):

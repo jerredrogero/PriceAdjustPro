@@ -15,6 +15,7 @@ import {
   IconButton,
   Tooltip,
   Snackbar,
+  Link,
 } from '@mui/material';
 import {
   LocationOn as LocationIcon,
@@ -23,7 +24,19 @@ import {
   Close as CloseIcon,
 } from '@mui/icons-material';
 import { format } from 'date-fns';
+import { useNavigate } from 'react-router-dom';
 import api from '../api/axios';
+
+interface SourceDescriptionLink {
+  text: string;
+  url: string;
+  type: 'original' | 'cheaper';
+}
+
+interface SourceDescriptionData {
+  text: string;
+  links: SourceDescriptionLink[];
+}
 
 interface PriceAdjustment {
   item_code: string;
@@ -44,6 +57,7 @@ interface PriceAdjustment {
   confidence_level: string;
   transaction_number?: string;
   source_description: string;
+  source_description_data: SourceDescriptionData;
   source_type_display: string;
   action_required: string;
   location_context: {
@@ -60,6 +74,7 @@ interface ApiResponse {
 
 const PriceAdjustments: React.FC = () => {
   const theme = useTheme();
+  const navigate = useNavigate();
   const [adjustments, setAdjustments] = useState<PriceAdjustment[]>([]);
   const [totalSavings, setTotalSavings] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -107,6 +122,86 @@ const PriceAdjustments: React.FC = () => {
     } finally {
       setDismissing(null);
     }
+  };
+
+  const renderSourceDescriptionWithLinks = (adjustment: PriceAdjustment) => {
+    const { text, links } = adjustment.source_description_data || { text: adjustment.source_description, links: [] };
+    
+    if (!links.length) {
+      return <Typography variant="body2">{text}</Typography>;
+    }
+
+    // Split the text and insert links where appropriate
+    let parts: React.ReactNode[] = [text];
+    
+    links.forEach(link => {
+      const newParts: React.ReactNode[] = [];
+      
+      parts.forEach(part => {
+        if (typeof part === 'string') {
+          // Look for price mentions to insert links
+          if (link.type === 'original' && part.includes(`$${adjustment.current_price.toFixed(2)}`)) {
+            const splitText = part.split(`$${adjustment.current_price.toFixed(2)}`);
+            newParts.push(splitText[0]);
+            newParts.push(
+              <span key={link.url}>
+                ${adjustment.current_price.toFixed(2)} (see{' '}
+                <Link
+                  component="button"
+                  variant="body2"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    navigate(link.url);
+                  }}
+                  sx={{ 
+                    textDecoration: 'underline',
+                    cursor: 'pointer',
+                    '&:hover': { textDecoration: 'underline' }
+                  }}
+                >
+                  {link.text}
+                </Link>
+                )
+              </span>
+            );
+            newParts.push(splitText[1]);
+          } else if (link.type === 'cheaper' && part.includes(`$${adjustment.lower_price.toFixed(2)}`)) {
+            const splitText = part.split(`$${adjustment.lower_price.toFixed(2)}`);
+            newParts.push(splitText[0]);
+            newParts.push(
+              <span key={link.url}>
+                ${adjustment.lower_price.toFixed(2)} (see{' '}
+                <Link
+                  component="button"
+                  variant="body2"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    navigate(link.url);
+                  }}
+                  sx={{ 
+                    textDecoration: 'underline',
+                    cursor: 'pointer',
+                    '&:hover': { textDecoration: 'underline' }
+                  }}
+                >
+                  {link.text}
+                </Link>
+                )
+              </span>
+            );
+            newParts.push(splitText[1]);
+          } else {
+            newParts.push(part);
+          }
+        } else {
+          newParts.push(part);
+        }
+      });
+      
+      parts = newParts;
+    });
+
+    return <Typography variant="body2">{parts}</Typography>;
   };
 
   if (loading) return <LinearProgress />;
@@ -207,9 +302,7 @@ const PriceAdjustments: React.FC = () => {
                     
                     {/* Source Description - Main context */}
                     <Alert severity={adjustment.location_context.type === 'nationwide' ? 'info' : 'success'} sx={{ mb: 2 }}>
-                      <Typography variant="body2">
-                        {adjustment.source_description}
-                      </Typography>
+                      {renderSourceDescriptionWithLinks(adjustment)}
                     </Alert>
 
                     {/* Price Information */}
@@ -264,14 +357,18 @@ const PriceAdjustments: React.FC = () => {
                         label={adjustment.source_type_display}
                         size="small"
                         variant="outlined"
-                        color={adjustment.location_context.type === 'nationwide' ? 'info' : 'default'}
+                        color={
+                          adjustment.source_type_display === 'Official Costco Promotion' ? 'success' :
+                          adjustment.source_type_display === 'Your Purchase History' ? 'primary' :
+                          adjustment.source_type_display === 'Community Price Data' ? 'info' : 'default'
+                        }
                       />
                       <Chip
                         label={`${adjustment.confidence_level} confidence`}
                         size="small"
                         color={
-                          adjustment.confidence_level === 'high' ? 'success' :
-                          adjustment.confidence_level === 'medium' ? 'warning' : 'default'
+                          adjustment.confidence_level.toLowerCase() === 'high' ? 'success' :
+                          adjustment.confidence_level.toLowerCase() === 'medium' ? 'warning' : 'default'
                         }
                         variant="outlined"
                       />
@@ -279,6 +376,11 @@ const PriceAdjustments: React.FC = () => {
                         label={adjustment.location_context.description}
                         size="small"
                         variant="outlined"
+                        color={
+                          adjustment.location_context.type === 'nationwide' ? 'info' :
+                          adjustment.location_context.type === 'same_store' ? 'success' :
+                          adjustment.location_context.type === 'different_store' ? 'warning' : 'default'
+                        }
                       />
                     </Box>
                   </Box>
