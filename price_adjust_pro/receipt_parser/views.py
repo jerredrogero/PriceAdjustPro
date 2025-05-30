@@ -24,6 +24,8 @@ from django.db import migrations
 from django.contrib.auth.models import User
 from django.db.models import Sum, Count, Avg
 from django.db.models.functions import TruncMonth
+from django.core.paginator import Paginator
+from django.db import transaction
 
 from .models import (
     Receipt, LineItem, ItemWarehousePrice, CostcoItem,
@@ -625,18 +627,37 @@ def api_receipt_delete(request, transaction_number):
         # Match by user, item codes, purchase date, and store information
         item_codes = list(receipt.items.values_list('item_code', flat=True))
         
+        # Use a more comprehensive approach to find related alerts
+        # 1. Find alerts where this user bought items that are in this receipt
+        # 2. Match by purchase date (within the same day, accounting for timezone differences)
+        # 3. Optionally match by store (but don't require exact match in case of data inconsistencies)
+        
+        from datetime import timedelta
+        purchase_date_start = (receipt.transaction_date - timedelta(hours=12)).date()
+        purchase_date_end = (receipt.transaction_date + timedelta(hours=12)).date()
+        
         alerts_to_delete = PriceAdjustmentAlert.objects.filter(
             user=request.user,
             item_code__in=item_codes,
-            purchase_date__date=receipt.transaction_date.date(),
-            original_store_number=receipt.store_number
+            purchase_date__date__gte=purchase_date_start,
+            purchase_date__date__lte=purchase_date_end
         )
         
-        deleted_alerts_count = alerts_to_delete.count()
-        alerts_to_delete.delete()
+        # Additional filter: if we have a valid store number, also match by that
+        if receipt.store_number and receipt.store_number not in ['0000', 'null', '', 'None']:
+            alerts_to_delete = alerts_to_delete.filter(
+                original_store_number=receipt.store_number
+            )
         
+        deleted_alerts_count = alerts_to_delete.count()
+        
+        # Log what we're about to delete for debugging
         if deleted_alerts_count > 0:
-            logger.info(f"Deleted {deleted_alerts_count} price adjustment alerts for receipt {transaction_number}")
+            logger.info(f"About to delete {deleted_alerts_count} price adjustment alerts for receipt {transaction_number}")
+            for alert in alerts_to_delete:
+                logger.info(f"  - Alert: {alert.item_description} (${alert.original_price} -> ${alert.lower_price}), Purchase: {alert.purchase_date}")
+        
+        alerts_to_delete.delete()
         
         # Delete the physical file if it exists
         if receipt.file:
@@ -676,18 +697,37 @@ def delete_receipt(request, transaction_number):
         # Find all price adjustment alerts that were created from this receipt
         item_codes = list(receipt.items.values_list('item_code', flat=True))
         
+        # Use a more comprehensive approach to find related alerts
+        # 1. Find alerts where this user bought items that are in this receipt
+        # 2. Match by purchase date (within the same day, accounting for timezone differences)
+        # 3. Optionally match by store (but don't require exact match in case of data inconsistencies)
+        
+        from datetime import timedelta
+        purchase_date_start = (receipt.transaction_date - timedelta(hours=12)).date()
+        purchase_date_end = (receipt.transaction_date + timedelta(hours=12)).date()
+        
         alerts_to_delete = PriceAdjustmentAlert.objects.filter(
             user=request.user,
             item_code__in=item_codes,
-            purchase_date__date=receipt.transaction_date.date(),
-            original_store_number=receipt.store_number
+            purchase_date__date__gte=purchase_date_start,
+            purchase_date__date__lte=purchase_date_end
         )
         
-        deleted_alerts_count = alerts_to_delete.count()
-        alerts_to_delete.delete()
+        # Additional filter: if we have a valid store number, also match by that
+        if receipt.store_number and receipt.store_number not in ['0000', 'null', '', 'None']:
+            alerts_to_delete = alerts_to_delete.filter(
+                original_store_number=receipt.store_number
+            )
         
+        deleted_alerts_count = alerts_to_delete.count()
+        
+        # Log what we're about to delete for debugging
         if deleted_alerts_count > 0:
-            logger.info(f"Deleted {deleted_alerts_count} price adjustment alerts for receipt {transaction_number}")
+            logger.info(f"About to delete {deleted_alerts_count} price adjustment alerts for receipt {transaction_number}")
+            for alert in alerts_to_delete:
+                logger.info(f"  - Alert: {alert.item_description} (${alert.original_price} -> ${alert.lower_price}), Purchase: {alert.purchase_date}")
+        
+        alerts_to_delete.delete()
         
         receipt.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
@@ -908,6 +948,14 @@ def api_price_adjustments(request):
         except Exception:
             return None
     
+    def safe_get_property(obj, prop_name, default=None):
+        """Safely get a property from an object, returning default if it fails."""
+        try:
+            return getattr(obj, prop_name, default)
+        except Exception as e:
+            logger.warning(f"Error accessing {prop_name}: {str(e)}")
+            return default
+    
     try:
         logger.info(f"Getting price adjustments for user: {request.user.username}")
         
@@ -925,29 +973,47 @@ def api_price_adjustments(request):
         total_savings = Decimal('0.00')
 
         for alert in alerts:
-            logger.info(f"Processing alert: {alert.item_description} - ${alert.original_price} -> ${alert.lower_price}")
-            price_diff = alert.original_price - alert.lower_price
-            total_savings += price_diff
-            
-            alert_data.append({
-                'item_code': alert.item_code,
-                'description': alert.item_description,
-                'current_price': float(alert.original_price),
-                'lower_price': float(alert.lower_price),
-                'price_difference': float(price_diff),
-                'store_location': f"Costco {alert.cheaper_store_city}",
-                'store_number': alert.cheaper_store_number,
-                'purchase_date': alert.purchase_date.isoformat(),
-                'days_remaining': alert.days_remaining,
-                'original_store': f"Costco {alert.original_store_city}",
-                'original_store_number': alert.original_store_number,
-                'data_source': alert.data_source,
-                'is_official': alert.data_source == 'official_promo',
-                'promotion_title': alert.official_sale_item.promotion.title if alert.official_sale_item else None,
-                'sale_type': alert.official_sale_item.sale_type if alert.official_sale_item else None,
-                'confidence_level': 'high' if alert.data_source == 'official_promo' else 'medium' if alert.data_source == 'ocr_parsed' else 'low',
-                'transaction_number': get_transaction_number_for_purchase(alert)
-            })
+            try:
+                logger.info(f"Processing alert: {alert.item_description} - ${alert.original_price} -> ${alert.lower_price}")
+                price_diff = alert.original_price - alert.lower_price
+                total_savings += price_diff
+                
+                # Safely get properties that might fail
+                promotion_title = None
+                sale_type = None
+                try:
+                    if alert.official_sale_item and alert.official_sale_item.promotion:
+                        promotion_title = alert.official_sale_item.promotion.title
+                        sale_type = alert.official_sale_item.sale_type
+                except Exception as e:
+                    logger.warning(f"Error accessing official_sale_item: {str(e)}")
+                
+                alert_data.append({
+                    'item_code': alert.item_code,
+                    'description': alert.item_description,
+                    'current_price': float(alert.original_price),
+                    'lower_price': float(alert.lower_price),
+                    'price_difference': float(price_diff),
+                    'store_location': f"Costco {alert.cheaper_store_city}",
+                    'store_number': alert.cheaper_store_number,
+                    'purchase_date': alert.purchase_date.isoformat(),
+                    'days_remaining': safe_get_property(alert, 'days_remaining', 0),
+                    'original_store': f"Costco {alert.original_store_city}",
+                    'original_store_number': alert.original_store_number,
+                    'data_source': alert.data_source,
+                    'is_official': alert.data_source == 'official_promo',
+                    'promotion_title': promotion_title,
+                    'sale_type': sale_type,
+                    'confidence_level': safe_get_property(alert, 'confidence_level', 'medium'),
+                    'transaction_number': get_transaction_number_for_purchase(alert),
+                    'source_description': safe_get_property(alert, 'source_description', 'Price difference found'),
+                    'source_type_display': safe_get_property(alert, 'source_type_display', 'Price Comparison'),
+                    'action_required': safe_get_property(alert, 'action_required', 'Visit customer service at any Costco location'),
+                    'location_context': safe_get_property(alert, 'location_context', {'type': 'unknown', 'description': 'Price difference found'})
+                })
+            except Exception as e:
+                logger.error(f"Error processing alert {alert.id}: {str(e)}")
+                continue
 
         # Sort by price difference (highest savings first)
         alert_data.sort(key=lambda x: x['price_difference'], reverse=True)
@@ -1126,93 +1192,107 @@ def api_receipt_update(request, transaction_number):
                 'error': f'Total quantity ({total_quantity}) must match receipt total ({data["total_items_sold"]})'
             }, status=400)
         
-        # Update receipt fields
-        receipt.store_location = data.get('store_location', receipt.store_location)
-        receipt.store_number = data.get('store_number', receipt.store_number)
-        receipt.subtotal = Decimal(str(data.get('subtotal', receipt.subtotal)))
-        receipt.tax = Decimal(str(data.get('tax', receipt.tax)))
-        receipt.total = Decimal(str(data.get('total', receipt.total)))
-        receipt.instant_savings = Decimal(str(data.get('instant_savings', '0.00'))) if data.get('instant_savings') else None
-        
-        # Update transaction date if provided
-        if data.get('transaction_date'):
-            try:
-                # Parse the ISO format date from frontend
-                from datetime import datetime
-                receipt.transaction_date = datetime.fromisoformat(data['transaction_date'].replace('Z', '+00:00'))
-            except (ValueError, TypeError) as e:
-                logger.warning(f"Failed to parse transaction_date: {data.get('transaction_date')}, error: {str(e)}")
-        
-        receipt.save()
-        
-        # Update items
-        receipt.items.all().delete()  # Remove existing items
         price_adjustments_created = 0  # Initialize counter for tracking price adjustment alerts
         
-        for item_data in data.get('items', []):
-            try:
-                line_item = LineItem.objects.create(
-                    receipt=receipt,
-                    item_code=item_data.get('item_code', '000000'),
-                    description=item_data.get('description', 'Unknown Item'),
-                    price=Decimal(str(item_data.get('price', '0.00'))),
-                    quantity=item_data.get('quantity', 1),
-                    is_taxable=item_data.get('is_taxable', False),
-                    on_sale=item_data.get('on_sale', False),
-                    instant_savings=Decimal(str(item_data['instant_savings'])) if item_data.get('instant_savings') else None,
-                    original_price=Decimal(str(item_data['original_price'])) if item_data.get('original_price') else None,
-                    original_total_price=Decimal(str(item_data['total_price'])) if item_data.get('total_price') else None
-                )
-                
-                # Check for potential price adjustments and count new alerts
+        # Use atomic transaction to ensure all changes are committed together
+        with transaction.atomic():
+            # Update receipt fields
+            receipt.store_location = data.get('store_location', receipt.store_location)
+            receipt.store_number = data.get('store_number', receipt.store_number)
+            receipt.subtotal = Decimal(str(data.get('subtotal', receipt.subtotal)))
+            receipt.tax = Decimal(str(data.get('tax', receipt.tax)))
+            receipt.total = Decimal(str(data.get('total', receipt.total)))
+            receipt.instant_savings = Decimal(str(data.get('instant_savings', '0.00'))) if data.get('instant_savings') else None
+            
+            # Update transaction date if provided
+            if data.get('transaction_date'):
                 try:
-                    # Get count of existing alerts before checking
-                    alerts_before = PriceAdjustmentAlert.objects.filter(
-                        item_code=line_item.item_code,
-                        is_active=True,
-                        is_dismissed=False
-                    ).count()
+                    # Parse the ISO format date from frontend
+                    from datetime import datetime
+                    receipt.transaction_date = datetime.fromisoformat(data['transaction_date'].replace('Z', '+00:00'))
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"Failed to parse transaction_date: {data.get('transaction_date')}, error: {str(e)}")
+            
+            receipt.save()
+            
+            # Update items
+            receipt.items.all().delete()  # Remove existing items
+            
+            # Create all line items first
+            created_line_items = []
+            for item_data in data.get('items', []):
+                try:
+                    line_item = LineItem.objects.create(
+                        receipt=receipt,
+                        item_code=item_data.get('item_code', '000000'),
+                        description=item_data.get('description', 'Unknown Item'),
+                        price=Decimal(str(item_data.get('price', '0.00'))),
+                        quantity=item_data.get('quantity', 1),
+                        is_taxable=item_data.get('is_taxable', False),
+                        on_sale=item_data.get('on_sale', False),
+                        instant_savings=Decimal(str(item_data['instant_savings'])) if item_data.get('instant_savings') else None,
+                        original_price=Decimal(str(item_data['original_price'])) if item_data.get('original_price') else None,
+                        original_total_price=Decimal(str(item_data['total_price'])) if item_data.get('total_price') else None
+                    )
+                    created_line_items.append(line_item)
                     
-                    logger.info(f"Checking price adjustments for edited item: {line_item.description} (${line_item.price})")
-                    
-                    # Check for price adjustments for ALL users (including same user from different receipts)
-                    check_for_price_adjustments(line_item, receipt, is_user_edited=True)
-                    
-                    # Check if CURRENT user can benefit from existing promotions/lower prices
-                    from .utils import check_current_user_for_price_adjustments
-                    current_user_alerts = check_current_user_for_price_adjustments(line_item, receipt)
-                    price_adjustments_created += current_user_alerts
-                    
-                    # Get count of alerts after checking
-                    alerts_after = PriceAdjustmentAlert.objects.filter(
-                        item_code=line_item.item_code,
-                        is_active=True,
-                        is_dismissed=False
-                    ).count()
-                    
-                    # Increment counter if new alerts were created for other users
-                    if alerts_after > alerts_before + current_user_alerts:
-                        price_adjustments_created += (alerts_after - alerts_before - current_user_alerts)
-                        logger.info(f"Price adjustment alerts created for other users on item {line_item.description} ({line_item.item_code})")
-                        
                 except Exception as e:
-                    logger.error(f"Error checking price adjustments for {line_item.description}: {str(e)}")
-                    
-            except Exception as e:
-                logger.error(f"Error creating line item: {str(e)}")
-                continue
-        
-        # Update price database
-        update_price_database({
-            'transaction_number': transaction_number,
-            'store_location': receipt.store_location,
-            'store_number': receipt.store_number,
-            'transaction_date': receipt.transaction_date,
-            'items': data.get('items', []),
-            'subtotal': receipt.subtotal,
-            'tax': receipt.tax,
-            'total': receipt.total
-        }, user=request.user)
+                    logger.error(f"Error creating line item: {str(e)}")
+                    continue
+            
+            # Update price database
+            update_price_database({
+                'transaction_number': transaction_number,
+                'store_location': receipt.store_location,
+                'store_number': receipt.store_number,
+                'transaction_date': receipt.transaction_date,
+                'items': data.get('items', []),
+                'subtotal': receipt.subtotal,
+                'tax': receipt.tax,
+                'total': receipt.total
+            }, user=request.user)
+            
+            # Defer price adjustment checks until after transaction commits
+            def check_price_adjustments_after_commit():
+                """This function runs after the database transaction is committed."""
+                nonlocal price_adjustments_created
+                
+                for line_item in created_line_items:
+                    try:
+                        # Get count of existing alerts before checking
+                        alerts_before = PriceAdjustmentAlert.objects.filter(
+                            item_code=line_item.item_code,
+                            is_active=True,
+                            is_dismissed=False
+                        ).count()
+                        
+                        logger.info(f"Post-commit: Checking price adjustments for edited item: {line_item.description} (${line_item.price})")
+                        
+                        # Check for price adjustments for ALL users (including same user from different receipts)
+                        check_for_price_adjustments(line_item, receipt, is_user_edited=True)
+                        
+                        # Check if CURRENT user can benefit from existing promotions/lower prices
+                        from .utils import check_current_user_for_price_adjustments
+                        current_user_alerts = check_current_user_for_price_adjustments(line_item, receipt)
+                        price_adjustments_created += current_user_alerts
+                        
+                        # Get count of alerts after checking
+                        alerts_after = PriceAdjustmentAlert.objects.filter(
+                            item_code=line_item.item_code,
+                            is_active=True,
+                            is_dismissed=False
+                        ).count()
+                        
+                        # Increment counter if new alerts were created for other users
+                        if alerts_after > alerts_before + current_user_alerts:
+                            price_adjustments_created += (alerts_after - alerts_before - current_user_alerts)
+                            logger.info(f"Price adjustment alerts created for other users on item {line_item.description} ({line_item.item_code})")
+                            
+                    except Exception as e:
+                        logger.error(f"Error checking price adjustments for {line_item.description}: {str(e)}")
+            
+            # Schedule price adjustment checks to run after transaction commits
+            transaction.on_commit(check_price_adjustments_after_commit)
         
         return JsonResponse({
             'message': 'Receipt updated successfully',

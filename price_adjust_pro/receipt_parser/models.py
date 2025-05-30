@@ -326,20 +326,94 @@ class PriceAdjustmentAlert(models.Model):
         return self.original_price - self.lower_price
 
     @property
+    def source_description(self):
+        """Generate a detailed description of where this price adjustment data comes from."""
+        if self.data_source == 'official_promo' and self.official_sale_item:
+            # Official Costco promotion
+            promo = self.official_sale_item.promotion
+            if self.official_sale_item.sale_type == 'discount_only':
+                return f"This item is currently on sale nationwide with ${self.official_sale_item.instant_rebate} off. This promotion is valid until {promo.sale_end_date.strftime('%B %d, %Y')}."
+            else:
+                return f"This item is currently on sale nationwide for ${self.lower_price} (was ${self.original_price}). This promotion is valid until {promo.sale_end_date.strftime('%B %d, %Y')}."
+        
+        elif self.data_source == 'user_edit':
+            # Same user comparing their own receipts
+            return f"You purchased this item at {self.original_store_city} on {self.purchase_date.strftime('%B %d, %Y')} for ${self.original_price}. You later found it for ${self.lower_price} at {self.cheaper_store_city}. You may be eligible for a price adjustment."
+        
+        elif self.data_source == 'ocr_parsed':
+            # Other users' receipts
+            if self.original_store_city == self.cheaper_store_city:
+                return f"You purchased this item at {self.original_store_city} for ${self.original_price}. Another member found it for ${self.lower_price} at the same location. You may have a price adjustment available."
+            else:
+                return f"You purchased this item at {self.original_store_city} for ${self.original_price}. Another member found it for ${self.lower_price} at {self.cheaper_store_city}. You may have a price adjustment available."
+        
+        else:
+            # Fallback
+            return f"You purchased this item for ${self.original_price}. A lower price of ${self.lower_price} was found. You may have a price adjustment available."
+
+    @property
+    def source_type_display(self):
+        """Get a user-friendly display name for the data source."""
+        source_types = {
+            'official_promo': 'Official Costco Promotion',
+            'user_edit': 'Your Purchase History',
+            'ocr_parsed': 'Community Price Data'
+        }
+        return source_types.get(self.data_source, 'Price Comparison')
+
+    @property
+    def confidence_level(self):
+        """Get confidence level for this price adjustment."""
+        if self.data_source == 'official_promo':
+            return 'high'  # Official promotions are highly reliable
+        elif self.data_source == 'user_edit':
+            return 'high'  # User's own receipts are highly reliable
+        elif self.data_source == 'ocr_parsed':
+            return 'medium'  # OCR data from other users is medium confidence
+        else:
+            return 'low'
+
+    @property
+    def action_required(self):
+        """Get the recommended action for this price adjustment."""
+        if self.data_source == 'official_promo':
+            return f"Visit any Costco location or call customer service. They can look up your purchase from {self.purchase_date.strftime('%B %d, %Y')} using your membership card and item #{self.item_code}."
+        elif self.data_source == 'user_edit':
+            return f"Visit customer service at {self.original_store_city} or any Costco location. They can look up both purchases using your membership card and item #{self.item_code}."
+        else:
+            return f"Visit customer service at any Costco location. They can look up your purchase from {self.purchase_date.strftime('%B %d, %Y')} using your membership card and item #{self.item_code} to verify the current price."
+
+    @property
+    def location_context(self):
+        """Get location-specific context for the price adjustment."""
+        if self.data_source == 'official_promo':
+            return {
+                'type': 'nationwide',
+                'description': 'Available at all Costco locations',
+                'store_specific': False
+            }
+        elif self.original_store_number == self.cheaper_store_number:
+            return {
+                'type': 'same_store',
+                'description': f'Price difference at {self.original_store_city}',
+                'store_specific': True
+            }
+        else:
+            return {
+                'type': 'different_store',
+                'description': f'Lower price found at {self.cheaper_store_city}',
+                'store_specific': True
+            }
+
+    @property
     def days_remaining(self):
         # For official promotions, calculate days until promotion ends
         if self.data_source == 'official_promo' and self.official_sale_item:
             days_until_promo_ends = (self.official_sale_item.promotion.sale_end_date - timezone.now().date()).days
             return max(0, days_until_promo_ends)
         
-        # For same-user price adjustments (user_edit), they're valid for 30 days from creation
-        # Use the alert creation date as the reference point, not current date
-        if self.data_source == 'user_edit':
-            days_since_alert_created = (timezone.now() - self.created_at).days
-            # Costco's price adjustment policy is 30 days
-            return max(0, 30 - days_since_alert_created)
-        
-        # For regular price adjustments (ocr_parsed), use 30-day window from purchase
+        # For all other price adjustments (user_edit, ocr_parsed), use 30-day window from purchase
+        # Costco's price adjustment policy is 30 days from the original purchase date
         days_since_purchase = (timezone.now() - self.purchase_date).days
         return max(0, 30 - days_since_purchase)
 
@@ -349,12 +423,7 @@ class PriceAdjustmentAlert(models.Model):
         if self.data_source == 'official_promo' and self.official_sale_item:
             return timezone.now().date() > self.official_sale_item.promotion.sale_end_date
         
-        # For same-user price adjustments, check if alert was created more than 30 days ago
-        if self.data_source == 'user_edit':
-            days_since_alert_created = (timezone.now() - self.created_at).days
-            return days_since_alert_created > 30
-        
-        # For regular price adjustments, check if 30 days have passed since purchase
+        # For all other price adjustments (user_edit, ocr_parsed), check if 30 days have passed since purchase
         return self.days_remaining == 0
 
     def save(self, *args, **kwargs):
