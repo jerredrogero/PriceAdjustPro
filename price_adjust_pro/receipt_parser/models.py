@@ -325,6 +325,51 @@ class PriceAdjustmentAlert(models.Model):
     def price_difference(self):
         return self.original_price - self.lower_price
 
+    def get_original_transaction_number(self):
+        """Find the transaction number for the original purchase."""
+        try:
+            # Find the receipt for the original purchase
+            from datetime import timedelta
+            
+            # Look for receipts within a day of the purchase date to account for timezone differences
+            start_date = self.purchase_date.date() - timedelta(days=1)
+            end_date = self.purchase_date.date() + timedelta(days=1)
+            
+            receipt = Receipt.objects.filter(
+                user=self.user,
+                transaction_date__date__gte=start_date,
+                transaction_date__date__lte=end_date,
+                store_number=self.original_store_number,
+                items__item_code=self.item_code
+            ).first()
+            
+            return receipt.transaction_number if receipt else None
+        except Exception:
+            return None
+    
+    def get_cheaper_transaction_number(self):
+        """Find the transaction number for the cheaper purchase."""
+        try:
+            if self.data_source == 'user_edit':
+                # For user_edit, look for another receipt from the same user with the lower price
+                receipt = Receipt.objects.filter(
+                    user=self.user,
+                    store_number=self.cheaper_store_number,
+                    items__item_code=self.item_code,
+                    items__price=self.lower_price
+                ).exclude(
+                    # Exclude the original purchase receipt
+                    transaction_date__date=self.purchase_date.date(),
+                    store_number=self.original_store_number
+                ).first()
+                
+                return receipt.transaction_number if receipt else None
+            else:
+                # For ocr_parsed, we can't link to other users' receipts for privacy
+                return None
+        except Exception:
+            return None
+
     @property
     def source_description(self):
         """Generate a detailed description of where this price adjustment data comes from."""
@@ -337,15 +382,27 @@ class PriceAdjustmentAlert(models.Model):
                 return f"This item is currently on sale nationwide for ${self.lower_price} (was ${self.original_price}). This promotion is valid until {promo.sale_end_date.strftime('%B %d, %Y')}."
         
         elif self.data_source == 'user_edit':
-            # Same user comparing their own receipts
-            return f"You purchased this item at {self.original_store_city} on {self.purchase_date.strftime('%B %d, %Y')} for ${self.original_price}. You later found it for ${self.lower_price} at {self.cheaper_store_city}. You may be eligible for a price adjustment."
+            # Same user comparing their own receipts - include links
+            original_transaction = self.get_original_transaction_number()
+            cheaper_transaction = self.get_cheaper_transaction_number()
+            
+            original_link = f'<a href="/receipts/{original_transaction}" target="_blank">receipt from {self.purchase_date.strftime("%B %d, %Y")}</a>' if original_transaction else f"receipt from {self.purchase_date.strftime('%B %d, %Y')}"
+            
+            if cheaper_transaction:
+                cheaper_link = f'<a href="/receipts/{cheaper_transaction}" target="_blank">later receipt</a>'
+                return f"You purchased this item at {self.original_store_city} for ${self.original_price} (see {original_link}). You later found it for ${self.lower_price} at {self.cheaper_store_city} (see {cheaper_link}). You may be eligible for a price adjustment."
+            else:
+                return f"You purchased this item at {self.original_store_city} for ${self.original_price} (see {original_link}). You later found it for ${self.lower_price} at {self.cheaper_store_city}. You may be eligible for a price adjustment."
         
         elif self.data_source == 'ocr_parsed':
-            # Other users' receipts
+            # Other users' receipts - only link to the user's own receipt
+            original_transaction = self.get_original_transaction_number()
+            original_link = f'<a href="/receipts/{original_transaction}" target="_blank">your receipt</a>' if original_transaction else "your receipt"
+            
             if self.original_store_city == self.cheaper_store_city:
-                return f"You purchased this item at {self.original_store_city} for ${self.original_price}. Another member found it for ${self.lower_price} at the same location. You may have a price adjustment available."
+                return f"You purchased this item at {self.original_store_city} for ${self.original_price} (see {original_link}). Another member found it for ${self.lower_price} at the same location. You may have a price adjustment available."
             else:
-                return f"You purchased this item at {self.original_store_city} for ${self.original_price}. Another member found it for ${self.lower_price} at {self.cheaper_store_city}. You may have a price adjustment available."
+                return f"You purchased this item at {self.original_store_city} for ${self.original_price} (see {original_link}). Another member found it for ${self.lower_price} at {self.cheaper_store_city}. You may have a price adjustment available."
         
         else:
             # Fallback
@@ -377,11 +434,11 @@ class PriceAdjustmentAlert(models.Model):
     def action_required(self):
         """Get the recommended action for this price adjustment."""
         if self.data_source == 'official_promo':
-            return f"Visit any Costco location or call customer service. They can look up your purchase from {self.purchase_date.strftime('%B %d, %Y')} using your membership card and item #{self.item_code}."
+            return f"Visit any Costco customer service with your membership card and item #{self.item_code}. They'll refund the difference to your original payment method."
         elif self.data_source == 'user_edit':
-            return f"Visit customer service at {self.original_store_city} or any Costco location. They can look up both purchases using your membership card and item #{self.item_code}."
+            return f"Visit any Costco customer service with your membership card and item #{self.item_code}. They'll refund the difference to your original payment method."
         else:
-            return f"Visit customer service at any Costco location. They can look up your purchase from {self.purchase_date.strftime('%B %d, %Y')} using your membership card and item #{self.item_code} to verify the current price."
+            return f"Visit any Costco customer service with your membership card and item #{self.item_code}. They'll verify the current price and refund any difference to your original payment method."
 
     @property
     def location_context(self):

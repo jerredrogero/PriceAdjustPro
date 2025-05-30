@@ -43,6 +43,14 @@ interface PriceAdjustment {
   sale_type?: string;
   confidence_level: string;
   transaction_number?: string;
+  source_description: string;
+  source_type_display: string;
+  action_required: string;
+  location_context: {
+    type: 'nationwide' | 'same_store' | 'different_store';
+    description: string;
+    store_specific: boolean;
+  };
 }
 
 interface ApiResponse {
@@ -182,62 +190,100 @@ const PriceAdjustments: React.FC = () => {
       <Grid container spacing={3}>
         {adjustments.map((adjustment) => (
           <Grid item xs={12} key={adjustment.item_code}>
-            <Card>
+            <Card sx={{ 
+              borderLeft: `4px solid ${
+                adjustment.location_context.type === 'nationwide' ? theme.palette.info.main :
+                adjustment.confidence_level === 'high' ? theme.palette.success.main :
+                adjustment.confidence_level === 'medium' ? theme.palette.warning.main :
+                theme.palette.grey[500]
+              }`
+            }}>
               <CardContent>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
                   <Box sx={{ flex: 1 }}>
                     <Typography variant="h6" gutterBottom>
                       {adjustment.description}
                     </Typography>
                     
+                    {/* Source Description - Main context */}
+                    <Alert severity={adjustment.location_context.type === 'nationwide' ? 'info' : 'success'} sx={{ mb: 2 }}>
+                      <Typography variant="body2">
+                        {adjustment.source_description}
+                      </Typography>
+                    </Alert>
+
+                    {/* Price Information */}
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2, flexWrap: 'wrap' }}>
+                      <Typography variant="body1">
+                        You Paid: <strong>${adjustment.current_price.toFixed(2)}</strong>
+                      </Typography>
+                      <Typography variant="body1" color="success.main" sx={{ fontWeight: 'bold' }}>
+                        Available For: <strong>${adjustment.lower_price.toFixed(2)}</strong>
+                      </Typography>
+                      <Chip
+                        label={`Save $${adjustment.price_difference.toFixed(2)}`}
+                        color="success"
+                        size="medium"
+                        sx={{ fontWeight: 'bold' }}
+                      />
+                    </Box>
+
+                    {/* Action Required */}
+                    <Box sx={{ mb: 2 }}>
+                      <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 'bold', mb: 1 }}>
+                        What to do:
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {adjustment.action_required}
+                      </Typography>
+                    </Box>
+
+                    {/* Additional Context */}
                     <Grid container spacing={2} sx={{ mb: 2 }}>
                       <Grid item xs={12} sm={6}>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <LocationIcon color="action" />
+                          <CalendarIcon color="action" fontSize="small" />
                           <Typography variant="body2" color="text.secondary">
-                            Original Purchase: {adjustment.original_store} #{adjustment.original_store_number && adjustment.original_store_number.toLowerCase() !== 'null' ? adjustment.original_store_number : 'Unknown'}
+                            Purchase: {format(new Date(adjustment.purchase_date), 'MMM d, yyyy')}
                           </Typography>
                         </Box>
                       </Grid>
                       <Grid item xs={12} sm={6}>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <CalendarIcon color="action" />
-                          <Typography variant="body2">
-                            Purchased: {format(new Date(adjustment.purchase_date), 'MMM d, yyyy')}
+                          <TimerIcon color="warning" fontSize="small" />
+                          <Typography variant="body2" color="warning.main">
+                            {adjustment.days_remaining} days remaining
                           </Typography>
                         </Box>
                       </Grid>
                     </Grid>
 
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-                      <Typography variant="body1">
-                        Original Price: ${adjustment.current_price.toFixed(2)}
-                      </Typography>
-                      <Typography variant="body1" color="success.main" sx={{ fontWeight: 'bold' }}>
-                        Sale Price: ${adjustment.lower_price.toFixed(2)}
-                      </Typography>
+                    {/* Source and Confidence */}
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
                       <Chip
-                        label={`Save $${adjustment.price_difference.toFixed(2)}`}
-                        color="success"
+                        label={adjustment.source_type_display}
                         size="small"
+                        variant="outlined"
+                        color={adjustment.location_context.type === 'nationwide' ? 'info' : 'default'}
                       />
-                    </Box>
-
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <LocationIcon color="success" />
-                      <Typography variant="body2" color="text.secondary">
-                        Available at: {adjustment.store_location} #{adjustment.store_number && adjustment.store_number.toLowerCase() !== 'null' ? adjustment.store_number : 'Unknown'}
-                      </Typography>
+                      <Chip
+                        label={`${adjustment.confidence_level} confidence`}
+                        size="small"
+                        color={
+                          adjustment.confidence_level === 'high' ? 'success' :
+                          adjustment.confidence_level === 'medium' ? 'warning' : 'default'
+                        }
+                        variant="outlined"
+                      />
+                      <Chip
+                        label={adjustment.location_context.description}
+                        size="small"
+                        variant="outlined"
+                      />
                     </Box>
                   </Box>
 
-                  <Box sx={{ textAlign: 'right' }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                      <TimerIcon color="warning" />
-                      <Typography variant="body2" color="warning.main">
-                        {adjustment.days_remaining} days remaining
-                      </Typography>
-                    </Box>
+                  <Box sx={{ textAlign: 'right', ml: 2 }}>
                     <Tooltip title="Dismiss this price adjustment alert">
                       <IconButton
                         onClick={() => handleDismissAdjustment(adjustment.item_code)}
