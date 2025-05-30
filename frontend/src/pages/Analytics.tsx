@@ -218,7 +218,7 @@ const Analytics: React.FC = () => {
             <Typography variant="h6" gutterBottom>
               Store Visits
             </Typography>
-            <Box sx={{ height: 300 }}>
+            <Box sx={{ height: 300, width: '100%', overflow: 'hidden' }}>
               <ResponsiveContainer>
                 <PieChart>
                   <Pie
@@ -227,8 +227,15 @@ const Analytics: React.FC = () => {
                     nameKey="name"
                     cx="50%"
                     cy="50%"
-                    outerRadius={100}
-                    label={(entry: { name: string }) => entry.name}
+                    outerRadius={80}
+                    label={(entry: { name: string; value: number }) => {
+                      // Truncate long store names and show visit count
+                      const storeName = entry.name.length > 20 
+                        ? entry.name.substring(0, 17) + '...' 
+                        : entry.name;
+                      return `${storeName} (${entry.value})`;
+                    }}
+                    labelLine={false}
                   >
                     {storeVisits.map((entry, index) => (
                       <Cell
@@ -237,7 +244,9 @@ const Analytics: React.FC = () => {
                       />
                     ))}
                   </Pie>
-                  <Tooltip />
+                  <Tooltip
+                    formatter={(value: number, name: string) => [value, `${name} visits`]}
+                  />
                 </PieChart>
               </ResponsiveContainer>
             </Box>

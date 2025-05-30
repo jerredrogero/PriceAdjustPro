@@ -1109,7 +1109,13 @@ def api_user_analytics(request):
 
             # Track store visits
             store_number = receipt.store_number if receipt.store_number and receipt.store_number.lower() not in ['null', '', 'none', 'n/a'] else 'Unknown'
-            store_key = f"{receipt.store_location} #{store_number}"
+
+            # Check if store_location already contains the store number to avoid duplication
+            if store_number != 'Unknown' and f"#{store_number}" in receipt.store_location:
+                store_key = receipt.store_location  # Use as is since it already contains the number
+            else:
+                store_key = f"{receipt.store_location} #{store_number}"
+
             analytics['most_visited_stores'][store_key] = analytics['most_visited_stores'].get(store_key, 0) + 1
 
             # Process items

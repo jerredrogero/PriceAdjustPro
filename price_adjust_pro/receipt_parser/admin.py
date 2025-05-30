@@ -399,20 +399,23 @@ class PriceAdjustmentAlertAdmin(BaseModelAdmin):
 @admin.register(LineItem)
 class LineItemAdmin(BaseModelAdmin):
     list_display = ('item_code', 'description', 'price', 'quantity', 'total_price', 
-                   'instant_savings_display', 'username', 'receipt_link')
+                   'instant_savings_display', 'username', 'receipt_link', 'created_at', 'updated_at')
     list_filter = (
         'receipt__store_location',
         'receipt__user__username',
         'is_taxable',
         ('instant_savings', admin.EmptyFieldListFilter),
-        'receipt__transaction_date'
+        'receipt__transaction_date',
+        'created_at',
+        'updated_at'
     )
     search_fields = ('item_code', 'description', 'receipt__transaction_number', 'receipt__user__username')
-    readonly_fields = ('total_price',)
+    readonly_fields = ('total_price', 'created_at', 'updated_at')
     raw_id_fields = ('receipt',)
     list_per_page = 100
     show_full_result_count = False
     actions = ['export_as_csv', 'export_as_json']
+    date_hierarchy = 'created_at'
 
     def get_queryset(self, request):
         return super().get_queryset(request)\
@@ -442,14 +445,16 @@ class LineItemAdmin(BaseModelAdmin):
 
     def export_as_csv(self, request, queryset):
         field_names = ['item_code', 'description', 'price', 'quantity', 'discount',
-                      'is_taxable', 'instant_savings', 'original_price', 'username', 'receipt__transaction_number']
+                      'is_taxable', 'instant_savings', 'original_price', 'username', 'receipt__transaction_number',
+                      'created_at', 'updated_at']
 
         response = HttpResponse(content_type='text/csv')
         response['Content-Disposition'] = f'attachment; filename=line_items_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
         writer = csv.writer(response)
 
         writer.writerow(['item_code', 'description', 'price', 'quantity', 'discount',
-                        'is_taxable', 'instant_savings', 'original_price', 'username', 'receipt_transaction_number'])
+                        'is_taxable', 'instant_savings', 'original_price', 'username', 'receipt_transaction_number',
+                        'created_at', 'updated_at'])
         for obj in queryset:
             row = []
             for field in field_names:
@@ -457,6 +462,9 @@ class LineItemAdmin(BaseModelAdmin):
                     row.append(obj.receipt.transaction_number)
                 elif field == 'username':
                     row.append(obj.receipt.user.username if obj.receipt and obj.receipt.user else '')
+                elif field in ['created_at', 'updated_at']:
+                    value = getattr(obj, field)
+                    row.append(value.strftime('%Y-%m-%d %H:%M:%S') if value else '')
                 else:
                     value = getattr(obj, field)
                     row.append(str(value) if value is not None else '')
@@ -478,6 +486,8 @@ class LineItemAdmin(BaseModelAdmin):
                 'instant_savings': str(item.instant_savings) if item.instant_savings else None,
                 'original_price': str(item.original_price) if item.original_price else None,
                 'username': item.receipt.user.username if item.receipt and item.receipt.user else None,
+                'created_at': item.created_at.strftime('%Y-%m-%d %H:%M:%S') if item.created_at else None,
+                'updated_at': item.updated_at.strftime('%Y-%m-%d %H:%M:%S') if item.updated_at else None,
                 'receipt': {
                     'transaction_number': item.receipt.transaction_number,
                     'store_location': item.receipt.store_location,
