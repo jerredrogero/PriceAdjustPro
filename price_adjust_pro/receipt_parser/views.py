@@ -1007,6 +1007,7 @@ def api_price_adjustments(request):
                     'confidence_level': safe_get_property(alert, 'confidence_level', 'medium'),
                     'transaction_number': get_transaction_number_for_purchase(alert),
                     'source_description': safe_get_property(alert, 'source_description', 'Price difference found'),
+                    'source_description_data': safe_get_property(alert, 'source_description_data', {'text': 'Price difference found', 'links': []}),
                     'source_type_display': safe_get_property(alert, 'source_type_display', 'Price Comparison'),
                     'action_required': safe_get_property(alert, 'action_required', 'Visit customer service at any Costco location'),
                     'location_context': safe_get_property(alert, 'location_context', {'type': 'unknown', 'description': 'Price difference found'})
@@ -1175,6 +1176,7 @@ def api_user_analytics(request):
         logger.error(f"Error generating analytics: {str(e)}")
         return JsonResponse({'error': str(e)}, status=500)
 
+@csrf_exempt
 @login_required
 def api_receipt_update(request, transaction_number):
     """Update a receipt after review."""

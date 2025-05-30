@@ -371,42 +371,87 @@ class PriceAdjustmentAlert(models.Model):
             return None
 
     @property
-    def source_description(self):
-        """Generate a detailed description of where this price adjustment data comes from."""
+    def source_description_data(self):
+        """Get structured data for the frontend to create links properly."""
+        original_transaction = self.get_original_transaction_number()
+        cheaper_transaction = self.get_cheaper_transaction_number()
+        
         if self.data_source == 'official_promo' and self.official_sale_item:
             # Official Costco promotion
             promo = self.official_sale_item.promotion
             if self.official_sale_item.sale_type == 'discount_only':
-                return f"This item is currently on sale nationwide with ${self.official_sale_item.instant_rebate} off. This promotion is valid until {promo.sale_end_date.strftime('%B %d, %Y')}."
+                return {
+                    'text': f"This item is currently on sale nationwide with ${self.official_sale_item.instant_rebate} off. This promotion is valid until {promo.sale_end_date.strftime('%B %d, %Y')}.",
+                    'links': []
+                }
             else:
-                return f"This item is currently on sale nationwide for ${self.lower_price} (was ${self.original_price}). This promotion is valid until {promo.sale_end_date.strftime('%B %d, %Y')}."
+                return {
+                    'text': f"This item is currently on sale nationwide for ${self.lower_price} (was ${self.original_price}). This promotion is valid until {promo.sale_end_date.strftime('%B %d, %Y')}.",
+                    'links': []
+                }
         
         elif self.data_source == 'user_edit':
             # Same user comparing their own receipts - include links
-            original_transaction = self.get_original_transaction_number()
-            cheaper_transaction = self.get_cheaper_transaction_number()
-            
-            original_link = f'<a href="/receipts/{original_transaction}" target="_blank">receipt from {self.purchase_date.strftime("%B %d, %Y")}</a>' if original_transaction else f"receipt from {self.purchase_date.strftime('%B %d, %Y')}"
-            
+            links = []
+            if original_transaction:
+                links.append({
+                    'text': f'receipt from {self.purchase_date.strftime("%B %d, %Y")}',
+                    'url': f'/receipts/{original_transaction}',
+                    'type': 'original'
+                })
             if cheaper_transaction:
-                cheaper_link = f'<a href="/receipts/{cheaper_transaction}" target="_blank">later receipt</a>'
-                return f"You purchased this item at {self.original_store_city} for ${self.original_price} (see {original_link}). You later found it for ${self.lower_price} at {self.cheaper_store_city} (see {cheaper_link}). You may be eligible for a price adjustment."
-            else:
-                return f"You purchased this item at {self.original_store_city} for ${self.original_price} (see {original_link}). You later found it for ${self.lower_price} at {self.cheaper_store_city}. You may be eligible for a price adjustment."
+                links.append({
+                    'text': 'later receipt',
+                    'url': f'/receipts/{cheaper_transaction}',
+                    'type': 'cheaper'
+                })
+            
+            return {
+                'text': f"You purchased this item at {self.original_store_city} for ${self.original_price}. You later found it for ${self.lower_price} at {self.cheaper_store_city}. You may be eligible for a price adjustment.",
+                'links': links
+            }
         
         elif self.data_source == 'ocr_parsed':
             # Other users' receipts - only link to the user's own receipt
-            original_transaction = self.get_original_transaction_number()
-            original_link = f'<a href="/receipts/{original_transaction}" target="_blank">your receipt</a>' if original_transaction else "your receipt"
+            links = []
+            if original_transaction:
+                links.append({
+                    'text': 'your receipt',
+                    'url': f'/receipts/{original_transaction}',
+                    'type': 'original'
+                })
             
             if self.original_store_city == self.cheaper_store_city:
-                return f"You purchased this item at {self.original_store_city} for ${self.original_price} (see {original_link}). Another member found it for ${self.lower_price} at the same location. You may have a price adjustment available."
+                text = f"You purchased this item at {self.original_store_city} for ${self.original_price}. Another member found it for ${self.lower_price} at the same location. You may have a price adjustment available."
             else:
-                return f"You purchased this item at {self.original_store_city} for ${self.original_price} (see {original_link}). Another member found it for ${self.lower_price} at {self.cheaper_store_city}. You may have a price adjustment available."
+                text = f"You purchased this item at {self.original_store_city} for ${self.original_price}. Another member found it for ${self.lower_price} at {self.cheaper_store_city}. You may have a price adjustment available."
+            
+            return {
+                'text': text,
+                'links': links
+            }
         
         else:
             # Fallback
-            return f"You purchased this item for ${self.original_price}. A lower price of ${self.lower_price} was found. You may have a price adjustment available."
+            return {
+                'text': f"You purchased this item for ${self.original_price}. A lower price of ${self.lower_price} was found. You may have a price adjustment available.",
+                'links': []
+            }
+
+    @property
+    def source_description(self):
+        """Generate a plain text description for backwards compatibility."""
+        data = self.source_description_data
+        text = data['text']
+        
+        # Add simple text references to receipts
+        for link in data['links']:
+            if link['type'] == 'original':
+                text = text.replace(f"${self.original_price}", f"${self.original_price} (see {link['text']})")
+            elif link['type'] == 'cheaper':
+                text = text.replace(f"${self.lower_price}", f"${self.lower_price} (see {link['text']})")
+        
+        return text
 
     @property
     def source_type_display(self):
