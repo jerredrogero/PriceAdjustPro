@@ -461,7 +461,7 @@ def check_for_price_adjustments(item: LineItem, receipt: Receipt, is_user_edited
                 if purchase.receipt.transaction_date.date() == receipt.transaction_date.date():
                     logger.info(f"Skipping same-date purchase: {purchase.receipt.transaction_date.date()}")
                     continue
-                    
+                
                 logger.info(f"Processing same-user price adjustment: ${purchase.price} -> ${item.price}")
                 
                 # For SAME USER: Always check for price adjustments, even if current item is on sale
@@ -1271,6 +1271,11 @@ def check_current_user_for_price_adjustments(item: LineItem, receipt: Receipt) -
     
     try:
         if not item.item_code:
+            return 0
+
+        # Skip if this item was bought on sale - user already got the discount
+        if item.on_sale or (item.instant_savings and item.instant_savings > 0):
+            logger.info(f"Skipping price adjustment check for {item.description} - item was bought on sale")
             return 0
 
         # Check official promotions first (highest trust)
