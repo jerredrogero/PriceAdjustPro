@@ -74,6 +74,17 @@ const OnSale: React.FC = () => {
   const extractCategory = (description: string): string => {
     const desc = description.toLowerCase();
     
+    // Pet Supplies (check this before Baby & Kids to avoid "toy" conflicts)
+    if (desc.includes('kong') || desc.includes('pet') || desc.includes('dog') || 
+        desc.includes('cat') || desc.includes('puppy') || desc.includes('kitten') || 
+        desc.includes('bird') || desc.includes('fish') || desc.includes('reptile') ||
+        desc.includes('pet food') || desc.includes('dog food') || desc.includes('cat food') ||
+        desc.includes('treats') || desc.includes('leash') || desc.includes('collar') ||
+        desc.includes('litter') || desc.includes('aquarium') || desc.includes('pet toy') ||
+        desc.includes('chew') || desc.includes('pet bed') || desc.includes('pet carrier')) {
+      return 'Pet Supplies';
+    }
+    
     // Food & Beverages
     if (desc.includes('organic') || desc.includes('fruit') || desc.includes('vegetable') || 
         desc.includes('meat') || desc.includes('chicken') || desc.includes('beef') || 
@@ -99,7 +110,16 @@ const OnSale: React.FC = () => {
     if (desc.includes('vitamin') || desc.includes('supplement') || desc.includes('lotion') || 
         desc.includes('shampoo') || desc.includes('soap') || desc.includes('toothpaste') || 
         desc.includes('cosmetic') || desc.includes('skincare') || desc.includes('perfume') ||
-        desc.includes('deodorant') || desc.includes('health') || desc.includes('beauty')) {
+        desc.includes('deodorant') || desc.includes('health') || desc.includes('beauty') ||
+        desc.includes('fiber') || desc.includes('gummies') || desc.includes('gummy') ||
+        desc.includes('probiotic') || desc.includes('omega') || desc.includes('multivitamin') ||
+        desc.includes('razor') || desc.includes('gillette') || desc.includes('shave') ||
+        desc.includes('cartridge') || desc.includes('blade') || desc.includes('personal care') ||
+        desc.includes('oral care') || desc.includes('dental') || desc.includes('mouthwash') ||
+        desc.includes('sunscreen') || desc.includes('moisturizer') || desc.includes('serum') ||
+        desc.includes('cream') || desc.includes('ointment') || desc.includes('chapstick') ||
+        desc.includes('lip balm') || desc.includes('medicine') || desc.includes('pain relief') ||
+        desc.includes('allergy') || desc.includes('cold') || desc.includes('flu')) {
       return 'Health & Beauty';
     }
     
@@ -127,10 +147,10 @@ const OnSale: React.FC = () => {
       return 'Home & Garden';
     }
     
-    // Baby & Kids
+    // Baby & Kids (check this after Pet Supplies to avoid conflicts)
     if (desc.includes('baby') || desc.includes('infant') || desc.includes('kid') || 
-        desc.includes('child') || desc.includes('diaper') || desc.includes('toy') || 
-        desc.includes('formula') || desc.includes('stroller')) {
+        desc.includes('child') || desc.includes('diaper') || desc.includes('formula') || 
+        desc.includes('stroller') || (desc.includes('toy') && !desc.includes('pet'))) {
       return 'Baby & Kids';
     }
     
@@ -185,6 +205,18 @@ const OnSale: React.FC = () => {
 
   const formatPrice = (price: number | null): string => {
     return price ? `$${price.toFixed(2)}` : 'N/A';
+  };
+
+  const formatEndDate = (dateString: string): string => {
+    // Parse the date string as a local date to avoid timezone issues
+    const [year, month, day] = dateString.split('-').map(Number);
+    const endDate = new Date(year, month - 1, day); // month - 1 because JS months are 0-indexed
+    
+    return endDate.toLocaleDateString('en-US', {
+      month: 'numeric',
+      day: 'numeric', 
+      year: 'numeric'
+    });
   };
 
   const formatDaysRemaining = (days: number): string => {
@@ -306,7 +338,7 @@ const OnSale: React.FC = () => {
                     {promo.items_count} items on sale
                   </Typography>
                   <Typography variant="body2">
-                    Ends: {new Date(promo.sale_end_date).toLocaleDateString()}
+                    Ends: {formatEndDate(promo.sale_end_date)}
                   </Typography>
                 </Box>
               </Grid>

@@ -29,6 +29,8 @@ import os
 import logging
 from .utils import process_official_promotion
 from django.middleware.csrf import get_token
+from decimal import Decimal, InvalidOperation
+import io
 
 logger = logging.getLogger(__name__)
 
@@ -773,6 +775,11 @@ class CostcoPromotionAdmin(admin.ModelAdmin):
                 self.admin_site.admin_view(self.bulk_upload_view),
                 name='receipt_parser_costcopromotion_bulk_upload',
             ),
+            path(
+                '<int:promotion_id>/csv-import/',
+                self.admin_site.admin_view(self.csv_import_view),
+                name='receipt_parser_costcopromotion_csv_import',
+            ),
         ]
         return custom_urls + urls
     
@@ -832,6 +839,160 @@ class CostcoPromotionAdmin(admin.ModelAdmin):
             'has_change_permission': self.has_change_permission(request, promotion),
         }
         return render(request, 'admin/receipt_parser/bulk_upload.html', context)
+    
+    def csv_import_view(self, request, promotion_id):
+        """Custom view for importing sale items from CSV."""
+        promotion = get_object_or_404(CostcoPromotion, id=promotion_id)
+        
+        if request.method == 'POST':
+            csv_file = request.FILES.get('csv_file')
+            
+            if not csv_file:
+                messages.error(request, 'Please select a CSV file to upload.')
+                return redirect(request.path)
+            
+            if not csv_file.name.endswith('.csv'):
+                messages.error(request, 'Please upload a CSV file.')
+                return redirect(request.path)
+            
+            try:
+                # Read and process the CSV
+                file_data = csv_file.read().decode('utf-8')
+                csv_reader = csv.DictReader(io.StringIO(file_data))
+                
+                # Validate required columns
+                required_columns = ['item_code', 'description', 'sale_type']
+                missing_columns = [col for col in required_columns if col not in csv_reader.fieldnames]
+                
+                if missing_columns:
+                    messages.error(request, f'Missing required columns: {", ".join(missing_columns)}')
+                    return redirect(request.path)
+                
+                # Process the data
+                created_items = []
+                errors = []
+                updated_items = 0
+                
+                for row_num, row in enumerate(csv_reader, start=2):  # Start at 2 to account for header
+                    try:
+                        # Clean and validate data
+                        item_code = row.get('item_code', '').strip()
+                        description = row.get('description', '').strip()
+                        sale_type = row.get('sale_type', 'instant_rebate').strip()
+                        
+                        if not item_code or not description:
+                            errors.append(f'Row {row_num}: Missing item_code or description')
+                            continue
+                        
+                        # Parse prices
+                        regular_price = None
+                        sale_price = None
+                        instant_rebate = None
+                        
+                        if row.get('regular_price'):
+                            try:
+                                regular_price = Decimal(str(row['regular_price']).replace('$', '').replace(',', '').strip())
+                            except (ValueError, InvalidOperation):
+                                errors.append(f'Row {row_num}: Invalid regular_price format')
+                                continue
+                        
+                        if row.get('sale_price'):
+                            try:
+                                sale_price = Decimal(str(row['sale_price']).replace('$', '').replace(',', '').strip())
+                            except (ValueError, InvalidOperation):
+                                errors.append(f'Row {row_num}: Invalid sale_price format')
+                                continue
+                        
+                        if row.get('instant_rebate'):
+                            try:
+                                instant_rebate = Decimal(str(row['instant_rebate']).replace('$', '').replace(',', '').strip())
+                            except (ValueError, InvalidOperation):
+                                errors.append(f'Row {row_num}: Invalid instant_rebate format')
+                                continue
+                        
+                        # Validate sale_type
+                        valid_sale_types = ['instant_rebate', 'discount_only', 'markdown', 'member_only', 'manufacturer']
+                        if sale_type not in valid_sale_types:
+                            errors.append(f'Row {row_num}: Invalid sale_type "{sale_type}". Must be one of: {", ".join(valid_sale_types)}')
+                            continue
+                        
+                        # Create or update the sale item
+                        sale_item, created = OfficialSaleItem.objects.update_or_create(
+                            promotion=promotion,
+                            item_code=item_code,
+                            defaults={
+                                'description': description,
+                                'regular_price': regular_price,
+                                'sale_price': sale_price,
+                                'instant_rebate': instant_rebate,
+                                'sale_type': sale_type,
+                                'alerts_created': 0  # Will be updated when processing
+                            }
+                        )
+                        
+                        if created:
+                            created_items.append(sale_item)
+                        else:
+                            updated_items += 1
+                            
+                    except Exception as e:
+                        errors.append(f'Row {row_num}: {str(e)}')
+                        continue
+                
+                # Show results
+                if created_items:
+                    messages.success(request, f'Successfully imported {len(created_items)} new sale items.')
+                
+                if updated_items:
+                    messages.info(request, f'Updated {updated_items} existing sale items.')
+                
+                if errors:
+                    for error in errors[:10]:  # Show first 10 errors
+                        messages.error(request, error)
+                    if len(errors) > 10:
+                        messages.error(request, f'... and {len(errors) - 10} more errors.')
+                
+                # Optionally create price adjustment alerts
+                if created_items and request.POST.get('create_alerts'):
+                    from .utils import create_official_price_alerts
+                    total_alerts = 0
+                    
+                    for sale_item in created_items:
+                        try:
+                            alerts_created = create_official_price_alerts(sale_item)
+                            sale_item.alerts_created = alerts_created
+                            sale_item.save()
+                            total_alerts += alerts_created
+                        except Exception as e:
+                            logger.error(f'Error creating alerts for {sale_item.description}: {str(e)}')
+                    
+                    if total_alerts > 0:
+                        messages.success(request, f'Created {total_alerts} price adjustment alerts for users.')
+                
+                return redirect('admin:receipt_parser_costcopromotion_change', promotion.id)
+                
+            except Exception as e:
+                logger.error(f'Error processing CSV import: {str(e)}')
+                messages.error(request, f'Error processing CSV file: {str(e)}')
+                return redirect(request.path)
+        
+        # GET request - show the upload form
+        context = {
+            'promotion': promotion,
+            'title': f'CSV Import for {promotion.title}',
+            'opts': self.model._meta,
+            'has_change_permission': self.has_change_permission(request, promotion),
+            'csv_template_columns': [
+                'item_code',
+                'description', 
+                'regular_price',
+                'sale_price',
+                'instant_rebate',
+                'sale_type',
+                'notes'
+            ]
+        }
+        return render(request, 'admin/receipt_parser/csv_import.html', context)
     
     def pages_count(self, obj):
         return obj.pages.count()

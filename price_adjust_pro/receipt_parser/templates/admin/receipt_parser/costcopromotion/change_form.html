@@ -9,6 +9,11 @@
                 Bulk Upload Images
             </a>
         </li>
+        <li>
+            <a href="{% url 'admin:receipt_parser_costcopromotion_csv_import' object_id %}" class="addlink" style="background-image: url('{% static 'admin/img/icon-addlink.svg' %}');">
+                CSV Import
+            </a>
+        </li>
     {% endif %}
 {% endblock %}
 

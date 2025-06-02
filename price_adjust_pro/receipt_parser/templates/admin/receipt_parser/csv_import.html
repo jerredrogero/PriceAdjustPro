@@ -1,0 +1,239 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block extrahead %}
+    {{ block.super }}
+    <style>
+        .csv-import-container {
+            max-width: 1000px;
+            margin: 20px auto;
+            padding: 20px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .upload-section {
+            background: #f8f9fa;
+            border: 2px dashed #dee2e6;
+            border-radius: 8px;
+            padding: 30px;
+            text-align: center;
+            margin: 20px 0;
+        }
+        
+        .upload-section:hover {
+            border-color: #0c63e4;
+            background: #f0f8ff;
+        }
+        
+        .template-section {
+            background: #e8f4fd;
+            border: 1px solid #b8daff;
+            border-radius: 4px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        
+        .column-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            margin: 15px 0;
+        }
+        
+        .column-item {
+            background: white;
+            padding: 10px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+            font-family: monospace;
+        }
+        
+        .required {
+            color: #dc3545;
+            font-weight: bold;
+        }
+        
+        .optional {
+            color: #6c757d;
+        }
+        
+        .submit-section {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 4px;
+            margin: 20px 0;
+        }
+        
+        .checkbox-option {
+            margin: 10px 0;
+        }
+        
+        .btn-primary {
+            background-color: #0c63e4;
+            border-color: #0c63e4;
+            color: white;
+            padding: 10px 30px;
+            border-radius: 4px;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        
+        .btn-primary:hover {
+            background-color: #0056b3;
+        }
+        
+        .btn-secondary {
+            background-color: #6c757d;
+            border-color: #6c757d;
+            color: white;
+            padding: 8px 20px;
+            border-radius: 4px;
+            border: none;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            margin-left: 10px;
+        }
+        
+        .example-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+            font-size: 14px;
+        }
+        
+        .example-table th,
+        .example-table td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        
+        .example-table th {
+            background-color: #f2f2f2;
+            font-weight: bold;
+        }
+    </style>
+{% endblock %}
+
+{% block content %}
+<div class="csv-import-container">
+    <h1>{{ title }}</h1>
+    
+    <div class="template-section">
+        <h2>📋 CSV Format Requirements</h2>
+        <p>Your CSV file must include the following columns:</p>
+        
+        <div class="column-list">
+            <div class="column-item">
+                <strong class="required">item_code</strong><br>
+                <small>Costco item number</small>
+            </div>
+            <div class="column-item">
+                <strong class="required">description</strong><br>
+                <small>Product name</small>
+            </div>
+            <div class="column-item">
+                <strong class="required">sale_type</strong><br>
+                <small>instant_rebate, markdown, etc.</small>
+            </div>
+            <div class="column-item">
+                <strong class="optional">regular_price</strong><br>
+                <small>Original price (optional)</small>
+            </div>
+            <div class="column-item">
+                <strong class="optional">sale_price</strong><br>
+                <small>Sale price (optional)</small>
+            </div>
+            <div class="column-item">
+                <strong class="optional">instant_rebate</strong><br>
+                <small>Rebate amount (optional)</small>
+            </div>
+            <div class="column-item">
+                <strong class="optional">notes</strong><br>
+                <small>Internal notes (optional)</small>
+            </div>
+        </div>
+        
+        <h3>📝 Example CSV Format:</h3>
+        <table class="example-table">
+            <thead>
+                <tr>
+                    <th>item_code</th>
+                    <th>description</th>
+                    <th>sale_type</th>
+                    <th>regular_price</th>
+                    <th>sale_price</th>
+                    <th>instant_rebate</th>
+                    <th>notes</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>1234567</td>
+                    <td>Organic Bananas 3 lbs</td>
+                    <td>markdown</td>
+                    <td>4.99</td>
+                    <td>3.99</td>
+                    <td></td>
+                    <td>Fresh produce sale</td>
+                </tr>
+                <tr>
+                    <td>7654321</td>
+                    <td>Vitamin D3 Supplements</td>
+                    <td>instant_rebate</td>
+                    <td>19.99</td>
+                    <td></td>
+                    <td>5.00</td>
+                    <td>Health & wellness</td>
+                </tr>
+            </tbody>
+        </table>
+        
+        <p><strong>Valid sale_type values:</strong> instant_rebate, discount_only, markdown, member_only, manufacturer</p>
+        <p><strong>Price formats:</strong> Use numbers only (no $ signs, commas are OK). Examples: 19.99, 1,299.00</p>
+    </div>
+
+    <form method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+        
+        <div class="upload-section">
+            <h2>📁 Upload CSV File</h2>
+            <input type="file" name="csv_file" accept=".csv" required style="margin: 20px 0; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
+            <p>Select your CSV file containing the sale items data.</p>
+        </div>
+        
+        <div class="submit-section">
+            <h3>⚙️ Import Options</h3>
+            
+            <div class="checkbox-option">
+                <label>
+                    <input type="checkbox" name="create_alerts" value="1" checked>
+                    <strong>Create price adjustment alerts</strong> - Automatically notify users who can benefit from these sales
+                </label>
+            </div>
+            
+            <p><em>Note: Existing items with the same item_code will be updated with new data.</em></p>
+            
+            <button type="submit" class="btn-primary">Import CSV Data</button>
+            <a href="{% url 'admin:receipt_parser_costcopromotion_change' promotion.id %}" class="btn-secondary">Cancel</a>
+        </div>
+    </form>
+    
+    <div class="template-section" style="margin-top: 30px;">
+        <h3>💡 Tips for Success</h3>
+        <ul>
+            <li>Double-check your data before uploading - this will create alerts for users</li>
+            <li>Use consistent formatting for prices (no currency symbols)</li>
+            <li>Make sure item codes are accurate Costco item numbers</li>
+            <li>For rebates, you can use either sale_price OR instant_rebate (not both)</li>
+            <li>The import process will show you detailed results and any errors</li>
+        </ul>
+    </div>
+</div>
+{% endblock %} 
