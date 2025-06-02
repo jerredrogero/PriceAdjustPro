@@ -29,7 +29,7 @@ from django.db import transaction
 
 from .models import (
     Receipt, LineItem, ItemWarehousePrice, CostcoItem,
-    CostcoWarehouse, PriceAdjustmentAlert
+    CostcoWarehouse, PriceAdjustmentAlert, OfficialSaleItem, CostcoPromotion
 )
 from .utils import (
     process_receipt_pdf, extract_text_from_pdf, parse_receipt,
@@ -1451,4 +1451,74 @@ def reactivate_alerts(request):
             'message': f'Reactivated {reactivated_count} alerts'
         })
     except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+@login_required
+def api_current_sales(request):
+    """Get current sales/promotions from official weekly flyers."""
+    try:
+        from .models import OfficialSaleItem, CostcoPromotion
+        from datetime import date
+        
+        # Get currently active promotions
+        current_date = date.today()
+        active_promotions = CostcoPromotion.objects.filter(
+            sale_start_date__lte=current_date,
+            sale_end_date__gte=current_date,
+            is_processed=True
+        ).order_by('-sale_start_date')
+        
+        # Get all sale items from active promotions
+        current_sales = OfficialSaleItem.objects.filter(
+            promotion__in=active_promotions
+        ).select_related('promotion').order_by('promotion__sale_start_date', 'description')
+        
+        # Format the data for frontend
+        sales_data = []
+        for sale_item in current_sales:
+            # Calculate savings
+            savings = None
+            if sale_item.sale_type == 'discount_only':
+                savings = sale_item.instant_rebate
+            elif sale_item.regular_price and sale_item.sale_price:
+                savings = sale_item.regular_price - sale_item.sale_price
+            elif sale_item.instant_rebate:
+                savings = sale_item.instant_rebate
+            
+            # Calculate days remaining
+            days_remaining = (sale_item.promotion.sale_end_date - current_date).days
+            
+            sales_data.append({
+                'id': sale_item.id,
+                'item_code': sale_item.item_code,
+                'description': sale_item.description,
+                'regular_price': float(sale_item.regular_price) if sale_item.regular_price else None,
+                'sale_price': float(sale_item.sale_price) if sale_item.sale_price else None,
+                'instant_rebate': float(sale_item.instant_rebate) if sale_item.instant_rebate else None,
+                'savings': float(savings) if savings else None,
+                'sale_type': sale_item.sale_type,
+                'promotion': {
+                    'title': sale_item.promotion.title,
+                    'sale_start_date': sale_item.promotion.sale_start_date.isoformat(),
+                    'sale_end_date': sale_item.promotion.sale_end_date.isoformat(),
+                    'days_remaining': days_remaining
+                }
+            })
+        
+        return JsonResponse({
+            'sales': sales_data,
+            'total_count': len(sales_data),
+            'active_promotions': [
+                {
+                    'title': promo.title,
+                    'sale_start_date': promo.sale_start_date.isoformat(),
+                    'sale_end_date': promo.sale_end_date.isoformat(),
+                    'items_count': promo.sale_items.count()
+                }
+                for promo in active_promotions
+            ]
+        })
+        
+    except Exception as e:
+        logger.error(f"Error fetching current sales: {str(e)}")
         return JsonResponse({'error': str(e)}, status=500)

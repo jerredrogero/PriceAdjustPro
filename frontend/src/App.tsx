@@ -11,6 +11,7 @@ import ReceiptList from './pages/ReceiptList';
 import ReceiptUpload from './pages/ReceiptUpload';
 import PriceAdjustments from './pages/PriceAdjustments';
 import Analytics from './pages/Analytics';
+import OnSale from './pages/OnSale';
 import Landing from './pages/Landing';
 import Navigation from './components/Navigation';
 import ReceiptDetail from './pages/ReceiptDetail';
@@ -80,6 +81,7 @@ const AppContent: React.FC = () => {
           <Route path="/receipts/:transactionNumber" element={<ReceiptDetail />} />
           <Route path="/upload" element={<ReceiptUpload />} />
           <Route path="/price-adjustments" element={<PriceAdjustments />} />
+          <Route path="/on-sale" element={<OnSale />} />
           <Route path="/analytics" element={<Analytics />} />
           </Route>
         </Routes>

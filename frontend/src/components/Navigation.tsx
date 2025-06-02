@@ -20,6 +20,7 @@ import {
   Menu as MenuIcon,
   Receipt as ReceiptIcon,
   LocalOffer as AdjustmentIcon,
+  LocalOffer as SaleIcon,
   CloudUpload as UploadIcon,
   Logout as LogoutIcon,
   Analytics as AnalyticsIcon,
@@ -110,6 +111,7 @@ const Navigation: React.FC<NavigationProps> = ({ user }) => {
       path: '/price-adjustments',
       badge: adjustmentCount,
     },
+    { text: 'On Sale', icon: <SaleIcon />, path: '/on-sale' },
     { text: 'Analytics', icon: <AnalyticsIcon />, path: '/analytics' },
     { text: 'Upload', icon: <UploadIcon />, path: '/upload' },
   ];
