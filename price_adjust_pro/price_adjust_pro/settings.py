@@ -196,7 +196,7 @@ EMAIL_PORT = 587
 EMAIL_USE_TLS = True
 EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', 'noreply@priceadjustpro')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')
-DEFAULT_FROM_EMAIL = 'noreply@priceadjustpro'
+DEFAULT_FROM_EMAIL = os.getenv('EMAIL_HOST_USER', 'noreply@priceadjustpro')
 EMAIL_TIMEOUT = 30
 
 # SSL settings for email
