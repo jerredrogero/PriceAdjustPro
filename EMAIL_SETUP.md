@@ -2,14 +2,41 @@
 
 To enable password reset functionality, you need to configure the following environment variables:
 
-## Required Environment Variables
+## For Production (Recommended): Use SendGrid
+
+1. **Sign up for SendGrid** at https://sendgrid.com (free tier available)
+2. **Create an API key** in SendGrid dashboard
+3. **Add these environment variables to Render:**
+   ```bash
+   EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend
+   EMAIL_HOST=smtp.sendgrid.net
+   EMAIL_PORT=587
+   EMAIL_USE_TLS=True
+   EMAIL_HOST_USER=apikey
+   EMAIL_HOST_PASSWORD=your-sendgrid-api-key
+   ```
+
+## Alternative: Use Gmail with App Password
+
+1. **Enable 2FA** on your Gmail account
+2. **Create an app-specific password**
+3. **Use these settings:**
+   ```bash
+   EMAIL_HOST=smtp.gmail.com
+   EMAIL_PORT=587
+   EMAIL_USE_TLS=True
+   EMAIL_HOST_USER=your-gmail@gmail.com
+   EMAIL_HOST_PASSWORD=your-app-specific-password
+   ```
+
+## For Development: iCloud Email
 
 Add these to your `.env` file:
 
 ```bash
 # Email configuration for password reset
 EMAIL_HOST_USER=noreply@priceadjustpro
-EMAIL_HOST_PASSWORD=your-icloud-app-specific-password
+EMAIL_HOST_PASSWORD=bocx-nvcy-wgss-cbsp
 ```
 
 ## Setting Up iCloud Email
@@ -52,4 +79,5 @@ If emails aren't sending:
 1. Verify your app-specific password is correct
 2. Check that 2FA is enabled on your Apple ID
 3. Ensure the email address in `EMAIL_HOST_USER` is valid
-4. Check Django logs for email sending errors 
+4. Check Django logs for email sending errors
+5. **For cloud hosting**: iCloud often blocks cloud server IPs - use SendGrid or Gmail instead 
