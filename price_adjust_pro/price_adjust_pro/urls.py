@@ -298,8 +298,15 @@ PriceAdjustPro Team
                     print("=" * 50)
                     return JsonResponse({'message': 'Password reset email logged to console (development mode).'})
                 else:
-                    # In production, re-raise the error
-                    return JsonResponse({'error': 'Failed to send reset email'}, status=500)
+                    # In production, also log to console when SMTP fails
+                    print("=" * 50)
+                    print("PASSWORD RESET EMAIL (SMTP Failed - Console Fallback)")
+                    print("=" * 50)
+                    print(f"To: {email}")
+                    print(f"Subject: {subject}")
+                    print(f"Message:\n{message}")
+                    print("=" * 50)
+                    return JsonResponse({'message': 'Password reset email logged to server console (SMTP unavailable).'})
             
         except Exception as e:
             print(f"Password reset error: {str(e)}")
