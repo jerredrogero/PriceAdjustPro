@@ -275,6 +275,11 @@ PriceAdjustPro Team
             """
             
             try:
+                print(f"Attempting to send email from {settings.DEFAULT_FROM_EMAIL} to {email}")
+                print(f"SMTP settings: {settings.EMAIL_HOST}:{settings.EMAIL_PORT}")
+                print(f"Using TLS: {settings.EMAIL_USE_TLS}")
+                print(f"Email user: {settings.EMAIL_HOST_USER}")
+                
                 send_mail(
                     subject,
                     message,
@@ -283,6 +288,7 @@ PriceAdjustPro Team
                     fail_silently=False,
                 )
                 
+                print(f"Email sent successfully to {email}")
                 return JsonResponse({'message': 'If an account with this email exists, a password reset link has been sent.'})
                 
             except Exception as email_error:
