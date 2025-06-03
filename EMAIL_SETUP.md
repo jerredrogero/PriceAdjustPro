@@ -35,7 +35,7 @@ Add these to your `.env` file:
 
 ```bash
 # Email configuration for password reset
-EMAIL_HOST_USER=noreply@priceadjustpro
+EMAIL_HOST_USER=noreply@priceadjustpro.com
 EMAIL_HOST_PASSWORD=bocx-nvcy-wgss-cbsp
 ```
 
