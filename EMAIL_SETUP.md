@@ -1,0 +1,55 @@
+# Email Setup for Password Reset
+
+To enable password reset functionality, you need to configure the following environment variables:
+
+## Required Environment Variables
+
+Add these to your `.env` file:
+
+```bash
+# Email configuration for password reset
+EMAIL_HOST_USER=noreply@priceadjustpro
+EMAIL_HOST_PASSWORD=your-icloud-app-specific-password
+```
+
+## Setting Up iCloud Email
+
+1. **Create an App-Specific Password for iCloud:**
+   - Go to [appleid.apple.com](https://appleid.apple.com)
+   - Sign in with your Apple ID
+   - Navigate to "Security" section
+   - Under "App-Specific Passwords", click "Generate Password"
+   - Enter a label like "PriceAdjustPro Email"
+   - Copy the generated password (it will look like: `abcd-efgh-ijkl-mnop`)
+
+2. **Configure your email domain:**
+   - Make sure your domain `priceadjustpro` is set up to use iCloud email
+   - Or update the `EMAIL_HOST_USER` to use your actual iCloud email address
+
+3. **Update environment variables:**
+   ```bash
+   EMAIL_HOST_USER=noreply@priceadjustpro  # or your iCloud email
+   EMAIL_HOST_PASSWORD=abcd-efgh-ijkl-mnop  # your app-specific password
+   ```
+
+## Testing
+
+You can test the password reset functionality by:
+1. Going to `/reset-password` on your website
+2. Entering an email address
+3. Checking that the email is sent successfully
+
+## Production Notes
+
+- In production, make sure `DEBUG=False` in your environment
+- The password reset emails will use HTTPS URLs in production
+- Email timeout is set to 30 seconds
+- Password reset tokens expire after 1 hour
+
+## Troubleshooting
+
+If emails aren't sending:
+1. Verify your app-specific password is correct
+2. Check that 2FA is enabled on your Apple ID
+3. Ensure the email address in `EMAIL_HOST_USER` is valid
+4. Check Django logs for email sending errors 

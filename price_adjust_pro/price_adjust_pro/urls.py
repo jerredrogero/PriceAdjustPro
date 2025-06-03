@@ -18,6 +18,14 @@ from django.middleware.csrf import get_token
 import json
 import os
 from django.contrib.staticfiles.views import serve
+from django.contrib.auth.forms import PasswordResetForm
+from django.contrib.auth.models import User
+from django.contrib.auth.tokens import default_token_generator
+from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
+from django.utils.encoding import force_bytes, force_str
+from django.core.mail import send_mail
+from django.template.loader import render_to_string
+from django.contrib.sites.shortcuts import get_current_site
 
 from receipt_parser.urls import urls_api as receipt_api_urls
 
@@ -215,12 +223,141 @@ def debug_session(request):
     print(f"Debug session: {response_data}")
     return JsonResponse(response_data)
 
+@csrf_exempt
+def api_password_reset(request):
+    """Send password reset email."""
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            email = data.get('email')
+            
+            if not email:
+                return JsonResponse({'error': 'Email is required'}, status=400)
+            
+            # Check if user exists
+            try:
+                user = User.objects.get(email=email)
+            except User.DoesNotExist:
+                # For security, don't reveal if email exists
+                return JsonResponse({'message': 'If an account with this email exists, a password reset link has been sent.'})
+            
+            # Generate token and uid
+            token = default_token_generator.make_token(user)
+            uid = urlsafe_base64_encode(force_bytes(user.pk))
+            
+            # Build reset URL
+            current_site = get_current_site(request)
+            if settings.DEBUG:
+                # In development, use the same host as the current request
+                protocol = 'https' if request.is_secure() else 'http'
+                host = request.get_host()
+                reset_url = f"{protocol}://{host}/reset-password/{uid}/{token}/"
+            else:
+                # In production, use the actual domain
+                reset_url = f"https://{current_site.domain}/reset-password/{uid}/{token}/"
+            
+            # Send email
+            subject = 'Password Reset for PriceAdjustPro'
+            message = f"""
+Hello {user.username},
+
+You requested a password reset for your PriceAdjustPro account.
+
+Click the link below to reset your password:
+{reset_url}
+
+This link will expire in 1 hour.
+
+If you didn't request this password reset, please ignore this email.
+
+Best regards,
+PriceAdjustPro Team
+            """
+            
+            try:
+                send_mail(
+                    subject,
+                    message,
+                    settings.DEFAULT_FROM_EMAIL,
+                    [email],
+                    fail_silently=False,
+                )
+                
+                return JsonResponse({'message': 'If an account with this email exists, a password reset link has been sent.'})
+                
+            except Exception as email_error:
+                print(f"Email sending failed: {str(email_error)}")
+                if settings.DEBUG:
+                    # In development, log the email content to console instead
+                    print("=" * 50)
+                    print("PASSWORD RESET EMAIL (Console Output)")
+                    print("=" * 50)
+                    print(f"To: {email}")
+                    print(f"Subject: {subject}")
+                    print(f"Message:\n{message}")
+                    print("=" * 50)
+                    return JsonResponse({'message': 'Password reset email logged to console (development mode).'})
+                else:
+                    # In production, re-raise the error
+                    return JsonResponse({'error': 'Failed to send reset email'}, status=500)
+            
+        except Exception as e:
+            print(f"Password reset error: {str(e)}")
+            return JsonResponse({'error': 'Failed to send reset email'}, status=500)
+    
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+@csrf_exempt
+def api_password_reset_confirm(request):
+    """Confirm password reset and set new password."""
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            uidb64 = data.get('uid')
+            token = data.get('token')
+            new_password = data.get('new_password')
+            confirm_password = data.get('confirm_password')
+            
+            if not all([uidb64, token, new_password, confirm_password]):
+                return JsonResponse({'error': 'All fields are required'}, status=400)
+            
+            if new_password != confirm_password:
+                return JsonResponse({'error': 'Passwords do not match'}, status=400)
+            
+            if len(new_password) < 8:
+                return JsonResponse({'error': 'Password must be at least 8 characters long'}, status=400)
+            
+            # Decode user ID
+            try:
+                uid = force_str(urlsafe_base64_decode(uidb64))
+                user = User.objects.get(pk=uid)
+            except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+                return JsonResponse({'error': 'Invalid reset link'}, status=400)
+            
+            # Check token
+            if not default_token_generator.check_token(user, token):
+                return JsonResponse({'error': 'Invalid or expired reset link'}, status=400)
+            
+            # Set new password
+            user.set_password(new_password)
+            user.save()
+            
+            return JsonResponse({'message': 'Password has been reset successfully'})
+            
+        except Exception as e:
+            print(f"Password reset confirm error: {str(e)}")
+            return JsonResponse({'error': 'Failed to reset password'}, status=500)
+    
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
 # API URLs
 api_urlpatterns = [
     path('auth/login/', api_login, name='api_login'),
     path('auth/logout/', api_logout, name='api_logout'),
     path('auth/register/', api_register, name='api_register'),
     path('auth/user/', api_user, name='api_user'),
+    path('auth/password-reset/', api_password_reset, name='api_password_reset'),
+    path('auth/password-reset-confirm/', api_password_reset_confirm, name='api_password_reset_confirm'),
     path('debug/session/', debug_session, name='debug_session'),
 ] + receipt_api_urls()
 
@@ -251,6 +388,9 @@ static_urlpatterns = [
 
 # Define React app routes
 react_urlpatterns = [
+    # Explicit password reset routes (must come before catch-all)
+    re_path(r'^reset-password/$', TemplateView.as_view(template_name='index.html')),
+    re_path(r'^reset-password/[^/]+/[^/]+/$', TemplateView.as_view(template_name='index.html')),
     # All other paths go to the React app (excluding admin and api paths)
     re_path(r'^(?!admin)(?!api/).*$', TemplateView.as_view(template_name='index.html')),
 ]

@@ -99,6 +99,18 @@ const Login: React.FC = () => {
                 Create one here
               </MuiLink>
             </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+              <MuiLink 
+                component={Link} 
+                to="/reset-password"
+                onClick={(e) => {
+                  console.log('Forgot password link clicked');
+                  // Don't prevent default - let React Router handle it
+                }}
+              >
+                Forgot your password?
+              </MuiLink>
+            </Typography>
           </Box>
         </CardContent>
       </Card>

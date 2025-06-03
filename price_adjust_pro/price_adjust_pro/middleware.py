@@ -12,6 +12,8 @@ class AuthenticationMiddleware:
             re.compile(r'^/hijack/.*$'),  # Allow hijack URLs
             re.compile(r'^/login/$'),
             re.compile(r'^/register/$'),
+            re.compile(r'^/reset-password/$'),
+            re.compile(r'^/reset-password/.*$'),
             re.compile(r'^/static/.*$'),
             re.compile(r'^/favicon.ico$'),
             re.compile(r'^/manifest.json$'),

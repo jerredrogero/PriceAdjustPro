@@ -189,6 +189,36 @@ FILE_UPLOAD_PERMISSIONS = 0o644
 RECEIPT_KEEP_FILES = False  # Set to True for debugging
 RECEIPT_TEMP_DIR = '/tmp/receipt_processing'
 
+# Email configuration for password reset
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.mail.me.com'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', 'noreply@priceadjustpro')
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')
+DEFAULT_FROM_EMAIL = 'noreply@priceadjustpro'
+EMAIL_TIMEOUT = 30
+
+# SSL settings for email
+if DEBUG:
+    # In development, use console backend if no email credentials are provided
+    if not os.getenv('EMAIL_HOST_PASSWORD'):
+        EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+    else:
+        # For development with real email, disable SSL verification
+        import ssl
+        EMAIL_USE_SSL = False
+        EMAIL_USE_TLS = True
+        EMAIL_SSL_CERTFILE = None
+        EMAIL_SSL_KEYFILE = None
+else:
+    # Production settings - keep SSL verification enabled
+    EMAIL_USE_SSL = False
+    EMAIL_USE_TLS = True
+
+# Password reset settings
+PASSWORD_RESET_TIMEOUT = 3600  # 1 hour in seconds
+
 # Internationalization
 # https://docs.djangoproject.com/en/5.1/topics/i18n/
 

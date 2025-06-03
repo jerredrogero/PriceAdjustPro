@@ -6,6 +6,8 @@ import Layout from './components/Layout';
 import PrivateRoute from './components/PrivateRoute';
 import Login from './components/Login';
 import Register from './components/Register';
+import PasswordReset from './components/PasswordReset';
+import PasswordResetConfirm from './components/PasswordResetConfirm';
 import Dashboard from './pages/Dashboard';
 import ReceiptList from './pages/ReceiptList';
 import ReceiptUpload from './pages/ReceiptUpload';
@@ -37,6 +39,7 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     const checkAuth = async () => {
       console.log('App.tsx: Checking authentication for path:', location.pathname);
+      console.log('App.tsx: Current user state:', user);
       try {
         const response = await api.get('/api/auth/user/');
         console.log('App.tsx: Authentication successful:', response.data);
@@ -45,15 +48,29 @@ const AppContent: React.FC = () => {
         console.log('App.tsx: Authentication failed:', error);
         setUser(null);
       } finally {
+        console.log('App.tsx: Setting loading to false and authChecked to true');
         setLoading(false);
         setAuthChecked(true);
       }
     };
 
-    checkAuth();
-  }, [location.pathname]);
+    // Add a timeout to prevent infinite loading
+    const timeoutId = setTimeout(() => {
+      console.log('App.tsx: Authentication check timeout - setting loading to false');
+      setLoading(false);
+      setAuthChecked(true);
+      setUser(null);
+    }, 5000); // 5 second timeout
+
+    checkAuth().finally(() => {
+      clearTimeout(timeoutId);
+    });
+
+    return () => clearTimeout(timeoutId);
+  }, []);
 
   if (loading) {
+    console.log('App.tsx: Showing loading screen, loading:', loading, 'authChecked:', authChecked);
     return (
       <Box
         sx={{
@@ -73,8 +90,16 @@ const AppContent: React.FC = () => {
         <Navigation user={user} />
         <Routes>
         <Route path="/" element={<Box component="main" sx={{ pt: 8, pb: 4 }}><Landing /></Box>} />
-        <Route path="/login" element={user ? <Navigate to="/dashboard" /> : <Login />} />
-        <Route path="/register" element={user ? <Navigate to="/dashboard" /> : <Register />} />
+        <Route path="/reset-password/:uid/:token" element={
+          user ? <Navigate to="/dashboard" /> : <Box component="main" sx={{ pt: 8, pb: 4 }}><PasswordResetConfirm /></Box>
+        } />
+        <Route path="/reset-password" element={
+          user ? <Navigate to="/dashboard" /> : <Box component="main" sx={{ pt: 8, pb: 4 }}><PasswordReset /></Box>
+        } />
+        <Route path="/login" element={
+          user ? <Navigate to="/dashboard" /> : <Box component="main" sx={{ pt: 8, pb: 4 }}><Login /></Box>
+        } />
+        <Route path="/register" element={user ? <Navigate to="/dashboard" /> : <Box component="main" sx={{ pt: 8, pb: 4 }}><Register /></Box>} />
         <Route element={<PrivateRoute authChecked={authChecked}><Layout /></PrivateRoute>}>
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/receipts" element={<ReceiptList />} />
