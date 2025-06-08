@@ -37,11 +37,15 @@ const AppContent: React.FC = () => {
   const location = useLocation();
 
   useEffect(() => {
+    console.log('App.tsx: useEffect triggered for path:', location.pathname);
+    
     // Public pages that don't require authentication check
     const publicPages = ['/', '/login', '/register', '/reset-password'];
     const isPublicPage = publicPages.some(page => 
       location.pathname === page || location.pathname.startsWith('/reset-password/')
     );
+
+    console.log('App.tsx: isPublicPage check:', isPublicPage, 'for path:', location.pathname);
 
     if (isPublicPage) {
       console.log('App.tsx: On public page, skipping auth check:', location.pathname);
@@ -50,6 +54,8 @@ const AppContent: React.FC = () => {
       setUser(null);
       return;
     }
+
+    console.log('App.tsx: On protected page, running auth check for:', location.pathname);
 
     const checkAuth = async () => {
       console.log('App.tsx: Checking authentication for path:', location.pathname);
