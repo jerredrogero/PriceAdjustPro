@@ -248,13 +248,16 @@ def api_password_reset(request):
             # Build reset URL
             current_site = get_current_site(request)
             if settings.DEBUG:
-                # In development, use the same host as the current request
+                # In development, use the React dev server port
                 protocol = 'https' if request.is_secure() else 'http'
                 host = request.get_host()
-                reset_url = f"{protocol}://{host}/reset-password/{uid}/{token}/"
+                # Replace Django dev server port with React dev server port
+                if ':8000' in host:
+                    host = host.replace(':8000', ':3000')
+                reset_url = f"{protocol}://{host}/reset-password/{uid}/{token}"
             else:
                 # In production, use the actual domain
-                reset_url = f"https://{current_site.domain}/reset-password/{uid}/{token}/"
+                reset_url = f"https://{current_site.domain}/reset-password/{uid}/{token}"
             
             # Send email
             subject = 'Password Reset for PriceAdjustPro'

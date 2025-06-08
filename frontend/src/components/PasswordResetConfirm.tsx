@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useContext } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Container,
@@ -12,10 +12,12 @@ import {
 } from '@mui/material';
 import { LockReset } from '@mui/icons-material';
 import api from '../api/axios';
+import { UserContext } from './Layout';
 
 const PasswordResetConfirm: React.FC = () => {
   const { uid, token } = useParams<{ uid: string; token: string }>();
   const navigate = useNavigate();
+  const user = useContext(UserContext);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
@@ -49,9 +51,9 @@ const PasswordResetConfirm: React.FC = () => {
       });
       
       setSuccess(response.data.message);
-      // Redirect to login after 2 seconds
+      // Redirect after 2 seconds - to dashboard if logged in, login if not
       setTimeout(() => {
-        navigate('/login');
+        navigate(user ? '/dashboard' : '/login');
       }, 2000);
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to reset password');
@@ -74,6 +76,12 @@ const PasswordResetConfirm: React.FC = () => {
             </Typography>
           </Box>
 
+          {user && (
+            <Alert severity="info" sx={{ mb: 3 }}>
+              You are already logged in as {user.username}. You can still reset your password if needed.
+            </Alert>
+          )}
+
           {error && (
             <Alert severity="error" sx={{ mb: 3 }}>
               {error}
@@ -82,7 +90,7 @@ const PasswordResetConfirm: React.FC = () => {
 
           {success && (
             <Alert severity="success" sx={{ mb: 3 }}>
-              {success} You will be redirected to the login page.
+              {success} {user ? 'Your password has been updated.' : 'You will be redirected to the login page.'}
             </Alert>
           )}
 
@@ -120,10 +128,10 @@ const PasswordResetConfirm: React.FC = () => {
 
           <Box sx={{ mt: 3, textAlign: 'center' }}>
             <Button
-              onClick={() => navigate('/login')}
+              onClick={() => navigate(user ? '/dashboard' : '/login')}
               variant="text"
             >
-              Back to Login
+              {user ? 'Back to Dashboard' : 'Back to Login'}
             </Button>
           </Box>
         </CardContent>

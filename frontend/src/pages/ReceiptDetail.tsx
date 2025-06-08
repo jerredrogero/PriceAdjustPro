@@ -31,7 +31,6 @@ import {
   Cancel as CancelIcon,
   Delete as DeleteIcon,
   Add as AddIcon,
-  TouchApp as SwipeIcon,
 } from '@mui/icons-material';
 import { format } from 'date-fns';
 import api from '../api/axios';
@@ -581,20 +580,7 @@ const ReceiptDetail: React.FC = () => {
       ) : (
         /* Desktop Table Layout with scroll indicators */
         <Box sx={{ position: 'relative' }}>
-          {/* Scroll indicator for desktop when needed */}
-          <Box sx={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            gap: 1, 
-            mb: 1,
-            color: 'text.secondary',
-            fontSize: '0.875rem'
-          }}>
-            <SwipeIcon fontSize="small" />
-            <Typography variant="caption">
-              Scroll horizontally to see all columns
-            </Typography>
-          </Box>
+
           
           <TableContainer 
             component={Paper} 

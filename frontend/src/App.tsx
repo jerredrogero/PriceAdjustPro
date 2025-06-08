@@ -91,7 +91,7 @@ const AppContent: React.FC = () => {
         <Routes>
         <Route path="/" element={<Box component="main" sx={{ pt: 8, pb: 4 }}><Landing /></Box>} />
         <Route path="/reset-password/:uid/:token" element={
-          user ? <Navigate to="/dashboard" /> : <Box component="main" sx={{ pt: 8, pb: 4 }}><PasswordResetConfirm /></Box>
+          <Box component="main" sx={{ pt: 8, pb: 4 }}><PasswordResetConfirm /></Box>
         } />
         <Route path="/reset-password" element={
           user ? <Navigate to="/dashboard" /> : <Box component="main" sx={{ pt: 8, pb: 4 }}><PasswordReset /></Box>

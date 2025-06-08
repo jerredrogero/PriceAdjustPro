@@ -30,7 +30,6 @@ import {
   LocalOffer as TagIcon,
   Store as StoreIcon,
   CalendarToday as DateIcon,
-  TouchApp as SwipeIcon,
 } from '@mui/icons-material';
 import api from '../api/axios';
 
@@ -304,20 +303,7 @@ const ReceiptDetail: React.FC = () => {
         ) : (
           /* Desktop Table Layout with scroll indicators */
           <Box sx={{ position: 'relative', mb: 3 }}>
-            {/* Scroll indicator for desktop when needed */}
-            <Box sx={{ 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: 1, 
-              mb: 1,
-              color: 'text.secondary',
-              fontSize: '0.875rem'
-            }}>
-              <SwipeIcon fontSize="small" />
-              <Typography variant="caption">
-                Scroll horizontally to see all columns
-              </Typography>
-            </Box>
+
             
             <TableContainer 
               component={Paper} 
