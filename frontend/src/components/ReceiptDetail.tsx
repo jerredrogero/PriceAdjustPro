@@ -20,6 +20,7 @@ import {
   Skeleton,
   Divider,
   useTheme,
+  useMediaQuery,
   alpha,
 } from '@mui/material';
 import {
@@ -29,6 +30,7 @@ import {
   LocalOffer as TagIcon,
   Store as StoreIcon,
   CalendarToday as DateIcon,
+  TouchApp as SwipeIcon,
 } from '@mui/icons-material';
 import api from '../api/axios';
 
@@ -63,6 +65,7 @@ const ReceiptDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -248,120 +251,237 @@ const ReceiptDetail: React.FC = () => {
           </CardContent>
         </Card>
 
-        <TableContainer 
-          component={Paper} 
-          sx={{ 
-            mb: 3,
-            '& .MuiTableCell-head': {
-              backgroundColor: theme.palette.primary.main,
-              color: theme.palette.primary.contrastText,
-            },
-          }}
-        >
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell>Item</TableCell>
-                <TableCell align="right">Price</TableCell>
-                <TableCell align="right">Qty</TableCell>
-                <TableCell align="right">Total</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {receipt.items?.map((item, index) => (
-                <TableRow 
-                  key={item.id}
-                  sx={{
-                    backgroundColor: index % 2 === 0 ? 'background.paper' : 'action.hover',
-                    '&:hover': {
-                      backgroundColor: 'action.selected',
-                    },
-                  }}
-                >
-                  <TableCell>
-                    <Typography>{item.description}</Typography>
-                    <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                      #{item.item_code}
-                    </Typography>
-                  </TableCell>
-                  <TableCell align="right">${item.price}</TableCell>
-                  <TableCell align="right">{item.quantity}</TableCell>
-                  <TableCell align="right">
-                    ${item.total_price}
-                    {item.discount && (
-                      <Typography variant="caption" color="success.main" display="block">
-                        -${item.discount}
+        {/* Mobile Card Layout */}
+        {isMobile ? (
+          <Box sx={{ mb: 3 }}>
+            {receipt.items?.map((item, index) => (
+              <Card key={item.id} sx={{ mb: 2 }}>
+                <CardContent sx={{ pb: 2 }}>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 500, mb: 0.5 }}>
+                    {item.description}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ mb: 2, display: 'block' }}>
+                    #{item.item_code}
+                  </Typography>
+
+                  <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+                    <Box sx={{ flex: 1 }}>
+                      <Typography variant="caption" color="text.secondary">Price</Typography>
+                      <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                        ${item.price}
                       </Typography>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
+                    </Box>
+                    
+                    <Box sx={{ flex: 1 }}>
+                      <Typography variant="caption" color="text.secondary">Qty</Typography>
+                      <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                        {item.quantity}
+                      </Typography>
+                    </Box>
 
-              <TableRow>
-                <TableCell colSpan={4}>
-                  <Divider sx={{ my: 2 }} />
-                </TableCell>
-              </TableRow>
+                    <Box sx={{ flex: 1 }}>
+                      <Typography variant="caption" color="text.secondary">Total</Typography>
+                      <Typography variant="body1" sx={{ fontWeight: 500, color: 'primary.main' }}>
+                        ${item.total_price}
+                      </Typography>
+                    </Box>
+                  </Box>
 
-              <TableRow>
-                <TableCell colSpan={3} align="right">
-                  <Typography variant="subtitle1">Subtotal</Typography>
-                </TableCell>
-                <TableCell align="right">
-                  <Typography variant="subtitle1">${receipt.subtotal}</Typography>
-                </TableCell>
-              </TableRow>
+                  {item.discount && (
+                    <Box sx={{ mt: 1 }}>
+                      <Chip
+                        label={`💰 Discount: $${item.discount}`}
+                        color="success"
+                        size="small"
+                        variant="outlined"
+                      />
+                    </Box>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
+          </Box>
+        ) : (
+          /* Desktop Table Layout with scroll indicators */
+          <Box sx={{ position: 'relative', mb: 3 }}>
+            {/* Scroll indicator for desktop when needed */}
+            <Box sx={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: 1, 
+              mb: 1,
+              color: 'text.secondary',
+              fontSize: '0.875rem'
+            }}>
+              <SwipeIcon fontSize="small" />
+              <Typography variant="caption">
+                Scroll horizontally to see all columns
+              </Typography>
+            </Box>
+            
+            <TableContainer 
+              component={Paper} 
+              sx={{ 
+                '& .MuiTableCell-head': {
+                  backgroundColor: theme.palette.primary.main,
+                  color: theme.palette.primary.contrastText,
+                },
+                overflowX: 'auto',
+                '&::-webkit-scrollbar': {
+                  height: 8,
+                },
+                '&::-webkit-scrollbar-track': {
+                  backgroundColor: 'grey.100',
+                  borderRadius: 4,
+                },
+                '&::-webkit-scrollbar-thumb': {
+                  backgroundColor: 'grey.400',
+                  borderRadius: 4,
+                  '&:hover': {
+                    backgroundColor: 'grey.600',
+                  },
+                },
+              }}
+            >
+              <Table>
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Item</TableCell>
+                    <TableCell align="right">Price</TableCell>
+                    <TableCell align="right">Qty</TableCell>
+                    <TableCell align="right">Total</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {receipt.items?.map((item, index) => (
+                    <TableRow 
+                      key={item.id}
+                      sx={{
+                        backgroundColor: index % 2 === 0 ? 'background.paper' : 'action.hover',
+                        '&:hover': {
+                          backgroundColor: 'action.selected',
+                        },
+                      }}
+                    >
+                      <TableCell>
+                        <Typography>{item.description}</Typography>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                          #{item.item_code}
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="right">${item.price}</TableCell>
+                      <TableCell align="right">{item.quantity}</TableCell>
+                      <TableCell align="right">
+                        ${item.total_price}
+                        {item.discount && (
+                          <Typography variant="caption" color="success.main" display="block">
+                            -${item.discount}
+                          </Typography>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
 
+                  <TableRow>
+                    <TableCell colSpan={4}>
+                      <Divider sx={{ my: 2 }} />
+                    </TableCell>
+                  </TableRow>
+
+                  <TableRow>
+                    <TableCell colSpan={3} align="right">
+                      <Typography variant="subtitle1">Subtotal</Typography>
+                    </TableCell>
+                    <TableCell align="right">
+                      <Typography variant="subtitle1">${receipt.subtotal}</Typography>
+                    </TableCell>
+                  </TableRow>
+
+                  {receipt.instant_savings && (
+                    <TableRow>
+                      <TableCell colSpan={3} align="right">
+                        <Typography variant="subtitle1" color="success.main">
+                          Instant Savings
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="right">
+                        <Typography variant="subtitle1" color="success.main">
+                          -${receipt.instant_savings}
+                        </Typography>
+                      </TableCell>
+                    </TableRow>
+                  )}
+
+                  <TableRow>
+                    <TableCell colSpan={3} align="right">
+                      <Typography variant="subtitle1">Tax</Typography>
+                    </TableCell>
+                    <TableCell align="right">
+                      <Typography variant="subtitle1">${receipt.tax}</Typography>
+                    </TableCell>
+                  </TableRow>
+
+                  {receipt.ebt_amount && (
+                    <TableRow>
+                      <TableCell colSpan={3} align="right">
+                        <Typography variant="subtitle1" color="info.main">
+                          EBT Amount
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="right">
+                        <Typography variant="subtitle1" color="info.main">
+                          ${receipt.ebt_amount}
+                        </Typography>
+                      </TableCell>
+                    </TableRow>
+                  )}
+
+                  <TableRow>
+                    <TableCell colSpan={3} align="right">
+                      <Typography variant="h6" color="primary.main">Total</Typography>
+                    </TableCell>
+                    <TableCell align="right">
+                      <Typography variant="h6" color="primary.main">${receipt.total}</Typography>
+                    </TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Box>
+        )}
+
+        {/* Mobile totals card */}
+        {isMobile && (
+          <Card sx={{ backgroundColor: 'primary.main', color: 'primary.contrastText' }}>
+            <CardContent>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                <Typography>Subtotal:</Typography>
+                <Typography>${receipt.subtotal}</Typography>
+              </Box>
               {receipt.instant_savings && (
-                <TableRow>
-                  <TableCell colSpan={3} align="right">
-                    <Typography variant="subtitle1" color="success.main">
-                      Instant Savings
-                    </Typography>
-                  </TableCell>
-                  <TableCell align="right">
-                    <Typography variant="subtitle1" color="success.main">
-                      -${receipt.instant_savings}
-                    </Typography>
-                  </TableCell>
-                </TableRow>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                  <Typography color="success.light">Instant Savings:</Typography>
+                  <Typography color="success.light">-${receipt.instant_savings}</Typography>
+                </Box>
               )}
-
-              <TableRow>
-                <TableCell colSpan={3} align="right">
-                  <Typography variant="subtitle1">Tax</Typography>
-                </TableCell>
-                <TableCell align="right">
-                  <Typography variant="subtitle1">${receipt.tax}</Typography>
-                </TableCell>
-              </TableRow>
-
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                <Typography>Tax:</Typography>
+                <Typography>${receipt.tax}</Typography>
+              </Box>
               {receipt.ebt_amount && (
-                <TableRow>
-                  <TableCell colSpan={3} align="right">
-                    <Typography variant="subtitle1" color="info.main">
-                      EBT Amount
-                    </Typography>
-                  </TableCell>
-                  <TableCell align="right">
-                    <Typography variant="subtitle1" color="info.main">
-                      ${receipt.ebt_amount}
-                    </Typography>
-                  </TableCell>
-                </TableRow>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                  <Typography color="info.light">EBT Amount:</Typography>
+                  <Typography color="info.light">${receipt.ebt_amount}</Typography>
+                </Box>
               )}
-
-              <TableRow>
-                <TableCell colSpan={3} align="right">
-                  <Typography variant="h6" color="primary.main">Total</Typography>
-                </TableCell>
-                <TableCell align="right">
-                  <Typography variant="h6" color="primary.main">${receipt.total}</Typography>
-                </TableCell>
-              </TableRow>
-            </TableBody>
-          </Table>
-        </TableContainer>
+              <Divider sx={{ my: 1, borderColor: 'primary.contrastText', opacity: 0.3 }} />
+              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                <Typography variant="h6">Total:</Typography>
+                <Typography variant="h6">${receipt.total}</Typography>
+              </Box>
+            </CardContent>
+          </Card>
+        )}
       </Box>
     </Fade>
   );
