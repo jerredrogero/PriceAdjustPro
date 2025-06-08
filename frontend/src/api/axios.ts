@@ -86,9 +86,11 @@ instance.interceptors.response.use(
 
     // Handle specific error cases
     if (error.response?.status === 401) {
-      // Only redirect to login if not already on login page
-      if (!window.location.pathname.includes('/login') && 
-          !window.location.pathname.includes('/register')) {
+      // Don't redirect if on auth-related pages (login, register, password reset)
+      const authPages = ['/login', '/register', '/reset-password'];
+      const isOnAuthPage = authPages.some(page => window.location.pathname.includes(page));
+      
+      if (!isOnAuthPage) {
         window.location.href = '/login';
       }
     }
