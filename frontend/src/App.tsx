@@ -39,13 +39,18 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     console.log('App.tsx: useEffect triggered for path:', location.pathname);
     
+    // Check if this might be coming from a hijack or existing session
+    const maybeFromHijack = document.referrer.includes('/admin/') || document.referrer.includes('/hijack/');
+    
     // Public pages that don't require authentication check
-    const publicPages = ['/', '/login', '/register', '/reset-password'];
+    // Note: We always check auth on '/' in case of hijacking or existing sessions
+    const publicPages = ['/login', '/register', '/reset-password'];
     const isPublicPage = publicPages.some(page => 
       location.pathname === page || location.pathname.startsWith('/reset-password/')
     );
 
     console.log('App.tsx: isPublicPage check:', isPublicPage, 'for path:', location.pathname);
+    console.log('App.tsx: maybeFromHijack:', maybeFromHijack);
 
     if (isPublicPage) {
       console.log('App.tsx: On public page, skipping auth check:', location.pathname);
@@ -109,7 +114,9 @@ const AppContent: React.FC = () => {
     <UserContext.Provider value={user}>
         <Navigation user={user} />
         <Routes>
-        <Route path="/" element={<Box component="main" sx={{ pt: 8, pb: 4 }}><Landing /></Box>} />
+        <Route path="/" element={
+          user ? <Navigate to="/dashboard" replace /> : <Box component="main" sx={{ pt: 8, pb: 4 }}><Landing /></Box>
+        } />
         <Route path="/reset-password/:uid/:token" element={
           <Box component="main" sx={{ pt: 8, pb: 4 }}><PasswordResetConfirm /></Box>
         } />
