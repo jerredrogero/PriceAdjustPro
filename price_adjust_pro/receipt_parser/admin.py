@@ -295,23 +295,45 @@ class ReceiptAdmin(BaseModelAdmin):
 
 @admin.register(PriceAdjustmentAlert)
 class PriceAdjustmentAlertAdmin(BaseModelAdmin):
-    list_display = ('item_description', 'user', 'original_store_city', 'cheaper_store_city',
+    list_display = ('item_description', 'user', 'trigger_reference', 'original_store_city', 'cheaper_store_city',
                    'price_difference_display', 'days_remaining', 'status_display', 'created_at')
     list_filter = (
+        'data_source',
         'is_active', 
         'is_dismissed', 
         'original_store_city', 
         'cheaper_store_city',
         'user__username',
-        'created_at'
+        'created_at',
+        ('official_sale_item', admin.EmptyFieldListFilter),
     )
     search_fields = ('item_description', 'item_code', 'user__username', 
-                    'original_store_city', 'cheaper_store_city')
-    readonly_fields = ('price_difference', 'days_remaining', 'is_expired', 'created_at')
+                    'original_store_city', 'cheaper_store_city', 'official_sale_item__promotion__title')
+    readonly_fields = ('price_difference', 'days_remaining', 'is_expired', 'created_at', 
+                      'data_source', 'official_sale_item')
     date_hierarchy = 'purchase_date'
     list_per_page = 50
     raw_id_fields = ('user',)
     actions = ['mark_as_expired', 'mark_as_dismissed', 'export_as_csv', 'export_as_json']
+    
+    fieldsets = (
+        ('Basic Information', {
+            'fields': ('user', 'item_code', 'item_description')
+        }),
+        ('Price Details', {
+            'fields': ('original_price', 'lower_price', 'price_difference')
+        }),
+        ('Location Information', {
+            'fields': ('original_store_city', 'original_store_number', 'cheaper_store_city', 'cheaper_store_number')
+        }),
+        ('Trigger Source', {
+            'fields': ('data_source', 'official_sale_item'),
+            'description': 'Shows what triggered this price alert'
+        }),
+        ('Dates & Status', {
+            'fields': ('purchase_date', 'created_at', 'days_remaining', 'is_expired', 'is_active', 'is_dismissed')
+        }),
+    )
 
     def mark_as_expired(self, request, queryset):
         updated = queryset.update(is_active=False, is_expired=True)
@@ -331,6 +353,50 @@ class PriceAdjustmentAlertAdmin(BaseModelAdmin):
                 days_active=TruncDate('created_at') - TruncDate(F('purchase_date'))
             )
 
+    def trigger_reference(self, obj):
+        """Display what triggered this price alert."""
+        if obj.data_source == 'official_promo' and obj.official_sale_item:
+            promo = obj.official_sale_item.promotion
+            return format_html(
+                '<span style="color: #1976d2; font-weight: bold;">📘 Official Promo</span><br>'
+                '<small><a href="/admin/receipt_parser/costcopromotion/{}/" target="_blank">{}</a><br>'
+                'Sale Type: {}</small>',
+                promo.id,
+                promo.title,
+                obj.official_sale_item.get_sale_type_display()
+            )
+        elif obj.data_source == 'user_edit':
+            original_transaction = obj.get_original_transaction_number()
+            cheaper_transaction = obj.get_cheaper_transaction_number()
+            links = []
+            
+            if original_transaction:
+                links.append(f'<a href="/receipts/{original_transaction}" target="_blank">Original Purchase</a>')
+            if cheaper_transaction:
+                links.append(f'<a href="/receipts/{cheaper_transaction}" target="_blank">Later Purchase</a>')
+            
+            link_text = ' | '.join(links) if links else 'Receipt comparison'
+            
+            return format_html(
+                '<span style="color: #388e3c; font-weight: bold;">👤 Own Receipts</span><br>'
+                '<small>{}</small>',
+                link_text
+            )
+        elif obj.data_source == 'ocr_parsed':
+            original_transaction = obj.get_original_transaction_number()
+            link_text = f'<a href="/receipts/{original_transaction}" target="_blank">Your Receipt</a>' if original_transaction else 'Community data'
+            
+            return format_html(
+                '<span style="color: #f57c00; font-weight: bold;">🏪 Community Data</span><br>'
+                '<small>{}</small>',
+                link_text
+            )
+        else:
+            return format_html('<span style="color: gray;">Unknown</span>')
+    
+    trigger_reference.short_description = "Trigger Source"
+    trigger_reference.allow_tags = True
+
     def price_difference_display(self, obj):
         return format_html('<span style="color: green">${}</span>', 
             '{:.2f}'.format(float(obj.price_difference)))
@@ -348,7 +414,8 @@ class PriceAdjustmentAlertAdmin(BaseModelAdmin):
         meta = self.model._meta
         field_names = ['item_code', 'item_description', 'original_price', 'lower_price',
                       'original_store_city', 'cheaper_store_city', 'purchase_date',
-                      'days_remaining', 'is_active', 'is_dismissed', 'user__username']
+                      'days_remaining', 'is_active', 'is_dismissed', 'user__username',
+                      'data_source', 'trigger_description', 'original_transaction', 'promotion_title']
 
         response = HttpResponse(content_type='text/csv')
         response['Content-Disposition'] = f'attachment; filename=price_adjustments_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
@@ -363,6 +430,24 @@ class PriceAdjustmentAlertAdmin(BaseModelAdmin):
             for field in field_names:
                 if field == 'user__username':
                     row.append(obj.user.username)
+                elif field == 'data_source':
+                    row.append(obj.get_data_source_display())
+                elif field == 'trigger_description':
+                    if obj.data_source == 'official_promo' and obj.official_sale_item:
+                        row.append(f"Official promotion: {obj.official_sale_item.promotion.title}")
+                    elif obj.data_source == 'user_edit':
+                        row.append("User's own receipt comparison")
+                    elif obj.data_source == 'ocr_parsed':
+                        row.append("Community price data")
+                    else:
+                        row.append("Unknown trigger")
+                elif field == 'original_transaction':
+                    row.append(obj.get_original_transaction_number() or "")
+                elif field == 'promotion_title':
+                    if obj.data_source == 'official_promo' and obj.official_sale_item:
+                        row.append(obj.official_sale_item.promotion.title)
+                    else:
+                        row.append("")
                 else:
                     value = getattr(obj, field)
                     if isinstance(value, datetime):
@@ -389,6 +474,14 @@ class PriceAdjustmentAlertAdmin(BaseModelAdmin):
                 'is_active': alert.is_active,
                 'is_dismissed': alert.is_dismissed,
                 'user': alert.user.username,
+                'data_source': alert.get_data_source_display(),
+                'trigger_info': {
+                    'source_type': alert.data_source,
+                    'original_transaction': alert.get_original_transaction_number(),
+                    'cheaper_transaction': alert.get_cheaper_transaction_number() if alert.data_source == 'user_edit' else None,
+                    'promotion_title': alert.official_sale_item.promotion.title if alert.data_source == 'official_promo' and alert.official_sale_item else None,
+                    'sale_type': alert.official_sale_item.get_sale_type_display() if alert.data_source == 'official_promo' and alert.official_sale_item else None,
+                }
             }
             data.append(alert_data)
 

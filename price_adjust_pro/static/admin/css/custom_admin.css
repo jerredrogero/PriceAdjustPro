@@ -1,0 +1,106 @@
+/* Custom PriceAdjustPro Admin Styles */
+
+/* Price Adjustment Alert Trigger Reference Column */
+.field-trigger_reference {
+    min-width: 180px;
+    max-width: 220px;
+}
+
+.field-trigger_reference small {
+    display: block;
+    margin-top: 4px;
+    font-size: 0.75rem;
+    line-height: 1.2;
+}
+
+.field-trigger_reference a {
+    color: #417690;
+    text-decoration: none;
+    font-size: 0.75rem;
+}
+
+.field-trigger_reference a:hover {
+    text-decoration: underline;
+    color: #205067;
+}
+
+/* Trigger source badges */
+.trigger-badge {
+    display: inline-block;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 0.7rem;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.trigger-official {
+    background-color: #e3f2fd;
+    color: #1976d2;
+    border: 1px solid #bbdefb;
+}
+
+.trigger-user {
+    background-color: #e8f5e8;
+    color: #388e3c;
+    border: 1px solid #c8e6c9;
+}
+
+.trigger-community {
+    background-color: #fff3e0;
+    color: #f57c00;
+    border: 1px solid #ffcc02;
+}
+
+/* Fieldset styling for price alert detail view */
+.fieldset-trigger-source {
+    background-color: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    padding: 15px;
+    margin-bottom: 20px;
+}
+
+.fieldset-trigger-source .description {
+    font-style: italic;
+    color: #6c757d;
+    margin-top: 5px;
+}
+
+/* Better spacing for price alert list view */
+#changelist .results tbody tr {
+    line-height: 1.4;
+}
+
+#changelist .results tbody td {
+    vertical-align: top;
+    padding: 8px 10px;
+}
+
+/* Responsive adjustments for trigger reference column */
+@media (max-width: 1200px) {
+    .field-trigger_reference {
+        min-width: 160px;
+        max-width: 180px;
+    }
+    
+    .field-trigger_reference small {
+        font-size: 0.7rem;
+    }
+}
+
+@media (max-width: 992px) {
+    .field-trigger_reference {
+        min-width: 140px;
+        max-width: 160px;
+    }
+    
+    .field-trigger_reference span {
+        font-size: 0.75rem;
+    }
+    
+    .field-trigger_reference small {
+        font-size: 0.65rem;
+    }
+} 
