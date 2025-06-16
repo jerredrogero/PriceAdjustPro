@@ -17,7 +17,7 @@ import json
 from datetime import datetime
 from .models import (
     Receipt, LineItem, CostcoItem, CostcoWarehouse,
-    ItemPriceHistory, ItemWarehousePrice, PriceAdjustmentAlert,
+    ItemPriceHistory, PriceAdjustmentAlert,
     CostcoPromotion, CostcoPromotionPage, OfficialSaleItem
 )
 from .utils import process_official_promotion
@@ -436,7 +436,7 @@ class PriceAdjustmentAlertAdmin(BaseModelAdmin):
                     if obj.data_source == 'official_promo' and obj.official_sale_item:
                         row.append(f"Official promotion: {obj.official_sale_item.promotion.title}")
                     elif obj.data_source == 'user_edit':
-                        row.append("User's own receipt comparison")
+                        row.append("Official promotion comparison")
                     elif obj.data_source == 'ocr_parsed':
                         row.append("Community price data")
                     else:
@@ -781,7 +781,8 @@ class ItemPriceHistoryAdmin(BaseModelAdmin):
         return response
     export_as_json.short_description = "Export selected price history as JSON"
 
-@admin.register(ItemWarehousePrice)
+# ItemWarehousePrice admin removed - no longer needed since we only use official promotions
+# @admin.register(ItemWarehousePrice)
 class ItemWarehousePriceAdmin(BaseModelAdmin):
     list_display = ('item', 'warehouse', 'price', 'last_seen')
     list_filter = ('warehouse', 'last_seen')
@@ -852,13 +853,13 @@ class OfficialSaleItemInline(admin.TabularInline):
 
 @admin.register(CostcoPromotion)
 class CostcoPromotionAdmin(admin.ModelAdmin):
-    list_display = ('title', 'sale_start_date', 'sale_end_date', 'is_processed', 'pages_count', 'items_count', 'alerts_count')
+    list_display = ('title', 'sale_start_date', 'sale_end_date', 'get_promotion_status', 'pages_count', 'items_count', 'alerts_count')
     list_filter = ('is_processed', 'sale_start_date', 'uploaded_by')
     search_fields = ('title',)
     readonly_fields = ('upload_date', 'processed_date', 'uploaded_by', 'pages_count', 'items_count', 'alerts_count')
     inlines = [CostcoPromotionPageInline, OfficialSaleItemInline]
     
-    actions = ['process_promotions', 'process_promotions_safe']
+    actions = ['process_next_batch', 'export_promotion_data_csv']
     
     def get_urls(self):
         urls = super().get_urls()
@@ -1104,90 +1105,152 @@ class CostcoPromotionAdmin(admin.ModelAdmin):
             obj.uploaded_by = request.user
         super().save_model(request, obj, form, change)
     
-    def process_promotions(self, request, queryset):
-        """Admin action to process selected promotions with safety limits."""
+
+    
+    def process_next_batch(self, request, queryset):
+        """Process the next batch of unprocessed pages (up to 10 pages per promotion)."""
         processed_count = 0
         for promotion in queryset:
-            if not promotion.is_processed:
-                try:
-                    # Limit to 10 pages per request to prevent timeouts
-                    max_pages = 10
-                    total_pages = promotion.pages.count()
+            try:
+                unprocessed_pages = promotion.pages.filter(is_processed=False).count()
+                
+                if unprocessed_pages == 0:
+                    messages.info(request, f"'{promotion.title}' - All pages already processed.")
+                    continue
+                
+                max_pages = 10
+                
+                messages.info(
+                    request,
+                    f"Processing next {min(max_pages, unprocessed_pages)} pages of '{promotion.title}' "
+                    f"({unprocessed_pages} unprocessed pages remaining)."
+                )
+                
+                results = process_official_promotion(promotion.id, max_pages=max_pages)
+                if 'error' not in results:
+                    processed_count += 1
+                    remaining = promotion.pages.filter(is_processed=False).count()
                     
-                    if total_pages > max_pages:
-                        messages.warning(
-                            request,
-                            f"'{promotion.title}' has {total_pages} pages. Processing first {max_pages} to prevent timeout. "
-                            f"Use the management command for full processing: python manage.py process_promotions --promotion-id {promotion.id}"
-                        )
-                    
-                    results = process_official_promotion(promotion.id, max_pages=max_pages)
-                    if 'error' not in results:
-                        processed_count += 1
-                        messages.success(
-                            request, 
-                            f"Processed '{promotion.title}': {results['pages_processed']}/{total_pages} pages, "
-                            f"{results['items_extracted']} items, {results['alerts_created']} alerts created"
-                        )
-                        
-                        if total_pages > max_pages:
-                            remaining = total_pages - results['pages_processed']
-                            messages.info(
-                                request,
-                                f"'{promotion.title}' has {remaining} pages remaining. "
-                                f"Run the management command to process all pages."
-                            )
-                    else:
-                        messages.error(request, f"Failed to process '{promotion.title}': {results['error']}")
-                except Exception as e:
-                    messages.error(request, f"Error processing '{promotion.title}': {str(e)}")
-        
-        if processed_count > 0:
-            messages.success(request, f"Successfully processed {processed_count} promotion(s)")
-    
-    process_promotions.short_description = "Process selected promotions (limited to 10 pages each)"
-    
-    def process_promotions_safe(self, request, queryset):
-        """Admin action to safely process selected promotions with very conservative limits."""
-        processed_count = 0
-        for promotion in queryset:
-            if not promotion.is_processed:
-                try:
-                    # Very conservative limit for admin interface
-                    max_pages = 3
-                    total_pages = promotion.pages.count()
-                    
-                    messages.info(
-                        request,
-                        f"Processing first {max_pages} pages of '{promotion.title}' ({total_pages} total pages). "
-                        f"This is safe for the admin interface."
+                    messages.success(
+                        request, 
+                        f"Processed batch for '{promotion.title}': {results['pages_processed']} pages, "
+                        f"{results['items_extracted']} items, {results['alerts_created']} alerts created"
                     )
                     
-                    results = process_official_promotion(promotion.id, max_pages=max_pages)
-                    if 'error' not in results:
-                        processed_count += 1
-                        messages.success(
-                            request, 
-                            f"Safely processed '{promotion.title}': {results['pages_processed']} pages, "
-                            f"{results['items_extracted']} items, {results['alerts_created']} alerts"
+                    if remaining > 0:
+                        messages.info(
+                            request,
+                            f"'{promotion.title}' still has {remaining} pages remaining. "
+                            f"Run this action again to process the next batch."
                         )
-                        
-                        if total_pages > max_pages:
-                            remaining = total_pages - results['pages_processed']
-                            messages.warning(
-                                request,
-                                f"'{promotion.title}' has {remaining} pages remaining. "
-                                f"For full processing, use: python manage.py process_promotions --promotion-id {promotion.id}"
-                            )
                     else:
-                        messages.error(request, f"Failed to process '{promotion.title}': {results['error']}")
-                except Exception as e:
-                    messages.error(request, f"Error processing '{promotion.title}': {str(e)}")
+                        messages.success(
+                            request,
+                            f"'{promotion.title}' is now fully processed! 🎉"
+                        )
+                else:
+                    messages.error(request, f"Failed to process '{promotion.title}': {results['error']}")
+            except Exception as e:
+                messages.error(request, f"Error processing '{promotion.title}': {str(e)}")
         
         if processed_count > 0:
-            messages.success(request, f"Safely processed {processed_count} promotion(s)")
+            messages.success(request, f"Successfully processed batches for {processed_count} promotion(s)")
     
-    process_promotions_safe.short_description = "🛡️ Safe process (3 pages max each)"
+    process_next_batch.short_description = "📦 Process next 10 pages"
+    
+    def export_promotion_data_csv(self, request, queryset):
+        """Export all sale items from selected promotions to CSV."""
+        from django.http import HttpResponse
+        import csv
+        from datetime import datetime
+        
+        # Get all sale items from selected promotions
+        sale_items = OfficialSaleItem.objects.filter(
+            promotion__in=queryset
+        ).select_related('promotion').order_by('promotion__title', 'item_code')
+        
+        if not sale_items.exists():
+            messages.warning(request, "No sale items found in selected promotions.")
+            return
+        
+        # Create CSV response
+        response = HttpResponse(content_type='text/csv')
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        response['Content-Disposition'] = f'attachment; filename="promotion_data_{timestamp}.csv"'
+        
+        writer = csv.writer(response)
+        
+        # Write header
+        writer.writerow([
+            'Promotion Title',
+            'Sale Start Date',
+            'Sale End Date', 
+            'Item Code',
+            'Description',
+            'Regular Price',
+            'Sale Price',
+            'Instant Rebate',
+            'Sale Type',
+            'Alerts Created',
+            'Savings Amount',
+            'Savings Percentage'
+        ])
+        
+        # Write data
+        for item in sale_items:
+            # Calculate savings
+            savings_amount = None
+            savings_percentage = None
+            
+            if item.regular_price and item.sale_price:
+                savings_amount = item.regular_price - item.sale_price
+                if item.regular_price > 0:
+                    savings_percentage = (savings_amount / item.regular_price) * 100
+            elif item.instant_rebate:
+                savings_amount = item.instant_rebate
+                if item.regular_price and item.regular_price > 0:
+                    savings_percentage = (savings_amount / item.regular_price) * 100
+            
+            writer.writerow([
+                item.promotion.title,
+                item.promotion.sale_start_date,
+                item.promotion.sale_end_date,
+                item.item_code,
+                item.description,
+                str(item.regular_price) if item.regular_price else '',
+                str(item.sale_price) if item.sale_price else '',
+                str(item.instant_rebate) if item.instant_rebate else '',
+                item.sale_type,
+                item.alerts_created,
+                str(savings_amount) if savings_amount else '',
+                f"{savings_percentage:.1f}%" if savings_percentage else ''
+            ])
+        
+        promotion_titles = ", ".join([p.title for p in queryset])
+        messages.success(
+            request, 
+            f"Exported {sale_items.count()} sale items from: {promotion_titles}"
+        )
+        
+        return response
+    
+    export_promotion_data_csv.short_description = "📊 Export to CSV"
+    
+    def get_promotion_status(self, obj):
+        """Get detailed status information about promotion processing."""
+        total_pages = obj.pages.count()
+        processed_pages = obj.pages.filter(is_processed=True).count()
+        unprocessed_pages = total_pages - processed_pages
+        
+        if total_pages == 0:
+            return format_html('<span style="color: orange;">No pages uploaded</span>')
+        elif unprocessed_pages == 0:
+            return format_html('<span style="color: green;">✅ Complete ({}/{})</span>', processed_pages, total_pages)
+        else:
+            return format_html('<span style="color: blue;">⏳ Partial ({}/{}) - {} remaining</span>', 
+                             processed_pages, total_pages, unprocessed_pages)
+    
+    get_promotion_status.short_description = "Processing Status"
     
     def change_view(self, request, object_id, form_url='', extra_context=None):
         """Override change view to add bulk upload button."""

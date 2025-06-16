@@ -39,6 +39,8 @@ interface PriceAdjustmentInfo {
   sale_type?: string;
   confidence_level: string;
   transaction_number?: string;
+  sales_page_link?: string;
+  official_sale_item_id?: number;
 }
 
 interface Props {
@@ -243,7 +245,7 @@ const PriceAdjustmentAlert: React.FC<Props> = ({ adjustments, onDismiss }) => {
             </Box>
 
             {/* Action buttons */}
-            <Box sx={{ display: 'flex', gap: 1, mt: 2, justifyContent: 'center' }}>
+            <Box sx={{ display: 'flex', gap: 1, mt: 2, justifyContent: 'center', flexWrap: 'wrap' }}>
               <Button 
                 variant="contained" 
                 startIcon={<ViewIcon />}
@@ -254,6 +256,21 @@ const PriceAdjustmentAlert: React.FC<Props> = ({ adjustments, onDismiss }) => {
               >
                 View Receipt
               </Button>
+              {adjustment.sales_page_link && (
+                <Button 
+                  variant="contained"
+                  color="success"
+                  startIcon={<OfferIcon />}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (adjustment.sales_page_link) {
+                      navigate(adjustment.sales_page_link);
+                    }
+                  }}
+                >
+                  View Sale
+                </Button>
+              )}
               <Button 
                 variant="outlined" 
                 color="secondary"

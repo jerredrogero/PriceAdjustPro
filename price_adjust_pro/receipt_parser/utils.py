@@ -35,7 +35,7 @@ from django.utils import timezone
 import base64
 from django.urls import reverse
 from .models import (
-    CostcoItem, CostcoWarehouse, ItemWarehousePrice,
+    CostcoItem, CostcoWarehouse,
     PriceAdjustmentAlert, Receipt, LineItem,
     CostcoPromotion, OfficialSaleItem
 )
@@ -379,8 +379,8 @@ Parse this receipt:
 
 def check_for_price_adjustments(item: LineItem, receipt: Receipt, is_user_edited: bool = False) -> None:
     """
-    When an item with instant savings is found, alert other users who bought 
-    the same item at full price in the last 30 days.
+    Check if the current user can benefit from official Costco promotions.
+    This replaces the old user-to-user comparison with official sales only.
     
     Args:
         item: The line item to check
@@ -388,192 +388,107 @@ def check_for_price_adjustments(item: LineItem, receipt: Receipt, is_user_edited
         is_user_edited: Whether this data comes from user edits (less trusted)
     """
     try:
-        # Only check items that have a lower price (either through instant savings or regular price)
+        # Only check items that have a valid item code
         if not item.item_code:
             logger.info(f"Skipping price adjustment check - no item code for {item.description}")
             return
 
-        logger.info(f"=== PRICE ADJUSTMENT DEBUG for {item.description} (${item.price}) ===")
+        logger.info(f"=== OFFICIAL SALES PRICE CHECK for {item.description} (${item.price}) ===")
         logger.info(f"Item code: {item.item_code}, Receipt date: {receipt.transaction_date}, User: {receipt.user.username}")
-        logger.info(f"Is user edited: {is_user_edited}")
 
-        # SECURITY: Be more conservative with user-edited data
-        if is_user_edited:
-            # For user edits, we need to be more careful
-            # First check if there are ANY purchases to compare against
-            thirty_days_ago = receipt.transaction_date - timedelta(days=30)
-            logger.info(f"Checking for purchases between {thirty_days_ago} and {receipt.transaction_date}")
-            
-            potential_purchases = LineItem.objects.filter(
-                item_code=item.item_code,
-                receipt__transaction_date__gte=thirty_days_ago,
-                receipt__transaction_date__lte=receipt.transaction_date,
-                price__gt=item.price,
-                receipt__user__isnull=False
-            ).select_related('receipt', 'receipt__user')
-            
-            logger.info(f"Found {potential_purchases.count()} potential purchases at higher prices")
-            for p in potential_purchases:
-                logger.info(f"  - {p.receipt.user.username}: ${p.price} on {p.receipt.transaction_date}")
-            
-            same_user_purchases = potential_purchases.filter(receipt__user=receipt.user)
-            other_user_purchases = potential_purchases.exclude(receipt__user=receipt.user)
-            
-            logger.info(f"Same user purchases: {same_user_purchases.count()}, Other user purchases: {other_user_purchases.count()}")
-            
-            # For SAME USER comparisons: Always allow (users comparing their own receipts)
-            # For OTHER USER comparisons: Require sale evidence (prevent false alerts)
-            if other_user_purchases.exists() and not same_user_purchases.exists():
-                # Only other users would benefit, so require sale evidence
-                if not (item.instant_savings and item.instant_savings > 0) and not item.on_sale:
-                    logger.info(f"Skipping price adjustment check for user-edited item without sale evidence: {item.description}")
-                    return
-            
-            # Validate the discount is reasonable (not more than 75% off)
-            if item.original_price and item.instant_savings:
-                discount_percentage = (item.instant_savings / item.original_price) * 100
-                if discount_percentage > 75:
-                    logger.warning(f"Suspicious discount percentage ({discount_percentage:.1f}%) for item {item.description} - skipping price adjustment")
-                    return
+        # Skip if this item was bought on sale - user already got the discount
+        if item.on_sale or (item.instant_savings and item.instant_savings > 0):
+            logger.info(f"Skipping price adjustment check for {item.description} - item was bought on sale")
+            return
 
-        # Get the date 30 days ago from the receipt transaction date
-        thirty_days_ago = receipt.transaction_date - timedelta(days=30)
-
-        # Find users who bought this item at a higher price in the last 30 days from the receipt date
-        # across all warehouses
-        full_price_purchases = LineItem.objects.filter(
+        # Check against official Costco promotions only
+        from .models import OfficialSaleItem, PriceAdjustmentAlert
+        
+        # Use current date to check what's currently active
+        current_date = timezone.now().date()
+        
+        # Find active official promotions for this item
+        current_promotions = OfficialSaleItem.objects.filter(
             item_code=item.item_code,
-            receipt__transaction_date__gte=thirty_days_ago,
-            receipt__transaction_date__lte=receipt.transaction_date,  # Don't include future purchases
-            price__gt=item.price,  # Find any items with a higher price
-            receipt__user__isnull=False  # Ensure there's a user
-        ).select_related('receipt', 'receipt__user')
-
-        logger.info(f"Found {full_price_purchases.count()} full price purchases to check")
-
-        # Create alerts for users who bought at higher price
-        for purchase in full_price_purchases:
-            logger.info(f"Processing purchase: {purchase.receipt.user.username} paid ${purchase.price} on {purchase.receipt.transaction_date}")
-            
-            # For the same user, only create alerts for different receipts (different purchase dates)
-            if purchase.receipt.user == receipt.user:
-                # Skip if it's the same receipt (same transaction date)
-                if purchase.receipt.transaction_date.date() == receipt.transaction_date.date():
-                    logger.info(f"Skipping same-date purchase: {purchase.receipt.transaction_date.date()}")
+            promotion__sale_start_date__lte=current_date,
+            promotion__sale_end_date__gte=current_date,
+            promotion__is_processed=True
+        ).select_related('promotion')
+        
+        for promotion_item in current_promotions:
+            # Calculate what the user could pay with the promotion
+            if promotion_item.sale_type == 'discount_only':
+                # This is a "$X OFF" promotion
+                if promotion_item.instant_rebate and item.price > promotion_item.instant_rebate:
+                    final_price = item.price - promotion_item.instant_rebate
+                    savings = promotion_item.instant_rebate
+                else:
                     continue
-                
-                logger.info(f"Processing same-user price adjustment: ${purchase.price} -> ${item.price}")
-                
-                # For SAME USER: Always check for price adjustments, even if current item is on sale
-                # This allows users to get alerts about their previous full-price purchases
-                
-                # Check if user already has an alert for this item from this purchase date
-                existing_same_user_alert = PriceAdjustmentAlert.objects.filter(
-                    user=purchase.receipt.user,
-                    item_code=item.item_code,
-                    purchase_date=purchase.receipt.transaction_date,
-                    is_active=True,
-                    is_dismissed=False
-                ).first()
-                
-                if existing_same_user_alert:
-                    logger.info(f"Found existing alert, checking if this is better: ${item.price} vs ${existing_same_user_alert.lower_price}")
-                    # Update existing alert if this is a better deal
-                    if item.price < existing_same_user_alert.lower_price:
-                        existing_same_user_alert.lower_price = item.price
-                        existing_same_user_alert.cheaper_store_city = receipt.store_city
-                        existing_same_user_alert.cheaper_store_number = receipt.store_number
-                        existing_same_user_alert.data_source = 'user_edit' if is_user_edited else 'ocr_parsed'
-                        existing_same_user_alert.is_dismissed = False  # Re-activate
-                        existing_same_user_alert.save()
-                        logger.info(f"Updated same-user price alert for {purchase.receipt.user.username} on {item.description}")
-                    continue  # Skip creating new alert since we updated existing one
+            elif promotion_item.sale_price and item.price > promotion_item.sale_price:
+                # Standard promotion with sale price
+                final_price = promotion_item.sale_price
+                savings = item.price - promotion_item.sale_price
             else:
-                # For DIFFERENT USERS: Skip if current item was bought on sale
-                # This prevents false alerts when someone gets a deal
-                if item.instant_savings and item.instant_savings > 0:
-                    logger.info(f"Skipping price adjustment alert to other users for {item.description} - current purchase has instant savings")
-                    continue
-                    
-                if hasattr(item, 'on_sale') and item.on_sale:
-                    logger.info(f"Skipping price adjustment alert to other users for {item.description} - current purchase was marked as on sale")
-                    continue
-            
-            price_difference = purchase.price - item.price
-            logger.info(f"Price difference: ${price_difference}")
-            
-            # QUANTITY MISMATCH PROTECTION: Check if price difference is too large (percentage-based)
-            # This prevents alerts when someone bought multiple items vs single items
-            discount_percentage = (price_difference / purchase.price) * 100
-            max_reasonable_discount = 75.0  # Maximum reasonable discount percentage
-            
-            if discount_percentage > max_reasonable_discount:
-                logger.info(
-                    f"Skipping suspicious price difference for {item.description}: "
-                    f"${purchase.price} vs ${item.price} ({discount_percentage:.1f}% discount) - likely quantity mismatch"
-                )
+                # User already paid the same or less
+                logger.info(f"Skipping promotion for {item.description} - user paid ${item.price}, sale price is ${promotion_item.sale_price}")
                 continue
             
-            # Only alert if the difference is significant (e.g., > $0.50)
-            if price_difference >= Decimal('0.50'):
-                # For user-edited data, require larger minimum savings ($2.00)
-                min_savings = Decimal('2.00') if is_user_edited else Decimal('0.50')
-                if price_difference < min_savings:
-                    logger.info(f"Price difference ${price_difference} below minimum ${min_savings}")
-                    continue
-                    
-                logger.info(f"Creating price adjustment alert: ${purchase.price} -> ${item.price} (saves ${price_difference})")
-                
-                # Create or update alert
-                alert, created = PriceAdjustmentAlert.objects.get_or_create(
-                    user=purchase.receipt.user,
+            # Only create alert if savings is significant ($0.50+)
+            if savings >= Decimal('0.50'):
+                # Check if user already has an alert for this item
+                existing_alert = PriceAdjustmentAlert.objects.filter(
+                    user=receipt.user,
                     item_code=item.item_code,
-                    original_price=purchase.price,  # Their purchase price
-                    purchase_date=purchase.receipt.transaction_date,
-                    defaults={
-                        'item_description': item.description,
-                        'lower_price': item.price,  # The sale price
-                        'original_store_city': purchase.receipt.store_city,
-                        'original_store_number': purchase.receipt.store_number,
-                        'cheaper_store_city': receipt.store_city,  # Where the sale was found
-                        'cheaper_store_number': receipt.store_number,
-                        'is_active': True,
-                        'is_dismissed': False,
-                        'data_source': 'user_edit' if is_user_edited else 'ocr_parsed'
-                    }
-                )
+                    is_active=True,
+                    is_dismissed=False,
+                    purchase_date=receipt.transaction_date
+                ).first()
+                
+                if existing_alert:
+                    # Update existing alert if this is a better deal
+                    if final_price < existing_alert.lower_price:
+                        existing_alert.lower_price = final_price
+                        existing_alert.data_source = 'official_promo'
+                        existing_alert.official_sale_item = promotion_item
+                        existing_alert.cheaper_store_city = 'All Costco Locations'
+                        existing_alert.cheaper_store_number = 'ALL'
+                        existing_alert.is_dismissed = False
+                        existing_alert.save()
+                        logger.info(f"Updated official promotion alert for {receipt.user.username} on {item.description}")
+                else:
+                    # Create new alert
+                    PriceAdjustmentAlert.objects.create(
+                        user=receipt.user,
+                        item_code=item.item_code,
+                        item_description=promotion_item.description,
+                        original_price=item.price,
+                        lower_price=final_price,
+                        original_store_city=receipt.store_city,
+                        original_store_number=receipt.store_number,
+                        cheaper_store_city='All Costco Locations',
+                        cheaper_store_number='ALL',
+                        purchase_date=receipt.transaction_date,
+                        data_source='official_promo',
+                        official_sale_item=promotion_item,
+                        is_active=True,
+                        is_dismissed=False
+                    )
+                    
+                    logger.info(
+                        f"Official promotion alert created for {receipt.user.username} "
+                        f"on {promotion_item.description} (${item.price} -> ${final_price})"
+                    )
 
-                logger.info(f"Alert {'created' if created else 'found existing'}: {alert.id}")
-
-                if not created and item.price < alert.lower_price:
-                    # Update the alert if we found an even lower price
-                    alert.lower_price = item.price
-                    alert.cheaper_store_city = receipt.store_city
-                    alert.cheaper_store_number = receipt.store_number
-                    alert.is_dismissed = False  # Re-activate if user dismissed it before
-                    alert.data_source = 'user_edit' if is_user_edited else 'ocr_parsed'
-                    alert.save()
-
-                # Log the alert creation/update
-                source_type = "user-edited" if is_user_edited else "OCR-parsed"
-                user_type = "same user" if purchase.receipt.user == receipt.user else "other user"
-                logger.info(
-                    f"Price adjustment alert created/updated ({source_type}) for {user_type} {purchase.receipt.user.username} "
-                    f"on item {item.description} (${purchase.price} -> ${item.price})"
-                )
-            else:
-                logger.info(f"Price difference ${price_difference} below minimum threshold")
-
-        logger.info(f"=== END PRICE ADJUSTMENT DEBUG for {item.description} ===")
+        logger.info(f"=== END OFFICIAL SALES PRICE CHECK for {item.description} ===")
 
     except Exception as e:
-        logger.error(f"Error checking price adjustments for {item.description}: {str(e)}")
+        logger.error(f"Error checking official price promotions for {item.description}: {str(e)}")
         raise
 
 def update_price_database(parsed_data: Dict, user=None) -> None:
     """Update the price database with information from a parsed receipt."""
     try:
-        # Get or create the warehouse
+        # Get or create the warehouse (still needed for store location tracking)
         warehouse, _ = CostcoWarehouse.objects.get_or_create(
             store_number=parsed_data['store_number'],
             defaults={'location': parsed_data['store_location']}
@@ -597,7 +512,7 @@ def update_price_database(parsed_data: Dict, user=None) -> None:
             defaults=receipt_data
         )
 
-        # Process each item
+        # Process each item - simplified to only track items, not warehouse-specific pricing
         for item_data in parsed_data['items']:
             # Get or create the item
             costco_item, _ = CostcoItem.objects.get_or_create(
@@ -615,16 +530,8 @@ def update_price_database(parsed_data: Dict, user=None) -> None:
                 date_seen=parsed_data['transaction_date']
             )
 
-            # Update the warehouse-specific price
-            warehouse_price_changed = ItemWarehousePrice.update_price(
-                item=costco_item,
-                warehouse=warehouse,
-                new_price=item_data['price'],
-                date_seen=parsed_data['transaction_date']
-            )
-
-            if price_changed or warehouse_price_changed:
-                print(f"Price updated for {costco_item.description} at {warehouse.location}")
+            if price_changed:
+                print(f"Price updated for {costco_item.description}")
 
     except Exception as e:
         print(f"Error updating price database: {str(e)}")
@@ -1047,11 +954,11 @@ def process_official_promotion(promotion_id: int, max_pages: int = None) -> dict
             'skipped_pages': 0
         }
         
-        # Get pages to process (limit if specified)
-        pages_queryset = promotion.pages.all()
+        # Get pages to process (only unprocessed pages, limit if specified)
+        pages_queryset = promotion.pages.filter(is_processed=False).order_by('page_number')
         if max_pages:
             pages_queryset = pages_queryset[:max_pages]
-            logger.info(f"Processing limited to {max_pages} pages to prevent timeout")
+            logger.info(f"Processing limited to {max_pages} unprocessed pages to prevent timeout")
         
         total_pages = pages_queryset.count()
         logger.info(f"Starting to process {total_pages} pages for promotion '{promotion.title}'")
@@ -1262,7 +1169,7 @@ def create_official_price_alerts(official_sale_item) -> int:
 
 def check_current_user_for_price_adjustments(item: LineItem, receipt: Receipt) -> int:
     """
-    Check if the current user can benefit from existing lower prices or official promotions.
+    Check if the current user can benefit from official Costco promotions only.
     This is called when a user edits their receipt to see if they overpaid.
     
     Returns the number of new alerts created for the current user.
@@ -1278,14 +1185,11 @@ def check_current_user_for_price_adjustments(item: LineItem, receipt: Receipt) -
             logger.info(f"Skipping price adjustment check for {item.description} - item was bought on sale")
             return 0
 
-        # Check official promotions first (highest trust)
+        # Check official promotions only (highest trust)
         from .models import OfficialSaleItem, PriceAdjustmentAlert
         
         # For official promotions, check what's currently active (use current date)
         current_date = timezone.now().date()
-        
-        # For price comparison, use receipt date as reference point
-        thirty_days_ago = receipt.transaction_date - timedelta(days=30)
         
         # Find active official promotions for this item
         current_promotions = OfficialSaleItem.objects.filter(
@@ -1359,79 +1263,6 @@ def check_current_user_for_price_adjustments(item: LineItem, receipt: Receipt) -
                     logger.info(
                         f"Official promotion alert created for current user {receipt.user.username} "
                         f"on {promotion_item.description} (${item.price} -> ${final_price})"
-                    )
-        
-        # Check other users' lower prices in the last 30 days from the receipt date
-        lower_price_purchases = LineItem.objects.filter(
-            item_code=item.item_code,
-            receipt__transaction_date__gte=thirty_days_ago,
-            receipt__transaction_date__lte=receipt.transaction_date,  # Don't include future purchases
-            price__lt=item.price,  # Find lower prices
-            receipt__user__isnull=False
-        ).exclude(
-            receipt__user=receipt.user  # Exclude current user's own receipts
-        ).select_related('receipt').order_by('price')
-        
-        if lower_price_purchases.exists():
-            lowest_purchase = lower_price_purchases.first()
-            price_difference = item.price - lowest_purchase.price
-            
-            # QUANTITY MISMATCH PROTECTION: Check if price difference is too large (percentage-based)
-            discount_percentage = (price_difference / item.price) * 100
-            max_reasonable_discount = 75.0  # Maximum reasonable discount percentage
-            
-            if discount_percentage > max_reasonable_discount:
-                logger.info(
-                    f"Skipping suspicious price difference for current user on {item.description}: "
-                    f"${item.price} vs ${lowest_purchase.price} ({discount_percentage:.1f}% discount) - likely quantity mismatch"
-                )
-                return alerts_created
-            
-            # Only create alert if the difference is significant ($0.50+)
-            if price_difference >= Decimal('0.50'):
-                # Check if user already has an alert for this item from other sources
-                existing_alert = PriceAdjustmentAlert.objects.filter(
-                    user=receipt.user,
-                    item_code=item.item_code,
-                    is_active=True,
-                    is_dismissed=False,
-                    purchase_date=receipt.transaction_date,
-                    data_source__in=['ocr_parsed', 'user_edit']  # Don't override official promos
-                ).first()
-                
-                if existing_alert:
-                    # Update if this is a better deal
-                    if lowest_purchase.price < existing_alert.lower_price:
-                        existing_alert.lower_price = lowest_purchase.price
-                        existing_alert.cheaper_store_city = lowest_purchase.receipt.store_city
-                        existing_alert.cheaper_store_number = lowest_purchase.receipt.store_number
-                        existing_alert.data_source = 'ocr_parsed'
-                        existing_alert.is_dismissed = False
-                        existing_alert.save()
-                        alerts_created += 1
-                        logger.info(f"Updated community price alert for {receipt.user.username} on {item.description}")
-                elif not current_promotions.exists():  # Only create if no official promotion alert was created
-                    # Create new alert
-                    PriceAdjustmentAlert.objects.create(
-                        user=receipt.user,
-                        item_code=item.item_code,
-                        item_description=item.description,
-                        original_price=item.price,
-                        lower_price=lowest_purchase.price,
-                        original_store_city=receipt.store_city,
-                        original_store_number=receipt.store_number,
-                        cheaper_store_city=lowest_purchase.receipt.store_city,
-                        cheaper_store_number=lowest_purchase.receipt.store_number,
-                        purchase_date=receipt.transaction_date,
-                        data_source='ocr_parsed',
-                        is_active=True,
-                        is_dismissed=False
-                    )
-                    alerts_created += 1
-                    
-                    logger.info(
-                        f"Community price alert created for current user {receipt.user.username} "
-                        f"on {item.description} (${item.price} -> ${lowest_purchase.price})"
                     )
         
         return alerts_created

@@ -28,7 +28,7 @@ from django.core.paginator import Paginator
 from django.db import transaction
 
 from .models import (
-    Receipt, LineItem, ItemWarehousePrice, CostcoItem,
+    Receipt, LineItem, CostcoItem,
     CostcoWarehouse, PriceAdjustmentAlert, OfficialSaleItem, CostcoPromotion
 )
 from .utils import (
@@ -867,8 +867,10 @@ def delete_account(request):
 
 @login_required
 def api_check_price_adjustments(request):
-    """Check for available price adjustments for the user's receipts."""
+    """Check for available price adjustments based on official Costco promotions only."""
     try:
+        from .models import OfficialSaleItem
+        
         # Get all receipts from the last 30 days
         thirty_days_ago = timezone.now() - timezone.timedelta(days=30)
         user_receipts = Receipt.objects.filter(
@@ -878,6 +880,7 @@ def api_check_price_adjustments(request):
         ).prefetch_related('items')
 
         adjustments = []
+        current_date = timezone.now().date()
         
         # For each receipt
         for receipt in user_receipts:
@@ -885,18 +888,35 @@ def api_check_price_adjustments(request):
             for item in receipt.items.all():
                 if not item.item_code:  # Skip items without item codes
                     continue
+                
+                # Skip if item was bought on sale
+                if item.on_sale or (item.instant_savings and item.instant_savings > 0):
+                    continue
                     
-                # Find any lower prices for this item in the last 30 days
-                # across all warehouses
-                lower_prices = ItemWarehousePrice.objects.filter(
-                    item__item_code=item.item_code,
-                    date_seen__gte=thirty_days_ago,
-                    price__lt=item.price  # Find lower prices
-                ).select_related('warehouse').order_by('price')
+                # Find active official promotions for this item
+                current_promotions = OfficialSaleItem.objects.filter(
+                    item_code=item.item_code,
+                    promotion__sale_start_date__lte=current_date,
+                    promotion__sale_end_date__gte=current_date,
+                    promotion__is_processed=True
+                ).select_related('promotion')
 
-                if lower_prices.exists():
-                    lowest_price = lower_prices.first()
-                    price_difference = item.price - lowest_price.price
+                for promotion_item in current_promotions:
+                    # Calculate what the user could pay with the promotion
+                    if promotion_item.sale_type == 'discount_only':
+                        # This is a "$X OFF" promotion
+                        if promotion_item.instant_rebate and item.price > promotion_item.instant_rebate:
+                            final_price = item.price - promotion_item.instant_rebate
+                        else:
+                            continue
+                    elif promotion_item.sale_price and item.price > promotion_item.sale_price:
+                        # Standard promotion with sale price
+                        final_price = promotion_item.sale_price
+                    else:
+                        # User already paid the same or less
+                        continue
+                    
+                    price_difference = item.price - final_price
                     
                     # Only alert if the difference is significant (e.g., > $0.50)
                     if price_difference >= Decimal('0.50'):
@@ -909,14 +929,16 @@ def api_check_price_adjustments(request):
                                 'item_code': item.item_code,
                                 'description': item.description,
                                 'current_price': float(item.price),
-                                'lower_price': float(lowest_price.price),
+                                'lower_price': float(final_price),
                                 'price_difference': float(price_difference),
-                                'store_location': lowest_price.warehouse.location,
-                                'store_number': lowest_price.warehouse.store_number,
+                                'store_location': 'All Costco Locations',
+                                'store_number': 'ALL',
                                 'purchase_date': receipt.transaction_date.isoformat(),
                                 'days_remaining': days_remaining,
                                 'original_store': receipt.store_location,
-                                'original_store_number': receipt.store_number
+                                'original_store_number': receipt.store_number,
+                                'is_official': True,
+                                'promotion_title': promotion_item.promotion.title if promotion_item.promotion else None
                             })
 
         # Sort adjustments by potential savings (highest first)
@@ -988,6 +1010,11 @@ def api_price_adjustments(request):
                 except Exception as e:
                     logger.warning(f"Error accessing official_sale_item: {str(e)}")
                 
+                # Add sales page link if this is an official promotion
+                sales_page_link = None
+                if alert.data_source == 'official_promo' and alert.official_sale_item:
+                    sales_page_link = f"/on-sale?item={alert.item_code}"
+
                 alert_data.append({
                     'item_code': alert.item_code,
                     'description': alert.item_description,
@@ -1010,7 +1037,9 @@ def api_price_adjustments(request):
                     'source_description_data': safe_get_property(alert, 'source_description_data', {'text': 'Price difference found', 'links': []}),
                     'source_type_display': safe_get_property(alert, 'source_type_display', 'Price Comparison'),
                     'action_required': safe_get_property(alert, 'action_required', 'Visit customer service at any Costco location'),
-                    'location_context': safe_get_property(alert, 'location_context', {'type': 'unknown', 'description': 'Price difference found'})
+                    'location_context': safe_get_property(alert, 'location_context', {'type': 'unknown', 'description': 'Price difference found'}),
+                    'sales_page_link': sales_page_link,
+                    'official_sale_item_id': alert.official_sale_item.id if alert.official_sale_item else None
                 })
             except Exception as e:
                 logger.error(f"Error processing alert {alert.id}: {str(e)}")

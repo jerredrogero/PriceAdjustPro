@@ -42,8 +42,8 @@ const Landing: React.FC = () => {
     },
     {
       icon: <NotificationsIcon fontSize="large" />,
-      title: 'Price Drop Alerts',
-      description: 'Receive alerts when other users find the same items at lower prices at different Costco locations.',
+      title: 'Official Sale Alerts',
+      description: 'Receive alerts when items you bought go on sale or have official Costco promotions within 30 days.',
     },
     {
       icon: <AnalyticsIcon fontSize="large" />,

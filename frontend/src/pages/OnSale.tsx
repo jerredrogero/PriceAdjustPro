@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Box,
   Typography,
@@ -18,6 +18,7 @@ import {
   Select,
   MenuItem,
   SelectChangeEvent,
+  Fade,
 } from '@mui/material';
 import {
   LocalOffer as SaleIcon,
@@ -27,6 +28,7 @@ import {
   Store as StoreIcon,
 } from '@mui/icons-material';
 import { useTheme } from '@mui/material/styles';
+import { useLocation, useSearchParams } from 'react-router-dom';
 
 interface SaleItem {
   id: number;
@@ -60,15 +62,38 @@ interface SalesData {
 
 const OnSale: React.FC = () => {
   const theme = useTheme();
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
   const [salesData, setSalesData] = useState<SalesData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
+  const [highlightedItemCode, setHighlightedItemCode] = useState<string | null>(null);
+  const highlightedItemRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetchCurrentSales();
   }, []);
+
+  // Check for item parameter in URL and handle highlighting
+  useEffect(() => {
+    const itemCode = searchParams.get('item');
+    if (itemCode) {
+      setHighlightedItemCode(itemCode);
+      setSearchTerm(itemCode); // Also filter to show the item
+      
+      // Scroll to the highlighted item after data loads
+      if (salesData && highlightedItemRef.current) {
+        setTimeout(() => {
+          highlightedItemRef.current?.scrollIntoView({ 
+            behavior: 'smooth', 
+            block: 'center' 
+          });
+        }, 500);
+      }
+    }
+  }, [searchParams, salesData]);
 
   // Extract category from item description
   const extractCategory = (description: string): string => {
@@ -313,6 +338,20 @@ const OnSale: React.FC = () => {
         </Typography>
       </Box>
 
+      {/* Highlight alert when coming from price adjustment */}
+      {highlightedItemCode && (
+        <Alert 
+          severity="success" 
+          sx={{ mb: 3 }}
+          onClose={() => setHighlightedItemCode(null)}
+        >
+          <Typography variant="body1">
+            <strong>🎯 Price Adjustment Alert!</strong> We found the item you're looking for (#{highlightedItemCode}). 
+            It's highlighted below with a green border. Show this page to customer service to request your price adjustment.
+          </Typography>
+        </Alert>
+      )}
+
       {/* Active Promotions Summary */}
       {salesData.active_promotions.length > 0 && (
         <Paper elevation={2} sx={{ p: 3, mb: 4, backgroundColor: theme.palette.primary.main, color: 'white' }}>
@@ -392,21 +431,28 @@ const OnSale: React.FC = () => {
 
       {/* Sales Grid */}
       <Grid container spacing={3}>
-        {filteredSales.map((sale) => (
-          <Grid item xs={12} sm={6} lg={4} key={sale.id}>
-            <Card 
-              elevation={2} 
-              sx={{ 
-                height: '100%', 
-                display: 'flex', 
-                flexDirection: 'column',
-                transition: 'transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out',
-                '&:hover': {
-                  transform: 'translateY(-4px)',
-                  boxShadow: theme.shadows[8],
-                }
-              }}
-            >
+        {filteredSales.map((sale) => {
+          const isHighlighted = highlightedItemCode === sale.item_code;
+          return (
+            <Grid item xs={12} sm={6} lg={4} key={sale.id}>
+              <Fade in={true} timeout={1000}>
+                <Card 
+                  ref={isHighlighted ? highlightedItemRef : undefined}
+                  elevation={isHighlighted ? 8 : 2} 
+                  sx={{ 
+                    height: '100%', 
+                    display: 'flex', 
+                    flexDirection: 'column',
+                    transition: 'transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out',
+                    border: isHighlighted ? 3 : 0,
+                    borderColor: isHighlighted ? 'success.main' : 'transparent',
+                    backgroundColor: isHighlighted ? 'success.light' : 'background.paper',
+                    '&:hover': {
+                      transform: 'translateY(-4px)',
+                      boxShadow: theme.shadows[8],
+                    }
+                  }}
+                >
               <CardContent sx={{ flexGrow: 1 }}>
                 {/* Item Code */}
                 <Typography variant="body2" color="text.secondary" gutterBottom>
@@ -493,9 +539,11 @@ const OnSale: React.FC = () => {
                 </Typography>
               </CardContent>
             </Card>
-          </Grid>
-        ))}
-      </Grid>
+          </Fade>
+        </Grid>
+      );
+    })}
+  </Grid>
 
       {filteredSales.length === 0 && searchTerm && (
         <Box textAlign="center" py={8}>
