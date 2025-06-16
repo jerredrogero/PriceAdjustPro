@@ -968,10 +968,15 @@ def process_official_promotion(promotion_id: int, max_pages: int = None) -> dict
             try:
                 logger.info(f"Processing page {page_num}/{total_pages}: {page.page_number}")
                 
-                # Memory cleanup between pages
-                if page_num % 5 == 0:  # Every 5 pages
+                # Memory cleanup between pages - more frequent for large items
+                if page_num % 3 == 0:  # Every 3 pages instead of 5
                     gc.collect()
                     logger.info(f"Memory cleanup after page {page_num}")
+                
+                # Extra cleanup if we're processing large discount items
+                if len(sale_items) > 15:  # Many items on page
+                    gc.collect()
+                    logger.info(f"Extra memory cleanup - large page with {len(sale_items)} items")
                 
                 # Check if image file exists
                 if not page.image or not os.path.exists(page.image.path):

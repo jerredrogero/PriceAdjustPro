@@ -1487,15 +1487,20 @@ def api_current_sales(request):
     """Get current sales/promotions from official weekly flyers."""
     try:
         from .models import OfficialSaleItem, CostcoPromotion
-        from datetime import date
+        from datetime import date, datetime
+        from django.utils import timezone
         
-        # Get currently active promotions
+        # Get currently active promotions based on today's date
         current_date = date.today()
+        logger.info(f"Fetching current sales for date: {current_date}")
+        
         active_promotions = CostcoPromotion.objects.filter(
             sale_start_date__lte=current_date,
             sale_end_date__gte=current_date,
             is_processed=True
         ).order_by('-sale_start_date')
+        
+        logger.info(f"Found {active_promotions.count()} active promotions")
         
         # Get all sale items from active promotions
         current_sales = OfficialSaleItem.objects.filter(
@@ -1534,9 +1539,14 @@ def api_current_sales(request):
                 }
             })
         
+        # Log summary for debugging
+        logger.info(f"Returning {len(sales_data)} sale items from {active_promotions.count()} active promotions")
+        
         return JsonResponse({
             'sales': sales_data,
             'total_count': len(sales_data),
+            'current_date': current_date.isoformat(),
+            'last_updated': timezone.now().isoformat(),
             'active_promotions': [
                 {
                     'title': promo.title,

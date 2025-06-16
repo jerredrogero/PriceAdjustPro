@@ -58,6 +58,8 @@ interface SalesData {
   sales: SaleItem[];
   total_count: number;
   active_promotions: Promotion[];
+  current_date: string;
+  last_updated: string;
 }
 
 const OnSale: React.FC = () => {
@@ -74,6 +76,13 @@ const OnSale: React.FC = () => {
 
   useEffect(() => {
     fetchCurrentSales();
+    
+    // Auto-refresh every hour to catch new promotions
+    const interval = setInterval(() => {
+      fetchCurrentSales();
+    }, 60 * 60 * 1000); // 1 hour
+    
+    return () => clearInterval(interval);
   }, []);
 
   // Check for item parameter in URL and handle highlighting
@@ -336,6 +345,13 @@ const OnSale: React.FC = () => {
         <Typography variant="h6" color="text.secondary" gutterBottom>
           Shop the latest deals from Costco's weekly flyers
         </Typography>
+        {salesData && (
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+            📅 Current date: {new Date(salesData.current_date).toLocaleDateString()} • 
+            🔄 Last updated: {new Date(salesData.last_updated).toLocaleString()} • 
+            📦 {salesData.total_count} items on sale
+          </Typography>
+        )}
       </Box>
 
       {/* Highlight alert when coming from price adjustment */}
