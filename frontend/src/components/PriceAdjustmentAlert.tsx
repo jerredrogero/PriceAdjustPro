@@ -37,7 +37,6 @@ interface PriceAdjustmentInfo {
   is_official: boolean;
   promotion_title?: string;
   sale_type?: string;
-  confidence_level: string;
   transaction_number?: string;
   sales_page_link?: string;
   official_sale_item_id?: number;
@@ -73,17 +72,8 @@ const PriceAdjustmentAlert: React.FC<Props> = ({ adjustments, onDismiss }) => {
     return `${Math.ceil(days / 30)} month${Math.ceil(days / 30) > 1 ? 's' : ''} remaining`;
   };
 
-  const getConfidenceColor = (level: string) => {
-    switch (level) {
-      case 'high': return 'success';
-      case 'medium': return 'warning';
-      default: return 'default';
-    }
-  };
-
   const getSourceLabel = (source: string, isOfficial: boolean) => {
     if (isOfficial) return 'Official Promotion';
-    if (source === 'ocr_parsed') return 'Community Deal';
     if (source === 'user_edit') return 'User Reported';
     return 'Price Alert';
   };
@@ -132,12 +122,6 @@ const PriceAdjustmentAlert: React.FC<Props> = ({ adjustments, onDismiss }) => {
                     label={getSourceLabel(adjustment.data_source, adjustment.is_official)}
                     color={adjustment.is_official ? 'success' : 'primary'}
                     icon={adjustment.is_official ? <OfferIcon /> : undefined}
-                  />
-                  <Chip 
-                    size="small" 
-                    label={`${adjustment.confidence_level} confidence`}
-                    color={getConfidenceColor(adjustment.confidence_level) as any}
-                    variant="outlined"
                   />
                 </Box>
                 {adjustment.promotion_title && (

@@ -450,25 +450,25 @@ const OnSale: React.FC = () => {
         {filteredSales.map((sale) => {
           const isHighlighted = highlightedItemCode === sale.item_code;
           return (
-            <Grid item xs={12} sm={6} lg={4} key={sale.id}>
+          <Grid item xs={12} sm={6} lg={4} key={sale.id}>
               <Fade in={true} timeout={1000}>
-                <Card 
+            <Card 
                   ref={isHighlighted ? highlightedItemRef : undefined}
                   elevation={isHighlighted ? 8 : 2} 
-                  sx={{ 
-                    height: '100%', 
-                    display: 'flex', 
-                    flexDirection: 'column',
-                    transition: 'transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out',
+              sx={{ 
+                height: '100%', 
+                display: 'flex', 
+                flexDirection: 'column',
+                transition: 'transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out',
                     border: isHighlighted ? 3 : 0,
                     borderColor: isHighlighted ? 'success.main' : 'transparent',
                     backgroundColor: isHighlighted ? 'success.light' : 'background.paper',
-                    '&:hover': {
-                      transform: 'translateY(-4px)',
-                      boxShadow: theme.shadows[8],
-                    }
-                  }}
-                >
+                '&:hover': {
+                  transform: 'translateY(-4px)',
+                  boxShadow: theme.shadows[8],
+                }
+              }}
+            >
               <CardContent sx={{ flexGrow: 1 }}>
                 {/* Item Code */}
                 <Typography variant="body2" color="text.secondary" gutterBottom>
@@ -556,10 +556,10 @@ const OnSale: React.FC = () => {
               </CardContent>
             </Card>
           </Fade>
-        </Grid>
+          </Grid>
       );
     })}
-  </Grid>
+      </Grid>
 
       {filteredSales.length === 0 && searchTerm && (
         <Box textAlign="center" py={8}>

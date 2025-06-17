@@ -125,9 +125,7 @@ def upload_receipt(request):
                                     instant_savings=Decimal(str(item_data['instant_savings'])) if item_data.get('instant_savings') else None,
                                     original_price=Decimal(str(item_data['original_price'])) if item_data.get('original_price') else None
                                 )
-                                # Check for potential price adjustments for other users
-                                check_for_price_adjustments(line_item, existing_receipt, is_user_edited=False)
-                                # Check if current user can benefit from existing promotions/lower prices
+                                # Check if current user can benefit from existing promotions
                                 from .utils import check_current_user_for_price_adjustments
                                 check_current_user_for_price_adjustments(line_item, existing_receipt)
                             except Exception as e:
@@ -227,9 +225,7 @@ def upload_receipt(request):
                                 instant_savings=Decimal(str(item_data['instant_savings'])) if item_data.get('instant_savings') else None,
                                 original_price=Decimal(str(item_data['original_price'])) if item_data.get('original_price') else None
                             )
-                            # Check for potential price adjustments for other users
-                            check_for_price_adjustments(line_item, receipt, is_user_edited=False)
-                            # Check if current user can benefit from existing promotions/lower prices
+                            # Check if current user can benefit from existing promotions
                             from .utils import check_current_user_for_price_adjustments
                             check_current_user_for_price_adjustments(line_item, receipt)
                         except Exception as e:
@@ -538,40 +534,9 @@ def api_receipt_upload(request):
                         original_price=Decimal(str(item_data['original_price'])) if item_data.get('original_price') else None,
                         original_total_price=Decimal(str(item_data['total_price'])) if item_data.get('total_price') else None
                     )
-                    # Check for potential price adjustments and count new alerts
-                    try:
-                        # Get count of existing alerts before checking
-                        alerts_before = PriceAdjustmentAlert.objects.filter(
-                            item_code=line_item.item_code,
-                            is_active=True,
-                            is_dismissed=False
-                        ).count()
-                        
-                        logger.info(f"Checking price adjustments for edited item: {line_item.description} (${line_item.price})")
-                        
-                        # Check for price adjustments for ALL users (including same user from different receipts)
-                        check_for_price_adjustments(line_item, receipt, is_user_edited=True)
-                        
-                        # Check if CURRENT user can benefit from existing promotions/lower prices
-                        from .utils import check_current_user_for_price_adjustments
-                        current_user_alerts = check_current_user_for_price_adjustments(line_item, receipt)
-                        price_adjustments_created += current_user_alerts
-                        
-                        # Get count of alerts after checking
-                        alerts_after = PriceAdjustmentAlert.objects.filter(
-                            item_code=line_item.item_code,
-                            is_active=True,
-                            is_dismissed=False
-                        ).count()
-                        
-                        # Increment counter if new alerts were created for other users
-                        if alerts_after > alerts_before + current_user_alerts:
-                            price_adjustments_created += (alerts_after - alerts_before - current_user_alerts)
-                            logger.info(f"Price adjustment alerts created for other users on item {line_item.description} ({line_item.item_code})")
-                            
-                    except Exception as e:
-                        logger.error(f"Error checking price adjustments for {line_item.description}: {str(e)}")
-                    
+                    # Check if current user can benefit from existing promotions
+                    from .utils import check_current_user_for_price_adjustments
+                    check_current_user_for_price_adjustments(line_item, receipt)
                 except Exception as e:
                     logger.error(f"Error creating line item: {str(e)}")
                     continue
@@ -1031,7 +996,6 @@ def api_price_adjustments(request):
                     'is_official': alert.data_source == 'official_promo',
                     'promotion_title': promotion_title,
                     'sale_type': sale_type,
-                    'confidence_level': safe_get_property(alert, 'confidence_level', 'medium'),
                     'transaction_number': get_transaction_number_for_purchase(alert),
                     'source_description': safe_get_property(alert, 'source_description', 'Price difference found'),
                     'source_description_data': safe_get_property(alert, 'source_description_data', {'text': 'Price difference found', 'links': []}),
@@ -1059,6 +1023,7 @@ def api_price_adjustments(request):
         return JsonResponse({'error': str(e)}, status=500)
 
 @csrf_exempt
+@login_required
 def api_dismiss_price_adjustment(request, item_code):
     """Dismiss all price adjustment alerts for a specific item code."""
     if request.method != 'POST':
@@ -1296,34 +1261,12 @@ def api_receipt_update(request, transaction_number):
                 
                 for line_item in created_line_items:
                     try:
-                        # Get count of existing alerts before checking
-                        alerts_before = PriceAdjustmentAlert.objects.filter(
-                            item_code=line_item.item_code,
-                            is_active=True,
-                            is_dismissed=False
-                        ).count()
-                        
                         logger.info(f"Post-commit: Checking price adjustments for edited item: {line_item.description} (${line_item.price})")
                         
-                        # Check for price adjustments for ALL users (including same user from different receipts)
-                        check_for_price_adjustments(line_item, receipt, is_user_edited=True)
-                        
-                        # Check if CURRENT user can benefit from existing promotions/lower prices
+                        # Check if CURRENT user can benefit from existing promotions
                         from .utils import check_current_user_for_price_adjustments
                         current_user_alerts = check_current_user_for_price_adjustments(line_item, receipt)
                         price_adjustments_created += current_user_alerts
-                        
-                        # Get count of alerts after checking
-                        alerts_after = PriceAdjustmentAlert.objects.filter(
-                            item_code=line_item.item_code,
-                            is_active=True,
-                            is_dismissed=False
-                        ).count()
-                        
-                        # Increment counter if new alerts were created for other users
-                        if alerts_after > alerts_before + current_user_alerts:
-                            price_adjustments_created += (alerts_after - alerts_before - current_user_alerts)
-                            logger.info(f"Price adjustment alerts created for other users on item {line_item.description} ({line_item.item_code})")
                             
                     except Exception as e:
                         logger.error(f"Error checking price adjustments for {line_item.description}: {str(e)}")

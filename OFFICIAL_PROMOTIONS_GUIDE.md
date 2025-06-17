@@ -1,122 +1,56 @@
-# Official Costco Promotions System
+# Official Promotions Processing Guide
 
-## Overview
-The Official Promotions system allows administrators to upload and process Costco's monthly promotional booklets, creating **highly trusted** price adjustment alerts for all users.
+This system processes **official** Costco promotional booklets, creating **highly trusted** price adjustment alerts for users based on their purchase history.
 
 ## How It Works
 
-### 1. **Admin Upload Process**
-1. **Access Django Admin** → `Costco Promotions`
-2. **Create New Promotion**:
-   - Title: "January 2024 Member Deals"  
-   - Sale Start/End Dates
-   - Upload multiple booklet page images
+1. **Upload**: Admin uploads promotional booklet pages as images
+2. **OCR**: System extracts text from each page using advanced AI
+3. **Parse**: Text is analyzed to find item codes, prices, and sale types
+4. **Process**: Official sale items are saved to database
+5. **Alerts**: System compares with user purchase history to create alerts
 
-3. **Process Promotion**:
-   - Use admin action "Process selected promotions"
-   - Or command line: `python manage.py process_promotions --promotion-id 1`
+### Key Benefits
 
-### 2. **Automated Processing**
-The system automatically:
-- ✅ Extracts sale items from each booklet page using AI
-- ✅ Parses item codes, descriptions, prices, and rebate amounts
-- ✅ Creates price adjustment alerts for matching user purchases
-- ✅ Marks alerts as "Official" with high confidence
+- ✅ **100% Official Data**: Direct from Costco promotional materials
+- ✅ **High Trust Level**: No user-generated pricing data
+- ✅ **Automatic Processing**: AI extracts structured data from images
+- ✅ **Smart Matching**: Finds users who bought items before they went on sale
+- ✅ **Creates price adjustment alerts for matching user purchases**
+- ✅ **Respects 30-day adjustment policy**
 
-### 3. **User Experience**
+## What Users See
+
 Users see enhanced price adjustment alerts:
-- 🏆 **Official Promotion**: Verified by Costco booklet
-- 🏪 **Store Coverage**: "All Costco Locations" 
-- 📅 **Sale Dates**: Clear start/end periods
-- 💯 **High Confidence**: No validation needed
+- **Official Promotion Source**: Clear indication this is from Costco
+- **Promotion Details**: Sale price, regular price, discount amount
+- **Validity Period**: When the promotion starts/ends
+- **Action Items**: Clear instructions on how to get the adjustment
 
-## Admin Interface Features
+## Alert Creation Process
 
-### **Costco Promotions**
-- Upload promotional booklet images
-- Set sale date ranges  
-- Track processing status
-- View extracted items and alerts created
+When a promotion is processed:
 
-### **Promotion Pages**
-- Individual booklet page management
-- Image previews
-- Processing status and errors
-- Extracted text viewing
+1. **Find Eligible Users**: Look for users who bought the item in the last 30 days
+2. **Price Comparison**: Check if they paid more than the current sale price
+3. **Validate Savings**: Only create alerts for meaningful savings ($0.50+)
+4. **Skip Existing Sales**: Don't alert users who already bought on sale
+5. **Create Alerts**: Generate official promotion alerts
 
-### **Official Sale Items**
-- All extracted sale items
-- Regular vs sale prices
-- Instant rebate amounts
-- Number of alerts generated
+## Processing Status
 
-## Command Line Tools
-
-### **Process All Unprocessed Promotions**
-```bash
-python manage.py process_promotions --all-unprocessed
-```
-
-### **Process Only Active Promotions**
-```bash
-python manage.py process_promotions --all-unprocessed --active-only
-```
-
-### **Process Specific Promotion**
-```bash
-python manage.py process_promotions --promotion-id 1
-```
-
-### **View Status**
-```bash
-python manage.py process_promotions
-```
-
-## Data Quality & Trust Levels
-
-### **Three-Tier Trust System**
-1. **Official Promotions** (Highest Trust)
-   - Source: Official Costco booklets
-   - Confidence: High
-   - Validation: None needed
-   - Coverage: All warehouses
-
-2. **OCR Parsed Receipts** (Medium Trust)  
-   - Source: User receipt uploads
-   - Confidence: Medium
-   - Validation: Basic checks
-   - Coverage: Specific warehouse
-
-3. **User Edited Receipts** (Lower Trust)
-   - Source: Manual user corrections
-   - Confidence: Low
-   - Validation: Strict requirements
-   - Coverage: Specific warehouse
-
-## Benefits
-
-### **For Users**
-- 💰 **Guaranteed Savings**: Official promotions are 100% accurate
-- 🌍 **Universal Coverage**: Applies to all Costco locations
-- ⚡ **Instant Alerts**: No waiting for other users to report sales
-- 🔒 **Trusted Source**: No risk of fake or incorrect data
-
-### **For Administrators**
-- 📈 **Bulk Processing**: Handle entire promotional periods at once
-- 🎯 **Targeted Alerts**: Only users who paid more get notified
-- 📊 **Analytics**: Track items extracted and alerts created
-- 🛡️ **Data Integrity**: Eliminates user manipulation concerns
+Each promotion tracks:
+- **Processing Date**: When it was parsed
+- **Success Status**: Whether parsing completed successfully
+- **Error Details**: Any issues encountered during processing
+- **Alert Count**: Number of price alerts generated
 
 ## Example Workflow
 
-1. **Monthly Routine**: Upload new Costco promotional booklet
-2. **Processing**: Run `process_promotions --all-unprocessed --active-only`
-3. **Results**: Hundreds of users automatically get legitimate price adjustment alerts
-4. **Impact**: Users save money on items they recently purchased
+1. **Admin uploads January 2024 Member Deals booklet** (10 pages)
+2. **System processes all pages automatically**
+3. **Finds 150 sale items with valid item codes**
+4. **Matches against user purchase history**
+5. **Results**: Hundreds of users automatically get legitimate price adjustment alerts**
 
-## File Format Support
-- **Images**: JPG, PNG, WebP
-- **Processing**: AI-powered text extraction
-- **Validation**: Automatic price and item code parsing
-
-This system transforms the app from user-dependent to admin-curated, ensuring **reliable, official sale data** for all users while maintaining the community benefit of receipt sharing. 
+This creates a highly reliable, abuse-resistant system for price adjustment notifications based entirely on official Costco promotional data. 

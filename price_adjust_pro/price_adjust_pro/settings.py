@@ -185,6 +185,9 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = 5242880  # 5MB
 DATA_UPLOAD_MAX_MEMORY_SIZE = 5242880  # 5MB
 FILE_UPLOAD_PERMISSIONS = 0o644
 
+# Increase form field limit for promotions with many related objects
+DATA_UPLOAD_MAX_NUMBER_FIELDS = 10000  # Default is 1000
+
 # Receipt processing - delete files after extraction
 RECEIPT_KEEP_FILES = False  # Set to True for debugging
 RECEIPT_TEMP_DIR = '/tmp/receipt_processing'

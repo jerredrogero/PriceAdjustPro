@@ -288,9 +288,8 @@ const PriceAdjustments: React.FC = () => {
             <Card sx={{ 
               borderLeft: `4px solid ${
                 adjustment.location_context.type === 'nationwide' ? theme.palette.info.main :
-                adjustment.confidence_level === 'high' ? theme.palette.success.main :
-                adjustment.confidence_level === 'medium' ? theme.palette.warning.main :
-                theme.palette.grey[500]
+                adjustment.data_source === 'official_promo' ? theme.palette.success.main :
+                theme.palette.primary.main
               }`
             }}>
               <CardContent>
@@ -351,7 +350,7 @@ const PriceAdjustments: React.FC = () => {
                       </Grid>
                     </Grid>
 
-                    {/* Source and Confidence */}
+                    {/* Source and Location */}
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
                       <Chip
                         label={adjustment.source_type_display}
@@ -359,18 +358,8 @@ const PriceAdjustments: React.FC = () => {
                         variant="outlined"
                         color={
                           adjustment.source_type_display === 'Official Costco Promotion' ? 'success' :
-                          adjustment.source_type_display === 'Your Purchase History' ? 'primary' :
-                          adjustment.source_type_display === 'Community Price Data' ? 'info' : 'default'
+                          adjustment.source_type_display === 'Your Purchase History' ? 'primary' : 'default'
                         }
-                      />
-                      <Chip
-                        label={`${adjustment.confidence_level} confidence`}
-                        size="small"
-                        color={
-                          adjustment.confidence_level.toLowerCase() === 'high' ? 'success' :
-                          adjustment.confidence_level.toLowerCase() === 'medium' ? 'warning' : 'default'
-                        }
-                        variant="outlined"
                       />
                       <Chip
                         label={adjustment.location_context.description}

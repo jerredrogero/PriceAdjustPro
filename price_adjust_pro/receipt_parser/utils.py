@@ -569,10 +569,10 @@ def process_receipt_pdf(pdf_path: str, user=None) -> Dict:
         
         # Add metadata for editing to each item
         for item in parsed_data.get('items', []):
-            item['editable'] = True  # Flag that this item can be edited
-            item['original_description'] = item['description']  # Keep original for reference
-            item['original_quantity'] = item['quantity']  # Keep original for reference
-            item['needs_quantity_review'] = True  # Flag for frontend to highlight quantity field
+            item['editable'] = True
+            item['original_description'] = item['description']
+            item['original_quantity'] = item['quantity']
+            item['needs_quantity_review'] = True
         
         # Only update price database if user confirms quantities
         if parsed_data['parsed_successfully'] and user and not parsed_data.get('needs_review'):
@@ -684,7 +684,6 @@ def process_receipt_image(image_path: str, user=None) -> Dict:
         
         # Add confidence score for image-based receipts
         parsed_data['source_type'] = 'image'
-        parsed_data['confidence_note'] = 'Extracted from photo - please verify accuracy'
         
         # Strict validation of item count
         actual_item_count = len(parsed_data.get('items', []))
@@ -706,7 +705,6 @@ def process_receipt_image(image_path: str, user=None) -> Dict:
                     'source_type': 'image',
                     'needs_review': True,
                     'review_reason': f'Photo processing: Found {actual_item_count} items but receipt shows {expected_item_count} items sold. Please review and adjust.',
-                    'confidence_note': 'Extracted from photo - please verify accuracy',
                     'parse_error': None,
                     'parsed_successfully': False
                 }
@@ -717,7 +715,6 @@ def process_receipt_image(image_path: str, user=None) -> Dict:
             item['original_description'] = item['description']
             item['original_quantity'] = item['quantity']
             item['needs_quantity_review'] = True
-            item['source_confidence'] = 'medium'  # Photos generally have medium confidence
         
         # Only update price database if user confirms data
         if parsed_data['parsed_successfully'] and user and not parsed_data.get('needs_review'):
@@ -739,7 +736,6 @@ def process_receipt_image(image_path: str, user=None) -> Dict:
             'source_type': 'image',
             'needs_review': True,
             'review_reason': 'Failed to process image - please verify all details',
-            'confidence_note': 'Image processing failed - manual review required',
             'parse_error': f"Failed to process image: {str(e)}",
             'parsed_successfully': False
         }

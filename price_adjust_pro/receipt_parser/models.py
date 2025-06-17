@@ -292,11 +292,10 @@ class PriceAdjustmentAlert(models.Model):
     data_source = models.CharField(
         max_length=20, 
         choices=[
-            ('ocr_parsed', 'OCR Parsed'),
             ('user_edit', 'User Edit'),
             ('official_promo', 'Official Promotion')
         ],
-        default='ocr_parsed',
+        default='user_edit',
         help_text="Source of the price data that triggered this alert"
     )
     official_sale_item = models.ForeignKey(
@@ -411,26 +410,6 @@ class PriceAdjustmentAlert(models.Model):
                 'links': links
             }
         
-        elif self.data_source == 'ocr_parsed':
-            # Other users' receipts - only link to the user's own receipt
-            links = []
-            if original_transaction:
-                links.append({
-                    'text': 'your receipt',
-                    'url': f'/receipts/{original_transaction}',
-                    'type': 'original'
-                })
-            
-            if self.original_store_city == self.cheaper_store_city:
-                text = f"You purchased this item at {self.original_store_city} for ${self.original_price}. Another member found it for ${self.lower_price} at the same location. You may have a price adjustment available."
-            else:
-                text = f"You purchased this item at {self.original_store_city} for ${self.original_price}. Another member found it for ${self.lower_price} at {self.cheaper_store_city}. You may have a price adjustment available."
-            
-            return {
-                'text': text,
-                'links': links
-            }
-        
         else:
             # Fallback
             return {
@@ -458,32 +437,14 @@ class PriceAdjustmentAlert(models.Model):
         """Get a user-friendly display name for the data source."""
         source_types = {
             'official_promo': 'Official Costco Promotion',
-            'user_edit': 'Your Purchase History',
-            'ocr_parsed': 'Community Price Data'
+            'user_edit': 'Your Purchase History'
         }
         return source_types.get(self.data_source, 'Price Comparison')
 
     @property
-    def confidence_level(self):
-        """Get confidence level for this price adjustment."""
-        if self.data_source == 'official_promo':
-            return 'High'  # Official promotions are highly reliable
-        elif self.data_source == 'user_edit':
-            return 'High'  # User's own receipts are highly reliable
-        elif self.data_source == 'ocr_parsed':
-            return 'Medium'  # OCR data from other users is medium confidence
-        else:
-            return 'Low'
-
-    @property
     def action_required(self):
         """Get the recommended action for this price adjustment."""
-        if self.data_source == 'official_promo':
-            return f"Visit any Costco customer service with your membership card and list of eligible item #'s. This item's number is {self.item_code}."
-        elif self.data_source == 'user_edit':
-            return f"Visit any Costco customer service with your membership card and list of eligible item #'s. This item's number is {self.item_code}."
-        else:
-            return f"Visit any Costco customer service with your membership card and list of eligible item #'s. This item's number is {self.item_code}."
+        return f"Visit any Costco customer service with your membership card and list of eligible item #'s. This item's number is {self.item_code}."
 
     @property
     def location_context(self):
@@ -547,10 +508,10 @@ class PriceAdjustmentAlert(models.Model):
         from django.db.models import Q
         
         # Get alerts that are either:
-        # 1. Regular price adjustments within 30 days of purchase
+        # 1. User's own receipt comparisons within 30 days of purchase
         # 2. Official promotions that haven't ended yet
-        regular_alerts = Q(
-            data_source__in=['ocr_parsed', 'user_edit'],
+        user_edit_alerts = Q(
+            data_source='user_edit',
             purchase_date__gte=timezone.now() - timezone.timedelta(days=30)
         )
         
@@ -563,7 +524,7 @@ class PriceAdjustmentAlert(models.Model):
             user=user,
             is_active=True,
             is_dismissed=False
-        ).filter(regular_alerts | official_promo_alerts)
+        ).filter(user_edit_alerts | official_promo_alerts)
 
 class CostcoPromotion(models.Model):
     """

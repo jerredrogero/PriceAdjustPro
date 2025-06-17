@@ -382,15 +382,6 @@ class PriceAdjustmentAlertAdmin(BaseModelAdmin):
                 '<small>{}</small>',
                 link_text
             )
-        elif obj.data_source == 'ocr_parsed':
-            original_transaction = obj.get_original_transaction_number()
-            link_text = f'<a href="/receipts/{original_transaction}" target="_blank">Your Receipt</a>' if original_transaction else 'Community data'
-            
-            return format_html(
-                '<span style="color: #f57c00; font-weight: bold;">🏪 Community Data</span><br>'
-                '<small>{}</small>',
-                link_text
-            )
         else:
             return format_html('<span style="color: gray;">Unknown</span>')
     
@@ -437,8 +428,6 @@ class PriceAdjustmentAlertAdmin(BaseModelAdmin):
                         row.append(f"Official promotion: {obj.official_sale_item.promotion.title}")
                     elif obj.data_source == 'user_edit':
                         row.append("Official promotion comparison")
-                    elif obj.data_source == 'ocr_parsed':
-                        row.append("Community price data")
                     else:
                         row.append("Unknown trigger")
                 elif field == 'original_transaction':
