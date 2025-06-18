@@ -113,9 +113,7 @@ const AppContent: React.FC = () => {
     <UserContext.Provider value={user}>
         <Navigation user={user} />
         <Routes>
-        <Route path="/" element={
-          user ? <Navigate to="/dashboard" replace /> : <Box component="main" sx={{ pt: 8, pb: 4 }}><Landing /></Box>
-        } />
+        <Route path="/" element={<Box component="main" sx={{ pt: 8, pb: 4 }}><Landing /></Box>} />
         <Route path="/reset-password/:uid/:token" element={
           <Box component="main" sx={{ pt: 8, pb: 4 }}><PasswordResetConfirm /></Box>
         } />
