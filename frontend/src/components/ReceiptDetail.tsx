@@ -64,7 +64,7 @@ const ReceiptDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const isMobile = useMediaQuery(theme.breakpoints.down('lg'));
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -255,39 +255,66 @@ const ReceiptDetail: React.FC = () => {
           <Box sx={{ mb: 3 }}>
             {receipt.items?.map((item, index) => (
               <Card key={item.id} sx={{ mb: 2 }}>
-                <CardContent sx={{ pb: 2 }}>
-                  <Typography variant="subtitle1" sx={{ fontWeight: 500, mb: 0.5 }}>
-                    {item.description}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary" sx={{ mb: 2, display: 'block' }}>
-                    #{item.item_code}
-                  </Typography>
+                <CardContent sx={{ p: 2 }}>
+                  {/* Item Header */}
+                  <Box sx={{ mb: 2 }}>
+                    <Typography 
+                      variant="subtitle1" 
+                      sx={{ 
+                        fontWeight: 500, 
+                        mb: 1,
+                        lineHeight: 1.3,
+                        wordBreak: 'break-word'
+                      }}
+                    >
+                      {item.description}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+                      #{item.item_code}
+                    </Typography>
+                  </Box>
 
-                  <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-                    <Box sx={{ flex: 1 }}>
-                      <Typography variant="caption" color="text.secondary">Price</Typography>
-                      <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                  {/* Price, Quantity, Total Grid */}
+                  <Box sx={{ 
+                    display: 'grid', 
+                    gridTemplateColumns: '1fr 1fr 1fr',
+                    gap: 2,
+                    mb: 2,
+                    p: 1.5,
+                    backgroundColor: 'action.hover',
+                    borderRadius: 1
+                  }}>
+                    <Box sx={{ textAlign: 'center' }}>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                        Price
+                      </Typography>
+                      <Typography variant="body1" sx={{ fontWeight: 600 }}>
                         ${item.price}
                       </Typography>
                     </Box>
                     
-                    <Box sx={{ flex: 1 }}>
-                      <Typography variant="caption" color="text.secondary">Qty</Typography>
-                      <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                    <Box sx={{ textAlign: 'center' }}>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                        Qty
+                      </Typography>
+                      <Typography variant="body1" sx={{ fontWeight: 600 }}>
                         {item.quantity}
                       </Typography>
                     </Box>
 
-                    <Box sx={{ flex: 1 }}>
-                      <Typography variant="caption" color="text.secondary">Total</Typography>
-                      <Typography variant="body1" sx={{ fontWeight: 500, color: 'primary.main' }}>
+                    <Box sx={{ textAlign: 'center' }}>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                        Total
+                      </Typography>
+                      <Typography variant="body1" sx={{ fontWeight: 600, color: 'primary.main' }}>
                         ${item.total_price}
                       </Typography>
                     </Box>
                   </Box>
 
+                  {/* Discount Info */}
                   {item.discount && (
-                    <Box sx={{ mt: 1 }}>
+                    <Box sx={{ mt: 1.5 }}>
                       <Chip
                         label={`💰 Discount: $${item.discount}`}
                         color="success"
@@ -439,31 +466,34 @@ const ReceiptDetail: React.FC = () => {
         {/* Mobile totals card */}
         {isMobile && (
           <Card sx={{ backgroundColor: 'primary.main', color: 'primary.contrastText' }}>
-            <CardContent>
+            <CardContent sx={{ p: 2 }}>
+              <Typography variant="h6" sx={{ mb: 2, textAlign: 'center' }}>
+                Receipt Total
+              </Typography>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
                 <Typography>Subtotal:</Typography>
-                <Typography>${receipt.subtotal}</Typography>
+                <Typography sx={{ fontWeight: 500 }}>${receipt.subtotal}</Typography>
               </Box>
               {receipt.instant_savings && (
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
                   <Typography color="success.light">Instant Savings:</Typography>
-                  <Typography color="success.light">-${receipt.instant_savings}</Typography>
+                  <Typography color="success.light" sx={{ fontWeight: 500 }}>-${receipt.instant_savings}</Typography>
                 </Box>
               )}
               <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
                 <Typography>Tax:</Typography>
-                <Typography>${receipt.tax}</Typography>
+                <Typography sx={{ fontWeight: 500 }}>${receipt.tax}</Typography>
               </Box>
               {receipt.ebt_amount && (
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
                   <Typography color="info.light">EBT Amount:</Typography>
-                  <Typography color="info.light">${receipt.ebt_amount}</Typography>
+                  <Typography color="info.light" sx={{ fontWeight: 500 }}>${receipt.ebt_amount}</Typography>
                 </Box>
               )}
-              <Divider sx={{ my: 1, borderColor: 'primary.contrastText', opacity: 0.3 }} />
+              <Divider sx={{ my: 1.5, borderColor: 'primary.contrastText', opacity: 0.3 }} />
               <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                 <Typography variant="h6">Total:</Typography>
-                <Typography variant="h6">${receipt.total}</Typography>
+                <Typography variant="h6" sx={{ fontWeight: 600 }}>${receipt.total}</Typography>
               </Box>
             </CardContent>
           </Card>

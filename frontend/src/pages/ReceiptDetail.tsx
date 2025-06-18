@@ -78,7 +78,7 @@ const ReceiptDetail: React.FC = () => {
   const { transactionNumber } = useParams<{ transactionNumber: string }>();
   const navigate = useNavigate();
   const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const isMobile = useMediaQuery(theme.breakpoints.down('lg'));
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [editMode, setEditMode] = useState(false);
   const [editedItems, setEditedItems] = useState<ReceiptItem[]>([]);
@@ -401,11 +401,12 @@ const ReceiptDetail: React.FC = () => {
         <Box sx={{ mb: 3 }}>
           {editedItems.map((item, index) => (
             <Card key={item.id} sx={{ mb: 2, position: 'relative' }}>
-              <CardContent sx={{ pb: 2 }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
-                  <Box sx={{ flex: 1, minWidth: 0 }}>
-                    {editMode ? (
-                      <>
+              <CardContent sx={{ p: 2 }}>
+                {/* Item Header */}
+                <Box sx={{ mb: 2 }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
+                    <Box sx={{ flex: 1, minWidth: 0, pr: editMode ? 1 : 0 }}>
+                      {editMode ? (
                         <TextField
                           fullWidth
                           value={item.description}
@@ -413,43 +414,66 @@ const ReceiptDetail: React.FC = () => {
                           variant="outlined"
                           size="small"
                           label="Description"
-                          sx={{ mb: 1 }}
+                          multiline
+                          rows={2}
                         />
-                        <TextField
-                          value={item.item_code}
-                          onChange={(e) => handleItemChange(index, 'item_code', e.target.value)}
-                          variant="outlined"
-                          size="small"
-                          label="Item Code"
-                          sx={{ width: '140px' }}
-                        />
-                      </>
-                    ) : (
-                      <>
-                        <Typography variant="subtitle1" sx={{ fontWeight: 500, mb: 0.5 }}>
+                      ) : (
+                        <Typography 
+                          variant="subtitle1" 
+                          sx={{ 
+                            fontWeight: 500, 
+                            mb: 0.5,
+                            lineHeight: 1.3,
+                            wordBreak: 'break-word'
+                          }}
+                        >
                           {item.description}
                         </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          #{item.item_code}
-                        </Typography>
-                      </>
+                      )}
+                    </Box>
+                    {editMode && (
+                      <IconButton
+                        onClick={() => removeItem(index)}
+                        color="error"
+                        size="small"
+                        sx={{ ml: 1 }}
+                      >
+                        <DeleteIcon />
+                      </IconButton>
                     )}
                   </Box>
-                  {editMode && (
-                    <IconButton
-                      onClick={() => removeItem(index)}
-                      color="error"
+                  
+                  {/* Item Code */}
+                  {editMode ? (
+                    <TextField
+                      value={item.item_code}
+                      onChange={(e) => handleItemChange(index, 'item_code', e.target.value)}
+                      variant="outlined"
                       size="small"
-                      sx={{ ml: 1 }}
-                    >
-                      <DeleteIcon />
-                    </IconButton>
+                      label="Item Code"
+                      sx={{ maxWidth: '160px' }}
+                    />
+                  ) : (
+                    <Typography variant="body2" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+                      #{item.item_code}
+                    </Typography>
                   )}
                 </Box>
 
-                <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', mb: 2 }}>
-                  <Box sx={{ flex: 1 }}>
-                    <Typography variant="caption" color="text.secondary">Price</Typography>
+                {/* Price, Quantity, Total Grid */}
+                <Box sx={{ 
+                  display: 'grid', 
+                  gridTemplateColumns: '1fr 1fr 1fr',
+                  gap: 2,
+                  mb: 2,
+                  p: 1.5,
+                  backgroundColor: 'action.hover',
+                  borderRadius: 1
+                }}>
+                  <Box sx={{ textAlign: 'center' }}>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                      Price
+                    </Typography>
                     {editMode ? (
                       <TextField
                         type="number"
@@ -459,22 +483,23 @@ const ReceiptDetail: React.FC = () => {
                         size="small"
                         fullWidth
                         inputProps={{ min: 0, step: 0.01 }}
+                        sx={{ 
+                          '& .MuiInputBase-input': {
+                            textAlign: 'center',
+                            fontSize: '0.875rem'
+                          }
+                        }}
                       />
                     ) : (
-                      <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                      <Typography variant="body1" sx={{ fontWeight: 600 }}>
                         {formatCurrency(item.price)}
                       </Typography>
                     )}
                   </Box>
                   
-                  <Box sx={{ flex: 1 }}>
-                    <Typography variant="caption" color="text.secondary">
-                      Quantity
-                      {editMode && (
-                        <Typography component="span" variant="caption" color="warning.main" sx={{ ml: 0.5, fontWeight: 'bold' }}>
-                          ⚠️
-                        </Typography>
-                      )}
+                  <Box sx={{ textAlign: 'center' }}>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                      Qty {editMode && <span style={{ color: 'orange' }}>⚠️</span>}
                     </Typography>
                     {editMode ? (
                       <TextField
@@ -485,31 +510,50 @@ const ReceiptDetail: React.FC = () => {
                         size="small"
                         fullWidth
                         inputProps={{ min: 1 }}
+                        sx={{ 
+                          '& .MuiInputBase-input': {
+                            textAlign: 'center',
+                            fontSize: '0.875rem'
+                          }
+                        }}
                       />
                     ) : (
-                      <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                      <Typography variant="body1" sx={{ fontWeight: 600 }}>
                         {item.quantity}
                       </Typography>
                     )}
                   </Box>
 
-                  <Box sx={{ flex: 1 }}>
-                    <Typography variant="caption" color="text.secondary">Total</Typography>
-                    <Typography variant="body1" sx={{ fontWeight: 500, color: 'primary.main' }}>
+                  <Box sx={{ textAlign: 'center' }}>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                      Total
+                    </Typography>
+                    <Typography variant="body1" sx={{ fontWeight: 600, color: 'primary.main' }}>
                       {formatCurrency(item.original_total_price || item.total_price || (parseFloat(item.price) * item.quantity).toFixed(2))}
                     </Typography>
                   </Box>
                 </Box>
 
+                {/* Edit Mode - On Sale Section */}
                 {editMode && (
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mt: 2 }}>
+                  <Box sx={{ 
+                    display: 'flex', 
+                    flexDirection: 'column',
+                    gap: 1.5,
+                    p: 1.5,
+                    backgroundColor: 'action.selected',
+                    borderRadius: 1,
+                    mb: 1
+                  }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                       <Checkbox
                         checked={item.on_sale}
                         onChange={(e) => handleItemChange(index, 'on_sale', e.target.checked)}
                         size="small"
                       />
-                      <Typography variant="body2">On Sale</Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                        Item is on sale
+                      </Typography>
                     </Box>
                     {item.on_sale && (
                       <TextField
@@ -519,29 +563,31 @@ const ReceiptDetail: React.FC = () => {
                         onChange={(e) => handleItemChange(index, 'instant_savings', e.target.value)}
                         variant="outlined"
                         size="small"
-                        label="$ Saved"
-                        sx={{ width: '100px' }}
+                        label="Amount Saved ($)"
+                        fullWidth
                         inputProps={{ min: 0, step: 0.01 }}
                       />
                     )}
                   </Box>
                 )}
 
+                {/* Sale Info for View Mode */}
                 {item.instant_savings && !editMode && (
-                  <Box sx={{ mt: 1 }}>
+                  <Box sx={{ mt: 1.5 }}>
                     <Chip
-                      label={`🏷️ On Sale: ${formatCurrency(item.instant_savings)}`}
+                      label={`🏷️ Sale Price - Saved ${formatCurrency(item.instant_savings)}`}
                       color="success"
                       size="small"
                       variant="outlined"
+                      sx={{ mb: 1 }}
                     />
                     {item.original_price && (
                       <Typography 
-                        variant="caption" 
+                        variant="body2" 
                         color="text.secondary" 
-                        sx={{ textDecoration: 'line-through', ml: 1 }}
+                        sx={{ textDecoration: 'line-through', display: 'block' }}
                       >
-                        Was: {formatCurrency(item.original_price)}
+                        Original: {formatCurrency(item.original_price)}
                       </Typography>
                     )}
                   </Box>
@@ -552,27 +598,30 @@ const ReceiptDetail: React.FC = () => {
           
           {/* Mobile totals card */}
           <Card sx={{ mt: 2, backgroundColor: 'primary.main', color: 'primary.contrastText' }}>
-            <CardContent>
+            <CardContent sx={{ p: 2 }}>
+              <Typography variant="h6" sx={{ mb: 2, textAlign: 'center' }}>
+                Receipt Total
+              </Typography>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
                 <Typography>Subtotal:</Typography>
-                <Typography>{formatCurrency(calculateSubtotal())}</Typography>
+                <Typography sx={{ fontWeight: 500 }}>{formatCurrency(calculateSubtotal())}</Typography>
               </Box>
               {(parseFloat(calculateTotalSavings()) > 0 || receipt.instant_savings) && (
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
                   <Typography color="success.light">Instant Savings:</Typography>
-                  <Typography color="success.light">
+                  <Typography color="success.light" sx={{ fontWeight: 500 }}>
                     -{formatCurrency(editMode ? calculateTotalSavings() : (receipt.instant_savings || '0'))}
                   </Typography>
                 </Box>
               )}
               <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
                 <Typography>Tax:</Typography>
-                <Typography>{formatCurrency(receipt.tax)}</Typography>
+                <Typography sx={{ fontWeight: 500 }}>{formatCurrency(receipt.tax)}</Typography>
               </Box>
-              <Divider sx={{ my: 1, borderColor: 'primary.contrastText', opacity: 0.3 }} />
+              <Divider sx={{ my: 1.5, borderColor: 'primary.contrastText', opacity: 0.3 }} />
               <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                 <Typography variant="h6">Total:</Typography>
-                <Typography variant="h6">{formatCurrency(calculateTotal())}</Typography>
+                <Typography variant="h6" sx={{ fontWeight: 600 }}>{formatCurrency(calculateTotal())}</Typography>
               </Box>
             </CardContent>
           </Card>
