@@ -43,8 +43,7 @@ const AppContent: React.FC = () => {
     const maybeFromHijack = document.referrer.includes('/admin/') || document.referrer.includes('/hijack/');
     
     // Public pages that don't require authentication check
-    // Note: We always check auth on '/' in case of hijacking or existing sessions
-    const publicPages = ['/login', '/register', '/reset-password'];
+    const publicPages = ['/', '/login', '/register', '/reset-password'];
     const isPublicPage = publicPages.some(page => 
       location.pathname === page || location.pathname.startsWith('/reset-password/')
     );
