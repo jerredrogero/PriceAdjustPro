@@ -18,6 +18,7 @@ class LineItemSerializer(serializers.ModelSerializer):
 
 class ReceiptSerializer(serializers.ModelSerializer):
     items = LineItemSerializer(many=True, required=False)
+    accept_manual_edits = serializers.BooleanField(default=False, required=False, write_only=True)
     
     class Meta:
         model = Receipt
@@ -36,7 +37,8 @@ class ReceiptSerializer(serializers.ModelSerializer):
             'parse_error',
             'items',
             'file',
-            'user'
+            'user',
+            'accept_manual_edits'
         ]
         read_only_fields = ['created_at', 'store_city', 'user']
     
@@ -44,8 +46,11 @@ class ReceiptSerializer(serializers.ModelSerializer):
         """Handle updating receipt with nested items."""
         logger.info(f"Updating receipt {instance.transaction_number} with validated data")
         
-        # Extract items data if provided
+        # Extract items data and accept_manual_edits flag
         items_data = validated_data.pop('items', None)
+        accept_manual_edits = validated_data.pop('accept_manual_edits', False)
+        
+        logger.info(f"Serializer update: accept_manual_edits={accept_manual_edits}")
         
         # Update receipt fields
         for attr, value in validated_data.items():
@@ -61,7 +66,11 @@ class ReceiptSerializer(serializers.ModelSerializer):
             
             # Create new items
             for item_data in items_data:
-                # Remove total_price from item_data as it's calculated
+                # When accepting manual edits, preserve total_price as original_total_price
+                if accept_manual_edits and 'total_price' in item_data:
+                    item_data['original_total_price'] = Decimal(str(item_data['total_price']))
+                
+                # Remove total_price from item_data as it's calculated by the model
                 item_data.pop('total_price', None)
                 
                 LineItem.objects.create(

@@ -1189,8 +1189,12 @@ def api_receipt_update(request, transaction_number):
         receipt = get_object_or_404(Receipt, transaction_number=transaction_number, user=request.user)
         data = json.loads(request.body)
         
-        # Validate total items count (optional validation)
-        if 'total_items_sold' in data:
+        # Check if user wants to accept manual edits without recalculation
+        accept_manual_edits = data.get('accept_manual_edits', False)
+        logger.info(f"Receipt update for {transaction_number}: accept_manual_edits={accept_manual_edits}")
+        
+        # Validate total items count (optional validation - skip if accepting manual edits)
+        if 'total_items_sold' in data and not accept_manual_edits:
             total_quantity = sum(item.get('quantity', 1) for item in data.get('items', []))
             if total_quantity != data.get('total_items_sold', 0):
                 return JsonResponse({
@@ -1245,40 +1249,47 @@ def api_receipt_update(request, transaction_number):
                     logger.error(f"Error creating line item: {str(e)}")
                     continue
             
-            # Update price database
-            update_price_database({
-                'transaction_number': transaction_number,
-                'store_location': receipt.store_location,
-                'store_number': receipt.store_number,
-                'transaction_date': receipt.transaction_date,
-                'items': data.get('items', []),
-                'subtotal': receipt.subtotal,
-                'tax': receipt.tax,
-                'total': receipt.total
-            }, user=request.user)
-            
-            # Defer price adjustment checks until after transaction commits
-            def check_price_adjustments_after_commit():
-                """This function runs after the database transaction is committed."""
-                nonlocal price_adjustments_created
+            # Only update price database and check adjustments if not accepting manual edits
+            if not accept_manual_edits:
+                logger.info("Performing automatic calculations and price database updates")
                 
-                for line_item in created_line_items:
-                    try:
-                        logger.info(f"Post-commit: Checking price adjustments for edited item: {line_item.description} (${line_item.price})")
-                        
-                        # Check if CURRENT user can benefit from existing promotions
-                        from .utils import check_current_user_for_price_adjustments
-                        current_user_alerts = check_current_user_for_price_adjustments(line_item, receipt)
-                        price_adjustments_created += current_user_alerts
+                # Update price database
+                update_price_database({
+                    'transaction_number': transaction_number,
+                    'store_location': receipt.store_location,
+                    'store_number': receipt.store_number,
+                    'transaction_date': receipt.transaction_date,
+                    'items': data.get('items', []),
+                    'subtotal': receipt.subtotal,
+                    'tax': receipt.tax,
+                    'total': receipt.total
+                }, user=request.user)
+                
+                # Defer price adjustment checks until after transaction commits
+                def check_price_adjustments_after_commit():
+                    """This function runs after the database transaction is committed."""
+                    nonlocal price_adjustments_created
+                    
+                    for line_item in created_line_items:
+                        try:
+                            logger.info(f"Post-commit: Checking price adjustments for edited item: {line_item.description} (${line_item.price})")
                             
-                    except Exception as e:
-                        logger.error(f"Error checking price adjustments for {line_item.description}: {str(e)}")
-            
-            # Schedule price adjustment checks to run after transaction commits
-            transaction.on_commit(check_price_adjustments_after_commit)
+                            # Check if CURRENT user can benefit from existing promotions
+                            from .utils import check_current_user_for_price_adjustments
+                            current_user_alerts = check_current_user_for_price_adjustments(line_item, receipt)
+                            price_adjustments_created += current_user_alerts
+                                
+                        except Exception as e:
+                            logger.error(f"Error checking price adjustments for {line_item.description}: {str(e)}")
+                
+                # Schedule price adjustment checks to run after transaction commits
+                transaction.on_commit(check_price_adjustments_after_commit)
+            else:
+                logger.info("Skipping automatic calculations - accepting manual edits as-is")
         
         return JsonResponse({
             'message': 'Receipt updated successfully',
+            'accept_manual_edits': accept_manual_edits,
             'price_adjustments_created': price_adjustments_created,
             'receipt': {
                 'transaction_number': receipt.transaction_number,
@@ -1522,6 +1533,10 @@ class ReceiptUpdateAPIView(APIView):
             # Get the receipt for the authenticated user
             receipt = get_object_or_404(Receipt, transaction_number=transaction_number, user=request.user)
             
+            # Check if user wants to accept manual edits without recalculation
+            accept_manual_edits = request.data.get('accept_manual_edits', False)
+            logger.info(f"Class-based receipt update for {transaction_number}: accept_manual_edits={accept_manual_edits}")
+            
             # Use the serializer to validate and update the data
             serializer = ReceiptSerializer(receipt, data=request.data, partial=True)
             
@@ -1529,11 +1544,17 @@ class ReceiptUpdateAPIView(APIView):
                 # Save the updated receipt
                 updated_receipt = serializer.save()
                 
-                # Update price database and check for price adjustments
-                self._update_price_database_and_check_adjustments(updated_receipt, request.data)
+                # Only update price database and check for price adjustments if not accepting manual edits
+                if not accept_manual_edits:
+                    logger.info("Performing automatic calculations and price database updates")
+                    self._update_price_database_and_check_adjustments(updated_receipt, request.data)
+                else:
+                    logger.info("Skipping automatic calculations - accepting manual edits as-is")
                 
-                # Return the updated receipt data
-                return Response(serializer.data, status=status.HTTP_200_OK)
+                # Return the updated receipt data with manual edits flag
+                response_data = serializer.data
+                response_data['accept_manual_edits'] = accept_manual_edits
+                return Response(response_data, status=status.HTTP_200_OK)
             else:
                 logger.error(f"Receipt update validation errors: {serializer.errors}")
                 return Response({
