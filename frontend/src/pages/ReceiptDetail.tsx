@@ -166,6 +166,7 @@ const ReceiptDetail: React.FC = () => {
     setSaving(true);
     try {
       const saveData = {
+        accept_manual_edits: true, // Tell backend to accept our manual calculations
         transaction_number: transactionNumber,
         store_location: receipt?.store_location,
         store_number: receipt?.store_number,

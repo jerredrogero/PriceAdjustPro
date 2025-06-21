@@ -1192,6 +1192,8 @@ def api_receipt_update(request, transaction_number):
         # Check if user wants to accept manual edits without recalculation
         accept_manual_edits = data.get('accept_manual_edits', False)
         logger.info(f"Receipt update for {transaction_number}: accept_manual_edits={accept_manual_edits}")
+        logger.info(f"Incoming data: subtotal={data.get('subtotal')}, tax={data.get('tax')}, total={data.get('total')}")
+        logger.info(f"Full request data keys: {list(data.keys())}")
         
         # Validate total items count (optional validation - skip if accepting manual edits)
         if 'total_items_sold' in data and not accept_manual_edits:
@@ -1213,6 +1215,10 @@ def api_receipt_update(request, transaction_number):
             receipt.total = Decimal(str(data.get('total', receipt.total)))
             receipt.instant_savings = Decimal(str(data.get('instant_savings', '0.00'))) if data.get('instant_savings') else None
             
+            logger.info(f"Before saving receipt: subtotal={receipt.subtotal}, tax={receipt.tax}, total={receipt.total}")
+            receipt.save()
+            logger.info(f"After saving receipt: subtotal={receipt.subtotal}, tax={receipt.tax}, total={receipt.total}")
+            
             # Update transaction date if provided
             if data.get('transaction_date'):
                 try:
@@ -1222,7 +1228,6 @@ def api_receipt_update(request, transaction_number):
                 except (ValueError, TypeError) as e:
                     logger.warning(f"Failed to parse transaction_date: {data.get('transaction_date')}, error: {str(e)}")
             
-            receipt.save()
             
             # Update items
             receipt.items.all().delete()  # Remove existing items
@@ -1248,6 +1253,8 @@ def api_receipt_update(request, transaction_number):
                 except Exception as e:
                     logger.error(f"Error creating line item: {str(e)}")
                     continue
+            
+            logger.info(f"After creating line items, receipt totals: subtotal={receipt.subtotal}, tax={receipt.tax}, total={receipt.total}")
             
             # Only update price database and check adjustments if not accepting manual edits
             if not accept_manual_edits:
@@ -1286,6 +1293,10 @@ def api_receipt_update(request, transaction_number):
                 transaction.on_commit(check_price_adjustments_after_commit)
             else:
                 logger.info("Skipping automatic calculations - accepting manual edits as-is")
+        
+        # Refresh receipt from database to get final values
+        receipt.refresh_from_db()
+        logger.info(f"Final receipt values before response: subtotal={receipt.subtotal}, tax={receipt.tax}, total={receipt.total}, instant_savings={receipt.instant_savings}")
         
         return JsonResponse({
             'message': 'Receipt updated successfully',
