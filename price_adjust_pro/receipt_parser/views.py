@@ -1215,9 +1215,9 @@ def api_receipt_update(request, transaction_number):
             receipt.total = Decimal(str(data.get('total', receipt.total)))
             receipt.instant_savings = Decimal(str(data.get('instant_savings', '0.00'))) if data.get('instant_savings') else None
             
-            logger.info(f"Before saving receipt: subtotal={receipt.subtotal}, tax={receipt.tax}, total={receipt.total}")
+            logger.info(f"Before saving receipt: subtotal={receipt.subtotal}, tax={receipt.tax}, total={receipt.total}, instant_savings={receipt.instant_savings}")
             receipt.save()
-            logger.info(f"After saving receipt: subtotal={receipt.subtotal}, tax={receipt.tax}, total={receipt.total}")
+            logger.info(f"After saving receipt: subtotal={receipt.subtotal}, tax={receipt.tax}, total={receipt.total}, instant_savings={receipt.instant_savings}")
             
             # Update transaction date if provided
             if data.get('transaction_date'):
@@ -1254,7 +1254,11 @@ def api_receipt_update(request, transaction_number):
                     logger.error(f"Error creating line item: {str(e)}")
                     continue
             
-            logger.info(f"After creating line items, receipt totals: subtotal={receipt.subtotal}, tax={receipt.tax}, total={receipt.total}")
+            logger.info(f"After creating line items, receipt totals: subtotal={receipt.subtotal}, tax={receipt.tax}, total={receipt.total}, instant_savings={receipt.instant_savings}")
+            
+            # Check if any code is automatically recalculating instant_savings from line items
+            calculated_instant_savings = sum(item.instant_savings or Decimal('0.00') for item in created_line_items)
+            logger.info(f"Calculated instant_savings from line items: {calculated_instant_savings}")
             
             # Only update price database and check adjustments if not accepting manual edits
             if not accept_manual_edits:
@@ -1293,6 +1297,15 @@ def api_receipt_update(request, transaction_number):
                 transaction.on_commit(check_price_adjustments_after_commit)
             else:
                 logger.info("Skipping automatic calculations - accepting manual edits as-is")
+                
+                # FORCE manual values to stick by resetting them after any automatic calculations
+                logger.info("FORCING manual values to override any automatic calculations")
+                receipt.subtotal = Decimal(str(data.get('subtotal', receipt.subtotal)))
+                receipt.tax = Decimal(str(data.get('tax', receipt.tax)))
+                receipt.total = Decimal(str(data.get('total', receipt.total)))
+                receipt.instant_savings = Decimal(str(data.get('instant_savings', '0.00'))) if data.get('instant_savings') else None
+                receipt.save()
+                logger.info(f"After FORCING manual values: subtotal={receipt.subtotal}, tax={receipt.tax}, total={receipt.total}, instant_savings={receipt.instant_savings}")
         
         # Refresh receipt from database to get final values
         receipt.refresh_from_db()
