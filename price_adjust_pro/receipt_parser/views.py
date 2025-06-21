@@ -357,9 +357,76 @@ def api_receipt_list(request):
             
     return JsonResponse({'error': 'Method not allowed'}, status=405)
 
+@csrf_exempt
 @login_required
 def api_receipt_detail(request, transaction_number):
     receipt = get_object_or_404(Receipt, transaction_number=transaction_number, user=request.user)
+    
+    # Handle PATCH requests for updates (used by iOS app)
+    if request.method == 'PATCH':
+        try:
+            data = json.loads(request.body)
+            
+            # Check if user wants to accept manual edits without recalculation
+            accept_manual_edits = data.get('accept_manual_edits', False)
+            logger.info(f"PATCH to api_receipt_detail for {transaction_number}: accept_manual_edits={accept_manual_edits}")
+            logger.info(f"Incoming data: subtotal={data.get('subtotal')}, tax={data.get('tax')}, total={data.get('total')}")
+            
+            # Update receipt fields
+            receipt.store_location = data.get('store_location', receipt.store_location)
+            receipt.store_number = data.get('store_number', receipt.store_number)
+            receipt.subtotal = Decimal(str(data.get('subtotal', receipt.subtotal)))
+            receipt.tax = Decimal(str(data.get('tax', receipt.tax)))
+            receipt.total = Decimal(str(data.get('total', receipt.total)))
+            receipt.instant_savings = Decimal(str(data.get('instant_savings', '0.00'))) if data.get('instant_savings') else None
+            
+            # Update transaction date if provided
+            if data.get('transaction_date'):
+                try:
+                    from datetime import datetime
+                    receipt.transaction_date = datetime.fromisoformat(data['transaction_date'].replace('Z', '+00:00'))
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"Failed to parse transaction_date: {data.get('transaction_date')}, error: {str(e)}")
+            
+            receipt.save()
+            
+            # Update items if provided
+            if data.get('items'):
+                receipt.items.all().delete()  # Remove existing items
+                
+                for item_data in data.get('items', []):
+                    try:
+                        LineItem.objects.create(
+                            receipt=receipt,
+                            item_code=item_data.get('item_code', '000000'),
+                            description=item_data.get('description', 'Unknown Item'),
+                            price=Decimal(str(item_data.get('price', '0.00'))),
+                            quantity=item_data.get('quantity', 1),
+                            is_taxable=item_data.get('is_taxable', False),
+                            on_sale=item_data.get('on_sale', False),
+                            instant_savings=Decimal(str(item_data['instant_savings'])) if item_data.get('instant_savings') else None,
+                            original_price=Decimal(str(item_data['original_price'])) if item_data.get('original_price') else None,
+                            original_total_price=Decimal(str(item_data['total_price'])) if item_data.get('total_price') else None
+                        )
+                    except Exception as e:
+                        logger.error(f"Error creating line item: {str(e)}")
+                        continue
+            
+            # FORCE manual values when accept_manual_edits=True (same fix as the other endpoint)
+            if accept_manual_edits:
+                logger.info("FORCING manual values to override any automatic calculations")
+                receipt.subtotal = Decimal(str(data.get('subtotal', receipt.subtotal)))
+                receipt.tax = Decimal(str(data.get('tax', receipt.tax)))
+                receipt.total = Decimal(str(data.get('total', receipt.total)))
+                receipt.instant_savings = Decimal(str(data.get('instant_savings', '0.00'))) if data.get('instant_savings') else None
+                receipt.save()
+                logger.info(f"After FORCING manual values: subtotal={receipt.subtotal}, tax={receipt.tax}, total={receipt.total}")
+            
+        except Exception as e:
+            logger.error(f"Error updating receipt via PATCH: {str(e)}")
+            return JsonResponse({'error': str(e)}, status=500)
+    
+    # Handle GET requests (existing functionality)
     items = [{
         'id': item.id,
         'item_code': item.item_code,
