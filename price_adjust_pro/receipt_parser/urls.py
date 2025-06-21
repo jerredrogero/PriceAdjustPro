@@ -1,6 +1,7 @@
 from django.urls import path
 from django.contrib.auth import views as auth_views
 from . import views
+from .views import ReceiptUpdateAPIView
 
 # Split URL patterns into web and API
 web_urlpatterns = [
@@ -27,6 +28,8 @@ api_urlpatterns = [
     path('receipts/<str:transaction_number>/', views.api_receipt_detail, name='api_receipt_detail'),
     path('receipts/<str:transaction_number>/delete/', views.api_receipt_delete, name='api_receipt_delete'),
     path('receipts/<str:transaction_number>/update/', views.api_receipt_update, name='api_receipt_update'),
+    # New class-based PATCH endpoint (alternative to the function-based one above)
+    path('receipts/<str:transaction_number>/patch/', ReceiptUpdateAPIView.as_view(), name='api_receipt_patch'),
     path('price-adjustments/', views.api_price_adjustments, name='api_price_adjustments'),
     path('price-adjustments/dismiss/<str:item_code>/', views.api_dismiss_price_adjustment, name='api_dismiss_price_adjustment'),
     path('current-sales/', views.api_current_sales, name='api_current_sales'),

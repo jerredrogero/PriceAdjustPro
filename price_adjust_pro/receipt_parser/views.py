@@ -20,6 +20,8 @@ from rest_framework.authentication import SessionAuthentication, BasicAuthentica
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
+from rest_framework.views import APIView
+from django.utils.decorators import method_decorator
 from django.db import migrations
 from django.contrib.auth.models import User
 from django.db.models import Sum, Count, Avg
@@ -1180,19 +1182,20 @@ def api_user_analytics(request):
 @login_required
 def api_receipt_update(request, transaction_number):
     """Update a receipt after review."""
-    if request.method != 'POST':
+    if request.method not in ['POST', 'PATCH']:
         return JsonResponse({'error': 'Method not allowed'}, status=405)
         
     try:
         receipt = get_object_or_404(Receipt, transaction_number=transaction_number, user=request.user)
         data = json.loads(request.body)
         
-        # Validate total items count
-        total_quantity = sum(item.get('quantity', 1) for item in data.get('items', []))
-        if total_quantity != data.get('total_items_sold', 0):
-            return JsonResponse({
-                'error': f'Total quantity ({total_quantity}) must match receipt total ({data["total_items_sold"]})'
-            }, status=400)
+        # Validate total items count (optional validation)
+        if 'total_items_sold' in data:
+            total_quantity = sum(item.get('quantity', 1) for item in data.get('items', []))
+            if total_quantity != data.get('total_items_sold', 0):
+                return JsonResponse({
+                    'error': f'Total quantity ({total_quantity}) must match receipt total ({data["total_items_sold"]})'
+                }, status=400)
         
         price_adjustments_created = 0  # Initialize counter for tracking price adjustment alerts
         
@@ -1504,3 +1507,68 @@ def api_current_sales(request):
     except Exception as e:
         logger.error(f"Error fetching current sales: {str(e)}")
         return JsonResponse({'error': str(e)}, status=500)
+
+@method_decorator(csrf_exempt, name='dispatch')
+class ReceiptUpdateAPIView(APIView):
+    """
+    Class-based API view for handling receipt PATCH updates.
+    """
+    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    permission_classes = [IsAuthenticated]
+    
+    def patch(self, request, transaction_number):
+        """Handle PATCH requests to update receipt data."""
+        try:
+            # Get the receipt for the authenticated user
+            receipt = get_object_or_404(Receipt, transaction_number=transaction_number, user=request.user)
+            
+            # Use the serializer to validate and update the data
+            serializer = ReceiptSerializer(receipt, data=request.data, partial=True)
+            
+            if serializer.is_valid():
+                # Save the updated receipt
+                updated_receipt = serializer.save()
+                
+                # Update price database and check for price adjustments
+                self._update_price_database_and_check_adjustments(updated_receipt, request.data)
+                
+                # Return the updated receipt data
+                return Response(serializer.data, status=status.HTTP_200_OK)
+            else:
+                logger.error(f"Receipt update validation errors: {serializer.errors}")
+                return Response({
+                    'error': 'Validation failed',
+                    'details': serializer.errors
+                }, status=status.HTTP_400_BAD_REQUEST)
+                
+        except Exception as e:
+            logger.error(f"Error updating receipt {transaction_number}: {str(e)}")
+            return Response({
+                'error': f'Failed to update receipt: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    def _update_price_database_and_check_adjustments(self, receipt, request_data):
+        """Update price database and check for price adjustments."""
+        try:
+            # Update price database
+            update_price_database({
+                'transaction_number': receipt.transaction_number,
+                'store_location': receipt.store_location,
+                'store_number': receipt.store_number,
+                'transaction_date': receipt.transaction_date,
+                'items': request_data.get('items', []),
+                'subtotal': receipt.subtotal,
+                'tax': receipt.tax,
+                'total': receipt.total
+            }, user=receipt.user)
+            
+            # Check for price adjustments
+            from .utils import check_current_user_for_price_adjustments
+            for item in receipt.items.all():
+                try:
+                    check_current_user_for_price_adjustments(item, receipt)
+                except Exception as e:
+                    logger.error(f"Error checking price adjustments for {item.description}: {str(e)}")
+                    
+        except Exception as e:
+            logger.error(f"Error updating price database: {str(e)}")
