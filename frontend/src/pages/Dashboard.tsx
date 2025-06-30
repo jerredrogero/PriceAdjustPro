@@ -245,6 +245,15 @@ const Dashboard: React.FC = () => {
         {/* Stats */}
         <Grid item xs={12} sm={6} md={3}>
           <StatCard
+            title="Adjustments"
+            value={priceAdjustments.length.toString()}
+            icon={<TrendingDownIcon />}
+            subtitle="Available opportunities"
+            to="/price-adjustments"
+          />
+        </Grid>
+        <Grid item xs={12} sm={6} md={3}>
+          <StatCard
             title="Total Spent"
             value={analytics ? analytics.total_spent : '0'}
             icon={<MoneyIcon />}
@@ -268,15 +277,6 @@ const Dashboard: React.FC = () => {
             icon={<ReceiptIcon />}
             subtitle={`${analytics?.total_items || 0} total items`}
             to="/receipts"
-          />
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <StatCard
-            title="Adjustments"
-            value={priceAdjustments.length.toString()}
-            icon={<TrendingDownIcon />}
-            subtitle="Available opportunities"
-            to="/price-adjustments"
           />
         </Grid>
 
