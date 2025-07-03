@@ -362,6 +362,66 @@ def api_receipt_list(request):
 def api_receipt_detail(request, transaction_number):
     receipt = get_object_or_404(Receipt, transaction_number=transaction_number, user=request.user)
     
+    # Handle DELETE requests (fix for iOS app bug)
+    if request.method == 'DELETE':
+        try:
+            # Delete related price adjustment alerts first
+            from .models import PriceAdjustmentAlert
+            
+            # Find all price adjustment alerts that were created from this receipt
+            item_codes = list(receipt.items.values_list('item_code', flat=True))
+            
+            # Use a more comprehensive approach to find related alerts
+            from datetime import timedelta
+            purchase_date_start = (receipt.transaction_date - timedelta(hours=12)).date()
+            purchase_date_end = (receipt.transaction_date + timedelta(hours=12)).date()
+            
+            alerts_to_delete = PriceAdjustmentAlert.objects.filter(
+                user=request.user,
+                item_code__in=item_codes,
+                purchase_date__date__gte=purchase_date_start,
+                purchase_date__date__lte=purchase_date_end
+            )
+            
+            # Additional filter: if we have a valid store number, also match by that
+            if receipt.store_number and receipt.store_number not in ['0000', 'null', '', 'None']:
+                alerts_to_delete = alerts_to_delete.filter(
+                    original_store_number=receipt.store_number
+                )
+            
+            deleted_alerts_count = alerts_to_delete.count()
+            
+            # Log what we're about to delete for debugging
+            if deleted_alerts_count > 0:
+                logger.info(f"About to delete {deleted_alerts_count} price adjustment alerts for receipt {transaction_number}")
+                for alert in alerts_to_delete:
+                    logger.info(f"  - Alert: {alert.item_description} (${alert.original_price} -> ${alert.lower_price}), Purchase: {alert.purchase_date}")
+            
+            alerts_to_delete.delete()
+            
+            # Delete the physical file if it exists
+            if receipt.file:
+                # Get the full path using the storage backend
+                file_path = receipt.file.path
+                try:
+                    if os.path.exists(file_path):
+                        os.remove(file_path)
+                except Exception as e:
+                    logger.warning(f"Failed to delete file {file_path}: {str(e)}")
+                    # Continue with receipt deletion even if file deletion fails
+            
+            # Delete the receipt (this will cascade delete line items)
+            receipt.delete()
+            
+            return JsonResponse({
+                'message': 'Receipt deleted successfully',
+                'deleted_alerts': deleted_alerts_count
+            }, status=200)
+            
+        except Exception as e:
+            logger.error(f"Error deleting receipt: {str(e)}")
+            return JsonResponse({'error': str(e)}, status=500)
+    
     # Handle PATCH requests for updates (used by iOS app)
     if request.method == 'PATCH':
         try:
