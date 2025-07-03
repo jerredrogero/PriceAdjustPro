@@ -126,32 +126,70 @@ def api_register(request):
             data = json.loads(request.body)
             from django.contrib.auth.models import User
             
-            # Validate required fields
-            username = data.get('username')
+            # Handle both web form format and iOS app format
+            # Web form: username, email, password1, password2
+            # iOS app: first_name, last_name, email, password
+            
+            # Try iOS app format first
+            first_name = data.get('first_name')
+            last_name = data.get('last_name')
             email = data.get('email')
-            password1 = data.get('password1')
-            password2 = data.get('password2')
+            password = data.get('password')
             
-            print(f"Registration attempt for user: {username}, email: {email}")
-            
-            if not all([username, email, password1, password2]):
-                print("Registration error: Missing required fields")
-                return JsonResponse({'error': 'All fields are required'}, status=400)
-            
-            if password1 != password2:
-                print("Registration error: Passwords do not match")
-                return JsonResponse({'error': 'Passwords do not match'}, status=400)
-            
-            if User.objects.filter(username=username).exists():
-                print(f"Registration error: Username {username} already exists")
-                return JsonResponse({'error': 'Username already exists'}, status=400)
-            
-            # Create user
-            user = User.objects.create_user(
-                username=username,
-                email=email,
-                password=password1
-            )
+            # Fallback to web form format
+            if not first_name:
+                username = data.get('username')
+                password1 = data.get('password1')
+                password2 = data.get('password2')
+                
+                print(f"Web registration attempt for user: {username}, email: {email}")
+                
+                if not all([username, email, password1, password2]):
+                    print("Registration error: Missing required fields")
+                    return JsonResponse({'error': 'All fields are required'}, status=400)
+                
+                if password1 != password2:
+                    print("Registration error: Passwords do not match")
+                    return JsonResponse({'error': 'Passwords do not match'}, status=400)
+                
+                if User.objects.filter(username=username).exists():
+                    print(f"Registration error: Username {username} already exists")
+                    return JsonResponse({'error': 'Username already exists'}, status=400)
+                
+                # Create user
+                user = User.objects.create_user(
+                    username=username,
+                    email=email,
+                    password=password1
+                )
+            else:
+                # iOS app format - create username from first name and email
+                print(f"iOS registration attempt for: {first_name} {last_name}, email: {email}")
+                
+                if not all([first_name, email, password]):
+                    print("Registration error: Missing required fields (first_name, email, password)")
+                    return JsonResponse({'error': 'All fields are required'}, status=400)
+                
+                # Create username from first name and email domain
+                base_username = first_name.lower()
+                username = base_username
+                counter = 1
+                
+                # Ensure username is unique
+                while User.objects.filter(username=username).exists():
+                    username = f"{base_username}{counter}"
+                    counter += 1
+                
+                print(f"Generated username: {username}")
+                
+                # Create user
+                user = User.objects.create_user(
+                    username=username,
+                    email=email,
+                    password=password,
+                    first_name=first_name,
+                    last_name=last_name
+                )
             
             # Log the user in
             login(request, user)

@@ -845,29 +845,68 @@ def api_register(request):
 
     try:
         data = json.loads(request.body)
-        username = data.get('username')
+        
+        # Handle both web form format and iOS app format
+        # Web form: username, email, password1, password2
+        # iOS app: first_name, last_name, email, password
+        
+        # Try iOS app format first
+        first_name = data.get('first_name')
+        last_name = data.get('last_name')
         email = data.get('email')
-        password1 = data.get('password1')
-        password2 = data.get('password2')
+        password = data.get('password')
+        
+        # Fallback to web form format
+        if not first_name:
+            username = data.get('username')
+            password1 = data.get('password1')
+            password2 = data.get('password2')
+            
+            # Validate required fields
+            if not all([username, email, password1, password2]):
+                return JsonResponse({'error': 'All fields are required'}, status=400)
 
-        # Validate required fields
-        if not all([username, email, password1, password2]):
-            return JsonResponse({'error': 'All fields are required'}, status=400)
+            # Check if passwords match
+            if password1 != password2:
+                return JsonResponse({'error': 'Passwords do not match'}, status=400)
 
-        # Check if passwords match
-        if password1 != password2:
-            return JsonResponse({'error': 'Passwords do not match'}, status=400)
+            # Check if username exists
+            if User.objects.filter(username=username).exists():
+                return JsonResponse({'error': 'Username already exists'}, status=400)
 
-        # Check if username exists
-        if User.objects.filter(username=username).exists():
-            return JsonResponse({'error': 'Username already exists'}, status=400)
-
-        # Create user
-        user = User.objects.create_user(
-            username=username,
-            email=email,
-            password=password1
-        )
+            # Create user
+            user = User.objects.create_user(
+                username=username,
+                email=email,
+                password=password1
+            )
+        else:
+            # iOS app format - create username from first name and email
+            logger.info(f"iOS registration attempt for: {first_name} {last_name}, email: {email}")
+            
+            if not all([first_name, email, password]):
+                return JsonResponse({'error': 'All fields are required'}, status=400)
+            
+            # Create username from first name and email domain
+            base_username = first_name.lower()
+            username = base_username
+            counter = 1
+            
+            # Ensure username is unique
+            while User.objects.filter(username=username).exists():
+                username = f"{base_username}{counter}"
+                counter += 1
+            
+            logger.info(f"Generated username: {username}")
+            
+            # Create user
+            user = User.objects.create_user(
+                username=username,
+                email=email,
+                password=password,
+                first_name=first_name,
+                last_name=last_name
+            )
 
         # Log the user in
         login(request, user)
