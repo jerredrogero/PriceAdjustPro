@@ -160,52 +160,21 @@ const Subscription: React.FC = () => {
       setLoading(true);
       setError('');
 
-      console.log('Creating subscription with product:', product);
+      console.log('Subscription requested for product:', product);
 
-      // Use axios for proper CSRF handling
-      const response = await api.post('/subscriptions/create/', {
-        price_id: product.stripe_price_id,
-        product_id: product.id,
-      });
+      // For now, show a message that subscription processing is being finalized
+      setError(`Subscription processing is currently being finalized. 
 
-      console.log('Subscription create success:', response.data);
+To subscribe to ${product.name} (${product.price}/${product.billing_interval}), please contact us at:
 
-      if (response.data.checkout_url) {
-        // Redirect directly to Stripe Checkout
-        window.location.href = response.data.checkout_url;
-      } else if (response.data.success) {
-        // Subscription created successfully, refresh data
-        fetchSubscriptionData();
-        setSuccess('Subscription created successfully!');
-      } else {
-        throw new Error('Unexpected response from server');
-      }
+📧 support@priceadjustpro.com
+💬 Mention: "${product.name} subscription"
+
+We'll set up your subscription manually and provide immediate access to all premium features.`);
+
     } catch (err: any) {
-      console.error('Direct subscription error:', err);
-      
-      let errorMessage = 'Failed to start subscription process.';
-      
-      if (err.response) {
-        // Server responded with error status
-        const status = err.response.status;
-        const data = err.response.data;
-        
-        if (status === 403) {
-          errorMessage = 'Permission denied. Please make sure you are logged in.';
-        } else if (status === 404) {
-          errorMessage = 'Subscription service not available.';
-        } else if (status === 500) {
-          errorMessage = 'Server error. Please try again later.';
-        } else if (data?.error) {
-          errorMessage = data.error;
-        } else if (data?.message) {
-          errorMessage = data.message;
-        }
-      } else if (err.request) {
-        errorMessage = 'Network error. Please check your connection.';
-      }
-      
-      setError(`${errorMessage}\n\nFor immediate access, please contact us at support@priceadjustpro.com`);
+      console.error('Subscription error:', err);
+      setError('Unable to process subscription at this time. Please contact support@priceadjustpro.com for assistance.');
     } finally {
       setLoading(false);
     }
@@ -462,7 +431,7 @@ const Subscription: React.FC = () => {
                   </List>
                 </CardContent>
                 
-                <CardActions sx={{ p: 2 }}>
+                <CardActions sx={{ p: 2, flexDirection: 'column', gap: 1 }}>
                   <Button
                     variant="contained"
                     fullWidth
@@ -471,6 +440,9 @@ const Subscription: React.FC = () => {
                   >
                     Subscribe Now
                   </Button>
+                  <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center' }}>
+                    Contact support@priceadjustpro.com for instant setup
+                  </Typography>
                 </CardActions>
               </Card>
             </Grid>
