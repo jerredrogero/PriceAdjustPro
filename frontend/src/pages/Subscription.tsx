@@ -27,7 +27,7 @@ import {
 import {
   Check as CheckIcon,
   Star as StarIcon,
-  Crown as CrownIcon,
+  Upgrade as UpgradeIcon,
   Receipt as ReceiptIcon,
   Notifications as NotificationsIcon,
   Analytics as AnalyticsIcon,
@@ -325,7 +325,7 @@ const Subscription: React.FC = () => {
         <Card sx={{ mb: 4 }}>
           <CardHeader 
             title="Current Subscription"
-            avatar={<CrownIcon color="primary" />}
+            avatar={<UpgradeIcon color="primary" />}
           />
           <CardContent>
             <Grid container spacing={2} alignItems="center">
