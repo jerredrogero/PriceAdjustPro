@@ -41,17 +41,17 @@ const PriceAdjustmentBanner: React.FC<Props> = ({ adjustmentCount, totalSavings 
           <PriceDownIcon color="info" sx={{ fontSize: 32 }} />
           <Box>
             <Typography variant="h6" gutterBottom sx={{ color: 'info.main' }}>
-              Price Adjustment Alert
+              Eligible Refund Alert
             </Typography>
             <Typography variant="body1">
-              You have {adjustmentCount} item{adjustmentCount > 1 ? 's' : ''} eligible for price adjustment
+              You have {adjustmentCount} item{adjustmentCount > 1 ? 's' : ''} eligible for refunds
             </Typography>
           </Box>
         </Box>
 
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
           <Chip
-            label={`Save $${totalSavings.toFixed(2)}`}
+            label={`$${totalSavings.toFixed(2)} in refunds`}
             color="success"
             sx={{ 
               fontWeight: 'bold',

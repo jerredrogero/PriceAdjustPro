@@ -37,8 +37,8 @@ const Landing: React.FC = () => {
     },
     {
       icon: <SavingsIcon fontSize="large" />,
-      title: 'Save Money',
-      description: 'Get notified when items you bought go on sale within 30 days. Take advantage of Costco\'s price adjustment policy.',
+      title: 'Never Miss Refunds',
+      description: 'Automatic monitoring of price drops on your purchases. Get notified of every eligible refund within 30 days.',
     },
     {
       icon: <NotificationsIcon fontSize="large" />,
@@ -54,36 +54,6 @@ const Landing: React.FC = () => {
 
   return (
     <Box>
-      {/* Beta Disclaimer */}
-      <Alert 
-        severity="info" 
-        sx={{ 
-          backgroundColor: '#1976d2',
-          color: 'white',
-          borderRadius: 0,
-          py: 2,
-          '& .MuiAlert-icon': {
-            color: 'white'
-          }
-        }}
-      >
-        <Container maxWidth="lg">
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap', justifyContent: 'center' }}>
-            <Chip 
-              label="BETA" 
-              sx={{ 
-                backgroundColor: 'white',
-                color: '#1976d2',
-                fontWeight: 'bold',
-                fontSize: '0.75rem'
-              }} 
-            />
-            <Typography component="span" sx={{ fontWeight: 'bold', textAlign: 'center' }}>
-              The website is free to use while in BETA!
-            </Typography>
-          </Box>
-        </Container>
-      </Alert>
 
       {/* Hero Section */}
       <Box
@@ -98,10 +68,10 @@ const Landing: React.FC = () => {
           <Grid container spacing={6} alignItems="center">
             <Grid item xs={12} md={7}>
               <Typography variant="h2" component="h1" gutterBottom fontWeight="bold">
-                Get Money Back on Your Costco Purchases
+                Guarantee You're Getting the Lowest Price at Costco
               </Typography>
               <Typography variant="h5" paragraph sx={{ mb: 4, opacity: 0.9 }}>
-                PriceAdjustPro tracks your Costco purchases and automatically notifies you when a price adjustment is available. The website is free to use while in BETA!
+                PriceAdjustPro monitors price drops on purchases you've already made and notifies you of every eligible refund—automatically.
               </Typography>
               <Button
                 variant="contained"
@@ -138,7 +108,7 @@ const Landing: React.FC = () => {
           Costco Price Adjustment Policy
         </Typography>
         <Typography variant="h6" align="center" color="text.secondary" paragraph sx={{ mb: 6 }}>
-          Get the difference back when prices drop
+          Eligible for refunds when prices drop within 30 days
         </Typography>
 
         <Grid container spacing={4}>
@@ -216,7 +186,7 @@ const Landing: React.FC = () => {
             How It Works
           </Typography>
           <Typography variant="h6" align="center" color="text.secondary" paragraph sx={{ mb: 6 }}>
-            Start saving money in three simple steps
+            Start getting money back in three simple steps
           </Typography>
 
           <Grid container spacing={4}>
@@ -296,7 +266,7 @@ const Landing: React.FC = () => {
                   Upload Your Receipt
                 </Typography>
                 <Typography paragraph>
-                  Create an account and upload your receipt PDFs. Our system will automatically:
+                  Create an account and upload your receipt PDFs. Our system will automatically monitor your purchase history and:
                 </Typography>
                 <List dense>
                   <ListItem>
@@ -324,7 +294,7 @@ const Landing: React.FC = () => {
                   to="/register"
                   sx={{ mt: 2 }}
                 >
-                  Create Account
+                  Start Saving
                 </Button>
               </Paper>
             </Grid>
@@ -334,10 +304,10 @@ const Landing: React.FC = () => {
                   3
                 </Typography>
                 <Typography variant="h6" gutterBottom>
-                  Get Notified & Save
+                  Get Notified & Save Money
                 </Typography>
                 <Typography paragraph>
-                  We'll notify you when:
+                  We automatically monitor and notify you when:
                 </Typography>
                 <List dense>
                   <ListItem>
@@ -360,7 +330,7 @@ const Landing: React.FC = () => {
                   </ListItem>
                 </List>
                 <Alert severity="info" sx={{ mt: 2 }}>
-                  You have 30 days from your purchase date to claim your adjustment!
+                  You have 30 days from your purchase date to claim your money back!
                 </Alert>
               </Paper>
             </Grid>

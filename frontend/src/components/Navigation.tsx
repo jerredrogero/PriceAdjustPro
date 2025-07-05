@@ -165,9 +165,6 @@ const Navigation: React.FC<NavigationProps> = ({ user }) => {
           '& .MuiIconButton-root': {
             color: mode === 'light' ? '#ffffff' : '#000000',
           },
-          '& .MuiChip-root': {
-            color: 'white', // Keep BETA chip white always
-          },
         }}
       >
         {isMobile && isAuthenticated && (
@@ -205,18 +202,6 @@ const Navigation: React.FC<NavigationProps> = ({ user }) => {
           <Typography variant="h6" component="span">
             PriceAdjustPro
           </Typography>
-          <Chip 
-            label="BETA" 
-            size="small" 
-            sx={{ 
-              ml: 1, 
-              backgroundColor: 'secondary.main',
-              color: 'white',
-              fontSize: '0.7rem',
-              height: '20px',
-              fontWeight: 'bold'
-            }} 
-          />
         </Link>
 
         {!isAuthenticated ? (

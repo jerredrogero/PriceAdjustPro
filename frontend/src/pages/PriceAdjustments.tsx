@@ -231,7 +231,7 @@ const PriceAdjustments: React.FC = () => {
           </Alert>
 
           <Alert severity="success">
-            No price adjustments available at this time. We'll notify you when we find better prices!
+            No eligible refunds available at this time. We'll notify you when we find better prices!
           </Alert>
         </Paper>
       </Container>
@@ -242,11 +242,11 @@ const PriceAdjustments: React.FC = () => {
     <Container maxWidth="lg" sx={{ py: 4 }}>
       <Paper sx={{ p: 4, mb: 4 }}>
         <Typography variant="h4" gutterBottom>
-          Price Adjustment Opportunities
+          Eligible Refund Opportunities
         </Typography>
         <Typography color="text.secondary" paragraph>
           Costco offers price adjustments within 30 days of purchase. When an item you bought goes on sale within 30 days, 
-          you can request a refund for the difference. Below are your current opportunities for price adjustments.
+          you can request a refund for the difference. Below are your current eligible refund opportunities.
         </Typography>
         
         {/* How to Request Price Adjustments */}
@@ -264,7 +264,7 @@ const PriceAdjustments: React.FC = () => {
 
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mt: 2 }}>
           <Typography variant="h6">
-            Total Potential Savings:
+            Total Eligible Refunds:
           </Typography>
           <Chip
             label={`$${totalSavings.toFixed(2)}`}
