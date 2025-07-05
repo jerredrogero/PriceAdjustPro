@@ -2324,11 +2324,16 @@ def api_debug_auth_test(request):
         'message': 'This endpoint bypasses CSRF and permissions for testing'
     })
 
-@csrf_exempt
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
 def api_create_checkout_session(request):
     """Create a Stripe checkout session for subscription."""
+    
+    # Manual authentication check
+    if not request.user.is_authenticated:
+        return Response(
+            {'error': 'Authentication required'},
+            status=status.HTTP_401_UNAUTHORIZED
+        )
     
     try:
         from .models import SubscriptionProduct
@@ -2342,6 +2347,7 @@ def api_create_checkout_session(request):
         # Debug logging
         logger.info(f"STRIPE_SECRET_KEY from settings: {stripe_secret_key[:8]}..." if stripe_secret_key else "STRIPE_SECRET_KEY is empty")
         logger.info(f"Stripe API key configured: {bool(stripe.api_key)}")
+        logger.info(f"User authenticated: {request.user.is_authenticated}, User ID: {request.user.id}")
         
         # Get the product/price ID from request
         price_id = request.data.get('price_id')
@@ -2377,6 +2383,8 @@ def api_create_checkout_session(request):
                 allow_promotion_codes=True,
                 billing_address_collection='auto',
             )
+            
+            logger.info(f"Successfully created checkout session: {checkout_session.id}")
             
             return Response({
                 'checkout_url': checkout_session.url,
