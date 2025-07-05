@@ -15,12 +15,7 @@ import {
   ListItem,
   ListItemIcon,
   ListItemText,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
   CircularProgress,
-  Divider,
 } from '@mui/material';
 import {
   Check as CheckIcon,
@@ -57,102 +52,6 @@ interface UserSubscription {
   };
 }
 
-const CheckoutForm: React.FC<{
-  product: SubscriptionProduct;
-  onSuccess: () => void;
-  onCancel: () => void;
-}> = ({ product, onSuccess, onCancel }) => {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-
-  const handleSubmit = async () => {
-    setError('');
-    setLoading(true);
-
-    try {
-      // Try to create subscription using existing endpoint
-      const response = await fetch('/api/subscriptions/create/', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          price_id: product.stripe_price_id,
-          product_id: product.id,
-        }),
-      });
-
-      console.log('Subscription create response:', response.status);
-
-      if (!response.ok) {
-        // Handle non-JSON error responses
-        const contentType = response.headers.get('content-type');
-        if (contentType && contentType.includes('application/json')) {
-          const result = await response.json();
-          throw new Error(result.error || 'Subscription creation failed');
-        } else {
-          // Likely an HTML error page
-          throw new Error(`Server error (${response.status}). Please contact support.`);
-        }
-      }
-
-      const result = await response.json();
-      console.log('Subscription create result:', result);
-
-      if (result.checkout_url) {
-        // Redirect to Stripe Checkout
-        window.location.href = result.checkout_url;
-      } else if (result.success) {
-        // Subscription created successfully
-        onSuccess();
-      } else {
-        throw new Error('Unexpected response from server');
-      }
-    } catch (err: any) {
-      console.error('Subscription error:', err);
-      setError(err.message || 'Failed to start subscription process. Please try again.');
-      setLoading(false);
-    }
-  };
-
-  return (
-    <Box>
-      <Box sx={{ mb: 3 }}>
-        <Typography variant="h6" gutterBottom>
-          Subscribe to {product.name}
-        </Typography>
-        <Typography variant="body2" color="text.secondary" gutterBottom>
-          ${product.price}/{product.billing_interval}
-        </Typography>
-      </Box>
-
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          {error}
-        </Alert>
-      )}
-
-      <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-        <Button onClick={onCancel} disabled={loading}>
-          Cancel
-        </Button>
-        <Button
-          variant="contained"
-          onClick={handleSubmit}
-          disabled={loading}
-          startIcon={loading && <CircularProgress size={20} />}
-        >
-          {loading ? 'Processing...' : 'Subscribe'}
-        </Button>
-      </Box>
-      
-      <Typography variant="caption" color="text.secondary" sx={{ mt: 2, display: 'block' }}>
-        Note: Subscription processing is currently being set up. For immediate access, please contact support.
-      </Typography>
-    </Box>
-  );
-};
 
 const Subscription: React.FC = () => {
   const user = useContext(UserContext);
@@ -161,8 +60,6 @@ const Subscription: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [selectedProduct, setSelectedProduct] = useState<SubscriptionProduct | null>(null);
-  const [checkoutOpen, setCheckoutOpen] = useState(false);
 
   useEffect(() => {
     fetchSubscriptionData();
@@ -272,17 +169,57 @@ const Subscription: React.FC = () => {
     }
   };
 
-  const handleSubscribe = (product: SubscriptionProduct) => {
-    setSelectedProduct(product);
-    setCheckoutOpen(true);
+  const handleSubscribe = async (product: SubscriptionProduct) => {
+    try {
+      setLoading(true);
+      setError('');
+
+      // Create subscription directly - no modal
+      const response = await fetch('/api/subscriptions/create/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          price_id: product.stripe_price_id,
+          product_id: product.id,
+        }),
+      });
+
+      console.log('Direct subscription create response:', response.status);
+
+      if (!response.ok) {
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const result = await response.json();
+          throw new Error(result.error || 'Subscription creation failed');
+        } else {
+          throw new Error(`Server error (${response.status}). Please contact support.`);
+        }
+      }
+
+      const result = await response.json();
+      console.log('Direct subscription create result:', result);
+
+      if (result.checkout_url) {
+        // Redirect directly to Stripe Checkout
+        window.location.href = result.checkout_url;
+      } else if (result.success) {
+        // Subscription created successfully, refresh data
+        fetchSubscriptionData();
+        setSuccess('Subscription created successfully!');
+      } else {
+        throw new Error('Unexpected response from server');
+      }
+    } catch (err: any) {
+      console.error('Direct subscription error:', err);
+      setError(err.message || 'Failed to start subscription process. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleSubscriptionSuccess = () => {
-    setCheckoutOpen(false);
-    setSelectedProduct(null);
-    setSuccess('Subscription created successfully!');
-    fetchSubscriptionData();
-  };
 
   const handleCancelSubscription = async () => {
     try {
@@ -551,23 +488,6 @@ const Subscription: React.FC = () => {
       )}
 
       {/* Checkout Dialog */}
-      <Dialog 
-        open={checkoutOpen} 
-        onClose={() => setCheckoutOpen(false)}
-        maxWidth="sm"
-        fullWidth
-      >
-        <DialogTitle>Complete Your Subscription</DialogTitle>
-        <DialogContent>
-          {selectedProduct && (
-            <CheckoutForm
-              product={selectedProduct}
-              onSuccess={handleSubscriptionSuccess}
-              onCancel={() => setCheckoutOpen(false)}
-            />
-          )}
-        </DialogContent>
-      </Dialog>
     </Container>
   );
 };
