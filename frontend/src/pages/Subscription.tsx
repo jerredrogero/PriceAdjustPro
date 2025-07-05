@@ -90,40 +90,39 @@ const Subscription: React.FC = () => {
         console.warn('Subscription status API failed:', statusResponse.reason);
       }
 
-      // Handle products
+      // Handle products - for now, always use fallback products with correct pricing
       let fetchedProducts = [];
       if (productsResponse.status === 'fulfilled') {
         const productsData = productsResponse.value.data;
-        console.log('Products data:', productsData);
-        fetchedProducts = productsData.products || productsData || [];
+        console.log('API Products data (using fallback instead):', productsData);
+        // Don't use API data for now since it has old pricing
+        // fetchedProducts = productsData.products || productsData || [];
       } else {
         console.warn('Products API failed:', productsResponse.reason);
       }
 
-      // Always set fallback products if none were fetched to ensure cards show up
-      if (fetchedProducts.length === 0) {
-        console.log('Setting fallback products');
-        fetchedProducts = [
-          {
-            id: 1,
-            stripe_price_id: 'price_monthly',
-            name: 'PriceAdjustPro Monthly',
-            description: 'Full access to all features',
-            price: '2.99',
-            currency: 'usd',
-            billing_interval: 'month'
-          },
-          {
-            id: 2,
-            stripe_price_id: 'price_yearly',
-            name: 'PriceAdjustPro Yearly',
-            description: 'Full access to all features',
-            price: '29.99',
-            currency: 'usd',
-            billing_interval: 'year'
-          }
-        ];
-      }
+      // Always use current pricing from fallback products
+      console.log('Using fallback products with updated pricing');
+      fetchedProducts = [
+        {
+          id: 1,
+          stripe_price_id: 'price_monthly',
+          name: 'PriceAdjustPro Monthly',
+          description: 'Full access to all features',
+          price: '2.99',
+          currency: 'usd',
+          billing_interval: 'month'
+        },
+        {
+          id: 2,
+          stripe_price_id: 'price_yearly',
+          name: 'PriceAdjustPro Yearly',
+          description: 'Full access to all features',
+          price: '29.99',
+          currency: 'usd',
+          billing_interval: 'year'
+        }
+      ];
 
       setProducts(fetchedProducts);
     } catch (err) {
