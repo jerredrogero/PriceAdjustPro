@@ -42,6 +42,17 @@ from .serializers import ReceiptSerializer
 
 logger = logging.getLogger(__name__)
 
+def user_has_paid_account(user):
+    """Check if user has a paid account using the simple account type system."""
+    try:
+        from .models import UserProfile
+        profile = UserProfile.objects.get(user=user)
+        return profile.is_paid_account
+    except UserProfile.DoesNotExist:
+        # If no profile exists, create one with default free account
+        UserProfile.objects.create(user=user, account_type='free')
+        return False
+
 @login_required
 def upload_receipt(request):
     if request.method == 'POST' and request.FILES.get('receipt_file'):
@@ -1986,35 +1997,38 @@ from datetime import datetime
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def api_subscription_status(request):
-    """Get user's current subscription status."""
+    """Get user's current account status using simple account type system."""
     try:
-        from .models import UserSubscription
+        from .models import UserProfile
         
+        # Get or create user profile
         try:
-            subscription = UserSubscription.objects.get(user=request.user)
-            return Response({
-                'has_subscription': True,
-                'status': subscription.status,
-                'is_active': subscription.is_active,
-                'current_period_end': subscription.current_period_end,
-                'cancel_at_period_end': subscription.cancel_at_period_end,
-                'days_until_renewal': subscription.days_until_renewal,
-                'product': {
-                    'name': subscription.product.name,
-                    'price': str(subscription.product.price),
-                    'billing_interval': subscription.product.billing_interval,
-                }
-            })
-        except UserSubscription.DoesNotExist:
-            return Response({
-                'has_subscription': False,
-                'status': None,
-                'is_active': False,
-            })
+            profile = UserProfile.objects.get(user=request.user)
+        except UserProfile.DoesNotExist:
+            profile = UserProfile.objects.create(user=request.user, account_type='free')
+        
+        is_paid = profile.is_paid_account
+        
+        return Response({
+            'has_subscription': is_paid,
+            'status': 'active' if is_paid else 'free',
+            'is_active': is_paid,
+            'account_type': profile.account_type,
+            'account_type_display': profile.get_account_type_display(),
+            'current_period_end': None,  # Not applicable for simple system
+            'cancel_at_period_end': False,
+            'days_until_renewal': None,
+            'product': {
+                'name': 'Paid Account' if is_paid else 'Free Account',
+                'price': '9.99' if is_paid else '0.00',
+                'billing_interval': 'month' if is_paid else 'free',
+            } if is_paid else None
+        })
+        
     except Exception as e:
-        logger.error(f"Error getting subscription status: {str(e)}")
+        logger.error(f"Error getting account status: {str(e)}")
         return Response(
-            {'error': 'Failed to get subscription status'},
+            {'error': 'Failed to get account status'},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 

@@ -7,6 +7,41 @@ from django.db.models import Q
 
 # Create your models here.
 
+class UserProfile(models.Model):
+    """Extended user profile for simple account type management."""
+    
+    ACCOUNT_TYPE_CHOICES = [
+        ('free', 'Free Account'),
+        ('paid', 'Paid Account'),
+    ]
+    
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
+    account_type = models.CharField(
+        max_length=10,
+        choices=ACCOUNT_TYPE_CHOICES,
+        default='free',
+        help_text='Simple account type for subscription management'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        verbose_name = 'User Profile'
+        verbose_name_plural = 'User Profiles'
+        
+    def __str__(self):
+        return f"{self.user.username} ({self.get_account_type_display()})"
+    
+    @property
+    def is_paid_account(self):
+        """Check if user has a paid account."""
+        return self.account_type == 'paid'
+    
+    @property
+    def is_free_account(self):
+        """Check if user has a free account."""
+        return self.account_type == 'free'
+
 class Receipt(models.Model):
     """
     Stores receipt information with proper indexing for efficient querying.

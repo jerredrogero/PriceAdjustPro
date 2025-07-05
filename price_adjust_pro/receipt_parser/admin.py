@@ -19,7 +19,8 @@ from .models import (
     Receipt, LineItem, CostcoItem, CostcoWarehouse,
     ItemPriceHistory, PriceAdjustmentAlert,
     CostcoPromotion, CostcoPromotionPage, OfficialSaleItem,
-    SubscriptionProduct, UserSubscription, SubscriptionEvent
+    SubscriptionProduct, UserSubscription, SubscriptionEvent,
+    UserProfile
 )
 from django.conf import settings
 from django.utils import timezone
@@ -36,6 +37,14 @@ import io
 
 logger = logging.getLogger(__name__)
 
+# Helper function to get or create user profile
+def get_or_create_user_profile(user):
+    """Get or create user profile for account type management."""
+    try:
+        return user.profile
+    except UserProfile.DoesNotExist:
+        return UserProfile.objects.create(user=user)
+
 # Customize admin site
 admin.site.site_header = 'PriceAdjustPro Administration'
 admin.site.site_title = 'PriceAdjustPro Admin'
@@ -48,11 +57,11 @@ admin.site.unregister(Group)
 # Custom User admin with limited fields and hijack functionality
 @admin.register(User)
 class CustomUserAdmin(UserAdmin):
-    list_display = ('username', 'email', 'date_joined', 'last_login', 'is_active', 'is_staff', 'subscription_status', 'hijack_user_button')
+    list_display = ('username', 'email', 'date_joined', 'last_login', 'is_active', 'is_staff', 'account_type_display', 'hijack_user_button')
     list_filter = ('is_active', 'is_staff', 'date_joined')
     readonly_fields = ('date_joined', 'last_login')
     ordering = ('-date_joined',)
-    actions = ['upgrade_user_subscription', 'downgrade_user_subscription']
+    actions = ['upgrade_to_paid', 'downgrade_to_free']
     
     # Limit what fields can be changed
     fieldsets = (
@@ -100,118 +109,86 @@ class CustomUserAdmin(UserAdmin):
         self.request = request
         return super().get_list_display(request)
     
-    def subscription_status(self, obj):
-        """Display user's subscription status."""
-        try:
-            subscription = obj.subscription
-            if subscription.is_active:
-                return format_html('<span style="color: green">✓ {}</span>', subscription.product.name)
-            else:
-                return format_html('<span style="color: orange">{}</span>', subscription.get_status_display())
-        except UserSubscription.DoesNotExist:
-            return format_html('<span style="color: grey">No subscription</span>')
-    subscription_status.short_description = 'Subscription'
+    def account_type_display(self, obj):
+        """Display user's account type."""
+        profile = get_or_create_user_profile(obj)
+        if profile.is_paid_account:
+            return format_html('<span style="color: green; font-weight: bold;">💎 PAID</span>')
+        else:
+            return format_html('<span style="color: grey;">🆓 FREE</span>')
+    account_type_display.short_description = 'Account Type'
     
-    def upgrade_user_subscription(self, request, queryset):
-        """Upgrade selected users to premium subscription (local only, no Stripe calls)."""
+    def upgrade_to_paid(self, request, queryset):
+        """Upgrade selected users to paid accounts."""
         if not request.user.is_superuser:
-            messages.error(request, 'Only superusers can modify subscriptions.')
-            return
-        
-        # Get active subscription products
-        monthly_product = SubscriptionProduct.objects.filter(
-            billing_interval='month', 
-            is_active=True
-        ).first()
-        
-        if not monthly_product:
-            messages.error(request, 'No active monthly subscription product found. Please create one first.')
+            messages.error(request, 'Only superusers can modify account types.')
             return
         
         upgraded_count = 0
-        errors = []
         
         for user in queryset:
-            try:
-                # Check if user already has an active subscription
-                if hasattr(user, 'subscription') and user.subscription.is_active:
-                    messages.info(request, f'{user.username} already has an active subscription.')
-                    continue
-                
-                # Create manual subscription (no Stripe calls)
-                import time
-                user_subscription, created = UserSubscription.objects.update_or_create(
-                    user=user,
-                    defaults={
-                        'product': monthly_product,
-                        'stripe_subscription_id': f'admin_manual_{user.id}_{int(time.time())}',
-                        'stripe_customer_id': f'admin_manual_cus_{user.id}',
-                        'status': 'active',
-                        'current_period_start': timezone.now(),
-                        'current_period_end': timezone.now() + timezone.timedelta(days=30),
-                        'cancel_at_period_end': False,
-                    }
-                )
-                
-                upgraded_count += 1
-                action_text = "created" if created else "updated"
-                messages.success(request, f'{user.username}: Admin subscription {action_text} successfully.')
-                    
-            except Exception as e:
-                errors.append(f'{user.username}: Error creating subscription - {str(e)}')
+            profile = get_or_create_user_profile(user)
+            if profile.is_paid_account:
+                messages.info(request, f'{user.username} already has a paid account.')
                 continue
+            
+            profile.account_type = 'paid'
+            profile.save()
+            upgraded_count += 1
+            messages.success(request, f'{user.username}: Upgraded to paid account.')
         
         if upgraded_count > 0:
-            messages.success(request, f'Successfully upgraded {upgraded_count} user(s) to premium subscription.')
-        
-        for error in errors:
-            messages.error(request, error)
+            messages.success(request, f'Successfully upgraded {upgraded_count} user(s) to paid accounts.')
     
-    upgrade_user_subscription.short_description = "⬆️ Upgrade to Premium Subscription"
+    upgrade_to_paid.short_description = "💎 Upgrade to Paid Account"
     
-    def downgrade_user_subscription(self, request, queryset):
-        """Cancel/downgrade selected users' subscriptions (local only, no Stripe calls)."""
+    def downgrade_to_free(self, request, queryset):
+        """Downgrade selected users to free accounts."""
         if not request.user.is_superuser:
-            messages.error(request, 'Only superusers can modify subscriptions.')
+            messages.error(request, 'Only superusers can modify account types.')
             return
         
         downgraded_count = 0
-        errors = []
         
         for user in queryset:
-            try:
-                if not hasattr(user, 'subscription'):
-                    messages.info(request, f'{user.username} has no subscription to downgrade.')
-                    continue
-                
-                subscription = user.subscription
-                
-                if not subscription.is_active:
-                    messages.info(request, f'{user.username} subscription is already inactive.')
-                    continue
-                
-                # Cancel subscription locally (no Stripe calls)
-                subscription.cancel_at_period_end = True
-                subscription.status = 'canceled'
-                subscription.canceled_at = timezone.now()
-                subscription.save()
-                
-                downgraded_count += 1
-                messages.success(request, f'{user.username}: Subscription canceled successfully.')
-                    
-            except Exception as e:
-                errors.append(f'{user.username}: Error canceling subscription - {str(e)}')
+            profile = get_or_create_user_profile(user)
+            if profile.is_free_account:
+                messages.info(request, f'{user.username} already has a free account.')
                 continue
+            
+            profile.account_type = 'free'
+            profile.save()
+            downgraded_count += 1
+            messages.success(request, f'{user.username}: Downgraded to free account.')
         
         if downgraded_count > 0:
-            messages.success(request, f'Successfully canceled {downgraded_count} user subscription(s).')
-        
-        for error in errors:
-            messages.error(request, error)
+            messages.success(request, f'Successfully downgraded {downgraded_count} user(s) to free accounts.')
     
-    downgrade_user_subscription.short_description = "⬇️ Cancel Subscription"
+    downgrade_to_free.short_description = "🆓 Downgrade to Free Account"
 
 csrf_protect_m = method_decorator(csrf_protect)
+
+@admin.register(UserProfile)
+class UserProfileAdmin(admin.ModelAdmin):
+    list_display = ('user', 'account_type', 'created_at', 'updated_at')
+    list_filter = ('account_type', 'created_at')
+    search_fields = ('user__username', 'user__email')
+    readonly_fields = ('created_at', 'updated_at')
+    raw_id_fields = ('user',)
+    ordering = ('-created_at',)
+    actions = ['upgrade_to_paid', 'downgrade_to_free']
+    
+    def upgrade_to_paid(self, request, queryset):
+        """Upgrade selected profiles to paid accounts."""
+        count = queryset.filter(account_type='free').update(account_type='paid')
+        self.message_user(request, f'{count} user(s) upgraded to paid accounts.')
+    upgrade_to_paid.short_description = "💎 Upgrade to Paid Account"
+    
+    def downgrade_to_free(self, request, queryset):
+        """Downgrade selected profiles to free accounts."""
+        count = queryset.filter(account_type='paid').update(account_type='free')
+        self.message_user(request, f'{count} user(s) downgraded to free accounts.')
+    downgrade_to_free.short_description = "🆓 Downgrade to Free Account"
 
 class BaseModelAdmin(admin.ModelAdmin):
     @csrf_protect_m
