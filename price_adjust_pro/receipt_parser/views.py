@@ -2309,6 +2309,7 @@ def api_debug_stripe_config(request):
         'debug_mode': settings.DEBUG,
     })
 
+@csrf_exempt
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def api_create_checkout_session(request):
