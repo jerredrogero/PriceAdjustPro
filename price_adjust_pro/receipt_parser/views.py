@@ -2327,10 +2327,17 @@ def api_debug_auth_test(request):
 class CreateCheckoutSessionView(APIView):
     """Create a Stripe checkout session for subscription."""
     
-    authentication_classes = [SessionAuthentication]
-    permission_classes = [IsAuthenticated]
+    authentication_classes = []
+    permission_classes = []
     
     def post(self, request, *args, **kwargs):
+        # Manual authentication check (bypass CSRF)
+        if not request.user.is_authenticated:
+            return Response(
+                {'error': 'Authentication required'}, 
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+            
         try:
             from .models import SubscriptionProduct
             import stripe
