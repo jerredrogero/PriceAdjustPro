@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Container,
@@ -22,11 +22,11 @@ import {
   Lock as LockIcon,
   DeleteForever as DeleteIcon,
 } from '@mui/icons-material';
-import { useAuth } from '../contexts/AuthContext';
+import { UserContext } from '../components/Layout';
 
 const Settings: React.FC = () => {
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const user = useContext(UserContext);
   const [email, setEmail] = useState(user?.email || '');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -105,8 +105,8 @@ const Settings: React.FC = () => {
 
       if (!response.ok) throw new Error('Failed to delete account');
 
-      await logout();
-      navigate('/login');
+      // Force a full page reload to clear React state and redirect to login
+      window.location.href = '/login';
     } catch (err) {
       setError('Failed to delete account');
       setDeleteDialogOpen(false);

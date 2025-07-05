@@ -27,6 +27,8 @@ import {
   Dashboard as DashboardIcon,
   DarkMode as DarkModeIcon,
   LightMode as LightModeIcon,
+  Crown as CrownIcon,
+  Settings as SettingsIcon,
 } from '@mui/icons-material';
 import { useThemeContext } from '../contexts/ThemeContext';
 import LogoLight from '../assets/images/PAP_LM.svg';
@@ -114,6 +116,8 @@ const Navigation: React.FC<NavigationProps> = ({ user }) => {
     { text: 'On Sale', icon: <SaleIcon />, path: '/on-sale' },
     { text: 'Analytics', icon: <AnalyticsIcon />, path: '/analytics' },
     { text: 'Upload', icon: <UploadIcon />, path: '/upload' },
+    { text: 'Upgrade', icon: <CrownIcon />, path: '/subscription' },
+    { text: 'Settings', icon: <SettingsIcon />, path: '/settings' },
   ];
 
   return (

@@ -362,3 +362,12 @@ HIJACK_USE_BOOTSTRAP = True  # Use Bootstrap styling
 
 # Override the default success URL to avoid 'dashboard' lookup error
 HIJACK_SUCCESS_URL = '/'
+
+# Stripe Configuration
+STRIPE_PUBLISHABLE_KEY = os.getenv('STRIPE_PUBLISHABLE_KEY', '')
+STRIPE_SECRET_KEY = os.getenv('STRIPE_SECRET_KEY', '')
+STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET', '')
+
+# Stripe settings for subscription management
+STRIPE_LIVE_MODE = not DEBUG  # Use live mode in production
+STRIPE_TEST_MODE = DEBUG  # Use test mode in development

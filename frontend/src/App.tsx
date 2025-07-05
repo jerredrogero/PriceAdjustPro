@@ -15,6 +15,8 @@ import PriceAdjustments from './pages/PriceAdjustments';
 import Analytics from './pages/Analytics';
 import OnSale from './pages/OnSale';
 import Landing from './pages/Landing';
+import Subscription from './pages/Subscription';
+import Settings from './pages/Settings';
 import Navigation from './components/Navigation';
 import ReceiptDetail from './pages/ReceiptDetail';
 import api from './api/axios';
@@ -132,6 +134,8 @@ const AppContent: React.FC = () => {
           <Route path="/price-adjustments" element={<PriceAdjustments />} />
           <Route path="/on-sale" element={<OnSale />} />
           <Route path="/analytics" element={<Analytics />} />
+          <Route path="/subscription" element={<Subscription />} />
+          <Route path="/settings" element={<Settings />} />
           </Route>
         </Routes>
     </UserContext.Provider>

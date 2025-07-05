@@ -18,7 +18,8 @@ from datetime import datetime
 from .models import (
     Receipt, LineItem, CostcoItem, CostcoWarehouse,
     ItemPriceHistory, PriceAdjustmentAlert,
-    CostcoPromotion, CostcoPromotionPage, OfficialSaleItem
+    CostcoPromotion, CostcoPromotionPage, OfficialSaleItem,
+    SubscriptionProduct, UserSubscription, SubscriptionEvent
 )
 from .utils import process_official_promotion
 from django.contrib import messages
@@ -27,7 +28,6 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import path, reverse
 import os
 import logging
-from .utils import process_official_promotion
 from django.middleware.csrf import get_token
 from decimal import Decimal, InvalidOperation
 import io
@@ -1094,8 +1094,6 @@ class CostcoPromotionAdmin(admin.ModelAdmin):
             obj.uploaded_by = request.user
         super().save_model(request, obj, form, change)
     
-
-    
     def process_next_batch(self, request, queryset):
         """Process the next batch of unprocessed pages (up to 10 pages per promotion)."""
         processed_count = 0
@@ -1525,3 +1523,134 @@ class OfficialSaleItemAdmin(admin.ModelAdmin):
     list_filter = ('sale_type', 'promotion', 'created_at')
     search_fields = ('item_code', 'description')
     readonly_fields = ('savings_amount', 'alerts_created', 'created_at')
+
+# Subscription Admin Classes
+@admin.register(SubscriptionProduct)
+class SubscriptionProductAdmin(BaseModelAdmin):
+    list_display = ('name', 'price', 'currency', 'billing_interval', 'is_active', 'created_at')
+    list_filter = ('is_active', 'billing_interval', 'currency', 'created_at')
+    search_fields = ('name', 'description', 'stripe_product_id', 'stripe_price_id')
+    readonly_fields = ('created_at', 'updated_at')
+    fields = ('name', 'description', 'stripe_product_id', 'stripe_price_id', 'price', 'currency', 'billing_interval', 'is_active')
+    ordering = ('price', 'name')
+    actions = ['activate_products', 'deactivate_products']
+
+    def activate_products(self, request, queryset):
+        """Activate selected subscription products."""
+        count = queryset.update(is_active=True)
+        self.message_user(request, f'{count} products activated successfully.')
+    activate_products.short_description = 'Activate selected products'
+
+    def deactivate_products(self, request, queryset):
+        """Deactivate selected subscription products."""
+        count = queryset.update(is_active=False)
+        self.message_user(request, f'{count} products deactivated successfully.')
+    deactivate_products.short_description = 'Deactivate selected products'
+
+@admin.register(UserSubscription)
+class UserSubscriptionAdmin(BaseModelAdmin):
+    list_display = ('user', 'product', 'status', 'is_active', 'current_period_end', 'cancel_at_period_end', 'days_until_renewal', 'created_at')
+    list_filter = ('status', 'cancel_at_period_end', 'product', 'created_at')
+    search_fields = ('user__username', 'user__email', 'product__name', 'stripe_subscription_id', 'stripe_customer_id')
+    readonly_fields = ('stripe_subscription_id', 'stripe_customer_id', 'is_active', 'days_until_renewal', 'created_at', 'updated_at')
+    raw_id_fields = ('user', 'product')
+    date_hierarchy = 'created_at'
+    ordering = ('-created_at',)
+    actions = ['export_as_csv']
+
+    fieldsets = (
+        ('User Information', {
+            'fields': ('user', 'product', 'status')
+        }),
+        ('Stripe Information', {
+            'fields': ('stripe_subscription_id', 'stripe_customer_id'),
+            'classes': ('collapse',)
+        }),
+        ('Billing Periods', {
+            'fields': ('current_period_start', 'current_period_end', 'cancel_at_period_end', 'canceled_at')
+        }),
+        ('Status', {
+            'fields': ('is_active', 'days_until_renewal'),
+            'classes': ('collapse',)
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related('user', 'product')
+
+    def export_as_csv(self, request, queryset):
+        """Export selected subscriptions as CSV."""
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = 'attachment; filename="subscriptions.csv"'
+        
+        writer = csv.writer(response)
+        writer.writerow(['User', 'Email', 'Product', 'Status', 'Created', 'Current Period End', 'Cancel at Period End'])
+        
+        for subscription in queryset:
+            writer.writerow([
+                subscription.user.username,
+                subscription.user.email,
+                subscription.product.name,
+                subscription.status,
+                subscription.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+                subscription.current_period_end.strftime('%Y-%m-%d %H:%M:%S'),
+                subscription.cancel_at_period_end
+            ])
+        
+        return response
+    export_as_csv.short_description = 'Export selected subscriptions as CSV'
+
+@admin.register(SubscriptionEvent)
+class SubscriptionEventAdmin(BaseModelAdmin):
+    list_display = ('stripe_event_id', 'event_type', 'subscription', 'processed', 'created_at')
+    list_filter = ('event_type', 'processed', 'created_at')
+    search_fields = ('stripe_event_id', 'event_type', 'subscription__user__username')
+    readonly_fields = ('stripe_event_id', 'event_type', 'event_data', 'created_at')
+    raw_id_fields = ('subscription',)
+    date_hierarchy = 'created_at'
+    ordering = ('-created_at',)
+    actions = ['mark_as_processed', 'export_as_csv']
+
+    fieldsets = (
+        ('Event Information', {
+            'fields': ('stripe_event_id', 'event_type', 'subscription', 'processed')
+        }),
+        ('Event Data', {
+            'fields': ('event_data',),
+            'classes': ('collapse',)
+        }),
+        ('Timestamps', {
+            'fields': ('created_at',),
+            'classes': ('collapse',)
+        }),
+    )
+
+    def mark_as_processed(self, request, queryset):
+        """Mark selected events as processed."""
+        count = queryset.update(processed=True)
+        self.message_user(request, f'{count} events marked as processed.')
+    mark_as_processed.short_description = 'Mark selected events as processed'
+
+    def export_as_csv(self, request, queryset):
+        """Export selected events as CSV."""
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = 'attachment; filename="subscription_events.csv"'
+        
+        writer = csv.writer(response)
+        writer.writerow(['Event ID', 'Event Type', 'Subscription', 'Processed', 'Created'])
+        
+        for event in queryset:
+            writer.writerow([
+                event.stripe_event_id,
+                event.event_type,
+                str(event.subscription) if event.subscription else '',
+                event.processed,
+                event.created_at.strftime('%Y-%m-%d %H:%M:%S')
+            ])
+        
+        return response
+    export_as_csv.short_description = 'Export selected events as CSV'

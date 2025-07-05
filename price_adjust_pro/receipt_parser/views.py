@@ -1783,3 +1783,498 @@ class ReceiptUpdateAPIView(APIView):
                     
         except Exception as e:
             logger.error(f"Error updating price database: {str(e)}")
+
+# Subscription API Views
+import stripe
+from django.conf import settings
+from datetime import datetime
+
+# Configure Stripe API key
+stripe.api_key = getattr(settings, 'STRIPE_SECRET_KEY', '')
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def api_subscription_status(request):
+    """Get user's current subscription status."""
+    try:
+        from .models import UserSubscription
+        
+        try:
+            subscription = UserSubscription.objects.get(user=request.user)
+            return Response({
+                'has_subscription': True,
+                'status': subscription.status,
+                'is_active': subscription.is_active,
+                'current_period_end': subscription.current_period_end,
+                'cancel_at_period_end': subscription.cancel_at_period_end,
+                'days_until_renewal': subscription.days_until_renewal,
+                'product': {
+                    'name': subscription.product.name,
+                    'price': str(subscription.product.price),
+                    'billing_interval': subscription.product.billing_interval,
+                }
+            })
+        except UserSubscription.DoesNotExist:
+            return Response({
+                'has_subscription': False,
+                'status': None,
+                'is_active': False,
+            })
+    except Exception as e:
+        logger.error(f"Error getting subscription status: {str(e)}")
+        return Response(
+            {'error': 'Failed to get subscription status'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def api_subscription_products(request):
+    """Get available subscription products."""
+    try:
+        from .models import SubscriptionProduct
+        
+        products = SubscriptionProduct.objects.filter(is_active=True)
+        product_data = []
+        
+        for product in products:
+            product_data.append({
+                'id': product.id,
+                'stripe_price_id': product.stripe_price_id,
+                'name': product.name,
+                'description': product.description,
+                'price': str(product.price),
+                'currency': product.currency,
+                'billing_interval': product.billing_interval,
+            })
+        
+        return Response({'products': product_data})
+    except Exception as e:
+        logger.error(f"Error getting subscription products: {str(e)}")
+        return Response(
+            {'error': 'Failed to get subscription products'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def api_subscription_create(request):
+    """Create a new subscription."""
+    try:
+        from .models import SubscriptionProduct, UserSubscription
+        
+        product_id = request.data.get('product_id')
+        payment_method_id = request.data.get('payment_method_id')
+        
+        if not product_id or not payment_method_id:
+            return Response(
+                {'error': 'product_id and payment_method_id are required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Get the product
+        try:
+            product = SubscriptionProduct.objects.get(id=product_id, is_active=True)
+        except SubscriptionProduct.DoesNotExist:
+            return Response(
+                {'error': 'Invalid product_id'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Check if user already has a subscription
+        if UserSubscription.objects.filter(user=request.user).exists():
+            return Response(
+                {'error': 'User already has an active subscription'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Create or get Stripe customer
+        try:
+            customer = stripe.Customer.create(
+                email=request.user.email,
+                name=f"{request.user.first_name} {request.user.last_name}".strip() or request.user.username,
+                metadata={'user_id': request.user.id}
+            )
+        except stripe.error.StripeError as e:
+            logger.error(f"Stripe customer creation error: {str(e)}")
+            return Response(
+                {'error': 'Failed to create customer'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        
+        # Attach payment method to customer
+        try:
+            stripe.PaymentMethod.attach(
+                payment_method_id,
+                customer=customer.id,
+            )
+            
+            # Set as default payment method
+            stripe.Customer.modify(
+                customer.id,
+                invoice_settings={'default_payment_method': payment_method_id}
+            )
+        except stripe.error.StripeError as e:
+            logger.error(f"Payment method attachment error: {str(e)}")
+            return Response(
+                {'error': 'Failed to attach payment method'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        
+        # Create subscription
+        try:
+            subscription = stripe.Subscription.create(
+                customer=customer.id,
+                items=[{'price': product.stripe_price_id}],
+                payment_behavior='default_incomplete',
+                payment_settings={'save_default_payment_method': 'on_subscription'},
+                expand=['latest_invoice.payment_intent'],
+            )
+        except stripe.error.StripeError as e:
+            logger.error(f"Stripe subscription creation error: {str(e)}")
+            return Response(
+                {'error': 'Failed to create subscription'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        
+        # Create UserSubscription record
+        user_subscription = UserSubscription.objects.create(
+            user=request.user,
+            product=product,
+            stripe_subscription_id=subscription.id,
+            stripe_customer_id=customer.id,
+            status=subscription.status,
+            current_period_start=datetime.fromtimestamp(subscription.current_period_start, tz=timezone.utc),
+            current_period_end=datetime.fromtimestamp(subscription.current_period_end, tz=timezone.utc),
+        )
+        
+        return Response({
+            'subscription_id': subscription.id,
+            'client_secret': subscription.latest_invoice.payment_intent.client_secret,
+            'status': subscription.status,
+        })
+    
+    except Exception as e:
+        logger.error(f"Error creating subscription: {str(e)}")
+        return Response(
+            {'error': 'Failed to create subscription'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def api_subscription_cancel(request):
+    """Cancel user's subscription."""
+    try:
+        from .models import UserSubscription
+        
+        try:
+            user_subscription = UserSubscription.objects.get(user=request.user)
+        except UserSubscription.DoesNotExist:
+            return Response(
+                {'error': 'No active subscription found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Cancel at period end by default
+        cancel_immediately = request.data.get('cancel_immediately', False)
+        
+        try:
+            if cancel_immediately:
+                # Cancel immediately
+                stripe.Subscription.delete(user_subscription.stripe_subscription_id)
+                user_subscription.status = 'canceled'
+                user_subscription.canceled_at = timezone.now()
+                user_subscription.cancel_at_period_end = True
+            else:
+                # Cancel at period end
+                stripe.Subscription.modify(
+                    user_subscription.stripe_subscription_id,
+                    cancel_at_period_end=True
+                )
+                user_subscription.cancel_at_period_end = True
+            
+            user_subscription.save()
+            
+            return Response({
+                'message': 'Subscription canceled successfully',
+                'cancel_at_period_end': user_subscription.cancel_at_period_end,
+                'current_period_end': user_subscription.current_period_end,
+            })
+        
+        except stripe.error.StripeError as e:
+            logger.error(f"Stripe cancellation error: {str(e)}")
+            return Response(
+                {'error': 'Failed to cancel subscription'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    except Exception as e:
+        logger.error(f"Error canceling subscription: {str(e)}")
+        return Response(
+            {'error': 'Failed to cancel subscription'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def api_subscription_update(request):
+    """Update user's subscription (reactivate canceled subscription)."""
+    try:
+        from .models import UserSubscription
+        
+        try:
+            user_subscription = UserSubscription.objects.get(user=request.user)
+        except UserSubscription.DoesNotExist:
+            return Response(
+                {'error': 'No subscription found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Only allow reactivation of subscriptions that are set to cancel at period end
+        if not user_subscription.cancel_at_period_end:
+            return Response(
+                {'error': 'Subscription is not set to cancel'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            # Reactivate subscription
+            stripe.Subscription.modify(
+                user_subscription.stripe_subscription_id,
+                cancel_at_period_end=False
+            )
+            
+            user_subscription.cancel_at_period_end = False
+            user_subscription.save()
+            
+            return Response({
+                'message': 'Subscription reactivated successfully',
+                'cancel_at_period_end': user_subscription.cancel_at_period_end,
+            })
+        
+        except stripe.error.StripeError as e:
+            logger.error(f"Stripe update error: {str(e)}")
+            return Response(
+                {'error': 'Failed to update subscription'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    except Exception as e:
+        logger.error(f"Error updating subscription: {str(e)}")
+        return Response(
+            {'error': 'Failed to update subscription'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def api_subscription_create_payment_intent(request):
+    """Create a payment intent for one-time payments or setup intents."""
+    try:
+        from .models import UserSubscription
+        
+        amount = request.data.get('amount')  # Amount in cents
+        currency = request.data.get('currency', 'usd')
+        
+        if not amount:
+            return Response(
+                {'error': 'amount is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Get or create customer
+        try:
+            user_subscription = UserSubscription.objects.get(user=request.user)
+            customer_id = user_subscription.stripe_customer_id
+        except UserSubscription.DoesNotExist:
+            # Create new customer if user doesn't have a subscription
+            try:
+                customer = stripe.Customer.create(
+                    email=request.user.email,
+                    name=f"{request.user.first_name} {request.user.last_name}".strip() or request.user.username,
+                    metadata={'user_id': request.user.id}
+                )
+                customer_id = customer.id
+            except stripe.error.StripeError as e:
+                logger.error(f"Stripe customer creation error: {str(e)}")
+                return Response(
+                    {'error': 'Failed to create customer'},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+        
+        try:
+            # Create payment intent
+            intent = stripe.PaymentIntent.create(
+                amount=int(amount),
+                currency=currency,
+                customer=customer_id,
+                metadata={'user_id': request.user.id}
+            )
+            
+            return Response({
+                'client_secret': intent.client_secret,
+                'payment_intent_id': intent.id,
+            })
+        
+        except stripe.error.StripeError as e:
+            logger.error(f"Payment intent creation error: {str(e)}")
+            return Response(
+                {'error': 'Failed to create payment intent'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    except Exception as e:
+        logger.error(f"Error creating payment intent: {str(e)}")
+        return Response(
+            {'error': 'Failed to create payment intent'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@csrf_exempt
+@api_view(['POST'])
+def api_subscription_webhook(request):
+    """Handle Stripe webhook events."""
+    try:
+        from .models import UserSubscription, SubscriptionEvent
+        
+        payload = request.body
+        sig_header = request.META.get('HTTP_STRIPE_SIGNATURE')
+        endpoint_secret = getattr(settings, 'STRIPE_WEBHOOK_SECRET', '')
+        
+        if not endpoint_secret:
+            logger.warning("Stripe webhook secret not configured")
+            return Response({'error': 'Webhook not configured'}, status=400)
+        
+        try:
+            event = stripe.Webhook.construct_event(
+                payload, sig_header, endpoint_secret
+            )
+        except ValueError:
+            logger.error("Invalid payload in webhook")
+            return Response({'error': 'Invalid payload'}, status=400)
+        except stripe.error.SignatureVerificationError:
+            logger.error("Invalid signature in webhook")
+            return Response({'error': 'Invalid signature'}, status=400)
+        
+        # Store the event
+        try:
+            event_record = SubscriptionEvent.objects.create(
+                stripe_event_id=event['id'],
+                event_type=event['type'],
+                event_data=event['data']
+            )
+        except Exception as e:
+            logger.error(f"Error storing webhook event: {str(e)}")
+            # Continue processing even if we can't store the event
+        
+        # Handle the event
+        if event['type'] == 'customer.subscription.created':
+            subscription_data = event['data']['object']
+            # Update UserSubscription if it exists
+            try:
+                user_subscription = UserSubscription.objects.get(
+                    stripe_subscription_id=subscription_data['id']
+                )
+                user_subscription.status = subscription_data['status']
+                user_subscription.current_period_start = datetime.fromtimestamp(
+                    subscription_data['current_period_start'], tz=timezone.utc
+                )
+                user_subscription.current_period_end = datetime.fromtimestamp(
+                    subscription_data['current_period_end'], tz=timezone.utc
+                )
+                user_subscription.save()
+                
+                if 'event_record' in locals():
+                    event_record.subscription = user_subscription
+                    event_record.processed = True
+                    event_record.save()
+            except UserSubscription.DoesNotExist:
+                logger.warning(f"UserSubscription not found for Stripe subscription {subscription_data['id']}")
+        
+        elif event['type'] == 'customer.subscription.updated':
+            subscription_data = event['data']['object']
+            try:
+                user_subscription = UserSubscription.objects.get(
+                    stripe_subscription_id=subscription_data['id']
+                )
+                user_subscription.status = subscription_data['status']
+                user_subscription.current_period_start = datetime.fromtimestamp(
+                    subscription_data['current_period_start'], tz=timezone.utc
+                )
+                user_subscription.current_period_end = datetime.fromtimestamp(
+                    subscription_data['current_period_end'], tz=timezone.utc
+                )
+                user_subscription.cancel_at_period_end = subscription_data.get('cancel_at_period_end', False)
+                user_subscription.save()
+                
+                if 'event_record' in locals():
+                    event_record.subscription = user_subscription
+                    event_record.processed = True
+                    event_record.save()
+            except UserSubscription.DoesNotExist:
+                logger.warning(f"UserSubscription not found for Stripe subscription {subscription_data['id']}")
+        
+        elif event['type'] == 'customer.subscription.deleted':
+            subscription_data = event['data']['object']
+            try:
+                user_subscription = UserSubscription.objects.get(
+                    stripe_subscription_id=subscription_data['id']
+                )
+                user_subscription.status = 'canceled'
+                user_subscription.canceled_at = timezone.now()
+                user_subscription.save()
+                
+                if 'event_record' in locals():
+                    event_record.subscription = user_subscription
+                    event_record.processed = True
+                    event_record.save()
+            except UserSubscription.DoesNotExist:
+                logger.warning(f"UserSubscription not found for Stripe subscription {subscription_data['id']}")
+        
+        elif event['type'] == 'invoice.payment_succeeded':
+            # Handle successful payment
+            invoice_data = event['data']['object']
+            subscription_id = invoice_data.get('subscription')
+            if subscription_id:
+                try:
+                    user_subscription = UserSubscription.objects.get(
+                        stripe_subscription_id=subscription_id
+                    )
+                    # Update subscription status to active if it was incomplete
+                    if user_subscription.status in ['incomplete', 'past_due']:
+                        user_subscription.status = 'active'
+                        user_subscription.save()
+                        
+                    if 'event_record' in locals():
+                        event_record.subscription = user_subscription
+                        event_record.processed = True
+                        event_record.save()
+                except UserSubscription.DoesNotExist:
+                    logger.warning(f"UserSubscription not found for Stripe subscription {subscription_id}")
+        
+        elif event['type'] == 'invoice.payment_failed':
+            # Handle failed payment
+            invoice_data = event['data']['object']
+            subscription_id = invoice_data.get('subscription')
+            if subscription_id:
+                try:
+                    user_subscription = UserSubscription.objects.get(
+                        stripe_subscription_id=subscription_id
+                    )
+                    user_subscription.status = 'past_due'
+                    user_subscription.save()
+                    
+                    if 'event_record' in locals():
+                        event_record.subscription = user_subscription
+                        event_record.processed = True
+                        event_record.save()
+                except UserSubscription.DoesNotExist:
+                    logger.warning(f"UserSubscription not found for Stripe subscription {subscription_id}")
+        
+        logger.info(f"Handled webhook event: {event['type']}")
+        return Response({'status': 'success'})
+    
+    except Exception as e:
+        logger.error(f"Error processing webhook: {str(e)}")
+        return Response({'error': 'Webhook processing failed'}, status=500)

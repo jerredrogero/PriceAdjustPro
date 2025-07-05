@@ -36,6 +36,15 @@ api_urlpatterns = [
     path('debug/alerts/', views.debug_alerts, name='debug_alerts'),
     path('debug/reactivate/', views.reactivate_alerts, name='reactivate_alerts'),
     path('analytics/', views.api_user_analytics, name='api_user_analytics'),
+    
+    # Subscription API endpoints
+    path('subscriptions/status/', views.api_subscription_status, name='api_subscription_status'),
+    path('subscriptions/products/', views.api_subscription_products, name='api_subscription_products'),
+    path('subscriptions/create/', views.api_subscription_create, name='api_subscription_create'),
+    path('subscriptions/cancel/', views.api_subscription_cancel, name='api_subscription_cancel'),
+    path('subscriptions/update/', views.api_subscription_update, name='api_subscription_update'),
+    path('subscriptions/create-payment-intent/', views.api_subscription_create_payment_intent, name='api_subscription_create_payment_intent'),
+    path('subscriptions/webhook/', views.api_subscription_webhook, name='api_subscription_webhook'),
 ]
 
 # Use web_urlpatterns by default

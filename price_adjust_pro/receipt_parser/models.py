@@ -607,6 +607,135 @@ class OfficialSaleItem(models.Model):
     
     @property
     def savings_amount(self):
-        if self.regular_price:
+        """Calculate savings amount based on sale type."""
+        if self.sale_type == 'discount_only':
+            return None
+        elif self.regular_price and self.sale_price:
             return self.regular_price - self.sale_price
-        return self.instant_rebate or Decimal('0.00')
+        elif self.instant_rebate:
+            return self.instant_rebate
+        return None
+
+class SubscriptionProduct(models.Model):
+    """
+    Stores subscription product information from Stripe.
+    """
+    stripe_product_id = models.CharField(max_length=255, unique=True)
+    stripe_price_id = models.CharField(max_length=255, unique=True)
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True)
+    price = models.DecimalField(max_digits=10, decimal_places=2)
+    currency = models.CharField(max_length=3, default='usd')
+    billing_interval = models.CharField(
+        max_length=10,
+        choices=[
+            ('month', 'Monthly'),
+            ('year', 'Yearly'),
+        ],
+        default='month'
+    )
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['price']
+        verbose_name = 'Subscription Product'
+        verbose_name_plural = 'Subscription Products'
+
+    def __str__(self):
+        return f"{self.name} - ${self.price}/{self.billing_interval}"
+
+class UserSubscription(models.Model):
+    """
+    Stores user subscription information linked to Stripe subscriptions.
+    """
+    STATUS_CHOICES = [
+        ('active', 'Active'),
+        ('canceled', 'Canceled'),
+        ('past_due', 'Past Due'),
+        ('unpaid', 'Unpaid'),
+        ('incomplete', 'Incomplete'),
+        ('incomplete_expired', 'Incomplete Expired'),
+        ('trialing', 'Trialing'),
+        ('paused', 'Paused'),
+    ]
+
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='subscription')
+    product = models.ForeignKey(SubscriptionProduct, on_delete=models.CASCADE)
+    stripe_subscription_id = models.CharField(max_length=255, unique=True)
+    stripe_customer_id = models.CharField(max_length=255)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='incomplete')
+    current_period_start = models.DateTimeField()
+    current_period_end = models.DateTimeField()
+    cancel_at_period_end = models.BooleanField(default=False)
+    canceled_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'User Subscription'
+        verbose_name_plural = 'User Subscriptions'
+
+    def __str__(self):
+        return f"{self.user.username} - {self.product.name} ({self.status})"
+
+    @property
+    def is_active(self):
+        """Check if subscription is currently active."""
+        return self.status in ['active', 'trialing']
+
+    @property
+    def days_until_renewal(self):
+        """Calculate days until next renewal."""
+        if not self.current_period_end:
+            return None
+        
+        delta = self.current_period_end - timezone.now()
+        return delta.days if delta.days > 0 else 0
+
+    @property
+    def is_past_due(self):
+        """Check if subscription is past due."""
+        return self.status == 'past_due'
+
+    def save(self, *args, **kwargs):
+        """Override save to handle subscription status changes."""
+        if self.status == 'canceled' and not self.canceled_at:
+            self.canceled_at = timezone.now()
+        super().save(*args, **kwargs)
+
+class SubscriptionEvent(models.Model):
+    """
+    Stores webhook events from Stripe for subscription changes.
+    """
+    EVENT_TYPES = [
+        ('customer.subscription.created', 'Subscription Created'),
+        ('customer.subscription.updated', 'Subscription Updated'),
+        ('customer.subscription.deleted', 'Subscription Deleted'),
+        ('invoice.payment_succeeded', 'Payment Succeeded'),
+        ('invoice.payment_failed', 'Payment Failed'),
+        ('customer.subscription.trial_will_end', 'Trial Will End'),
+    ]
+
+    stripe_event_id = models.CharField(max_length=255, unique=True)
+    event_type = models.CharField(max_length=50, choices=EVENT_TYPES)
+    subscription = models.ForeignKey(
+        UserSubscription, 
+        on_delete=models.CASCADE, 
+        related_name='events',
+        null=True,
+        blank=True
+    )
+    processed = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    event_data = models.JSONField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Subscription Event'
+        verbose_name_plural = 'Subscription Events'
+
+    def __str__(self):
+        return f"{self.event_type} - {self.stripe_event_id}"
