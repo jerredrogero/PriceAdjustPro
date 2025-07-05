@@ -165,6 +165,40 @@ class CustomUserAdmin(UserAdmin):
             messages.success(request, f'Successfully downgraded {downgraded_count} user(s) to free accounts.')
     
     downgrade_to_free.short_description = "🆓 Downgrade to Free Account"
+    
+    def delete_queryset(self, request, queryset):
+        """Override delete to handle foreign key constraints properly."""
+        from django.db import transaction
+        
+        for user in queryset:
+            try:
+                with transaction.atomic():
+                    # Delete related objects in the correct order
+                    # 1. Price adjustment alerts
+                    user.price_alerts.all().delete()
+                    
+                    # 2. Receipts (this will also delete line items)
+                    user.receipts.all().delete()
+                    
+                    # 3. User subscription if exists
+                    if hasattr(user, 'subscription'):
+                        user.subscription.delete()
+                    
+                    # 4. User profile if exists
+                    if hasattr(user, 'profile'):
+                        user.profile.delete()
+                    
+                    # 5. Uploaded promotions
+                    user.uploaded_promotions.all().delete()
+                    
+                    # 6. Finally delete the user
+                    user.delete()
+                    
+            except Exception as e:
+                messages.error(request, f'Error deleting user {user.username}: {str(e)}')
+                continue
+        
+        messages.success(request, f'Successfully deleted {len(queryset)} user(s) and all related data.')
 
 csrf_protect_m = method_decorator(csrf_protect)
 

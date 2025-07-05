@@ -4,6 +4,8 @@ from django.utils import timezone
 from decimal import Decimal
 from django.core.validators import RegexValidator
 from django.db.models import Q
+from django.db.models.signals import post_save
+from django.dispatch import receiver
 
 # Create your models here.
 
@@ -774,3 +776,16 @@ class SubscriptionEvent(models.Model):
 
     def __str__(self):
         return f"{self.event_type} - {self.stripe_event_id}"
+
+
+# Signal handlers
+@receiver(post_save, sender=User)
+def create_user_profile(sender, instance, created, **kwargs):
+    """Automatically create UserProfile when a User is created."""
+    if created:
+        UserProfile.objects.get_or_create(user=instance)
+
+@receiver(post_save, sender=User)
+def save_user_profile(sender, instance, **kwargs):
+    """Ensure UserProfile exists when User is saved."""
+    UserProfile.objects.get_or_create(user=instance)
