@@ -2324,84 +2324,82 @@ def api_debug_auth_test(request):
         'message': 'This endpoint bypasses CSRF and permissions for testing'
     })
 
-@csrf_exempt
-@api_view(['POST'])
-def api_create_checkout_session(request):
+class CreateCheckoutSessionView(APIView):
     """Create a Stripe checkout session for subscription."""
     
-    # Manual authentication check
-    if not request.user.is_authenticated:
-        return Response(
-            {'error': 'Authentication required'},
-            status=status.HTTP_401_UNAUTHORIZED
-        )
+    authentication_classes = [SessionAuthentication]
+    permission_classes = [IsAuthenticated]
     
-    try:
-        from .models import SubscriptionProduct
-        import stripe
-        from django.conf import settings
-        
-        # Configure Stripe API key
-        stripe_secret_key = getattr(settings, 'STRIPE_SECRET_KEY', '')
-        stripe.api_key = stripe_secret_key
-        
-        # Debug logging
-        logger.info(f"STRIPE_SECRET_KEY from settings: {stripe_secret_key[:8]}..." if stripe_secret_key else "STRIPE_SECRET_KEY is empty")
-        logger.info(f"Stripe API key configured: {bool(stripe.api_key)}")
-        logger.info(f"User authenticated: {request.user.is_authenticated}, User ID: {request.user.id}")
-        
-        # Get the product/price ID from request
-        price_id = request.data.get('price_id')
-        product_id = request.data.get('product_id')
-        
-        if not price_id:
-            return Response(
-                {'error': 'price_id is required'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Determine success and cancel URLs
-        success_url = f"{request.scheme}://{request.get_host()}/subscription?success=true"
-        cancel_url = f"{request.scheme}://{request.get_host()}/subscription?canceled=true"
-        
-        # Create checkout session
+    def post(self, request, *args, **kwargs):
         try:
-            checkout_session = stripe.checkout.Session.create(
-                payment_method_types=['card'],
-                line_items=[{
-                    'price': price_id,
-                    'quantity': 1,
-                }],
-                mode='subscription',
-                success_url=success_url,
-                cancel_url=cancel_url,
-                customer_email=request.user.email,
-                client_reference_id=str(request.user.id),
-                metadata={
-                    'user_id': request.user.id,
-                    'product_id': product_id,
-                },
-                allow_promotion_codes=True,
-                billing_address_collection='auto',
-            )
+            from .models import SubscriptionProduct
+            import stripe
+            from django.conf import settings
             
-            logger.info(f"Successfully created checkout session: {checkout_session.id}")
+            # Configure Stripe API key
+            stripe_secret_key = getattr(settings, 'STRIPE_SECRET_KEY', '')
+            stripe.api_key = stripe_secret_key
             
-            return Response({
-                'checkout_url': checkout_session.url,
-                'session_id': checkout_session.id
-            })
+            # Debug logging
+            logger.info(f"STRIPE_SECRET_KEY from settings: {stripe_secret_key[:8]}..." if stripe_secret_key else "STRIPE_SECRET_KEY is empty")
+            logger.info(f"Stripe API key configured: {bool(stripe.api_key)}")
+            logger.info(f"User authenticated: {request.user.is_authenticated}, User ID: {request.user.id}")
             
-        except stripe.error.StripeError as e:
-            logger.error(f"Stripe checkout session creation error: {str(e)}")
+            # Get the product/price ID from request
+            price_id = request.data.get('price_id')
+            product_id = request.data.get('product_id')
+            
+            if not price_id:
+                return Response(
+                    {'error': 'price_id is required'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Determine success and cancel URLs
+            success_url = f"{request.scheme}://{request.get_host()}/subscription?success=true"
+            cancel_url = f"{request.scheme}://{request.get_host()}/subscription?canceled=true"
+            
+            # Create checkout session
+            try:
+                checkout_session = stripe.checkout.Session.create(
+                    payment_method_types=['card'],
+                    line_items=[{
+                        'price': price_id,
+                        'quantity': 1,
+                    }],
+                    mode='subscription',
+                    success_url=success_url,
+                    cancel_url=cancel_url,
+                    customer_email=request.user.email,
+                    client_reference_id=str(request.user.id),
+                    metadata={
+                        'user_id': request.user.id,
+                        'product_id': product_id,
+                    },
+                    allow_promotion_codes=True,
+                    billing_address_collection='auto',
+                )
+                
+                logger.info(f"Successfully created checkout session: {checkout_session.id}")
+                
+                return Response({
+                    'checkout_url': checkout_session.url,
+                    'session_id': checkout_session.id
+                })
+                
+            except stripe.error.StripeError as e:
+                logger.error(f"Stripe checkout session creation error: {str(e)}")
+                return Response(
+                    {'error': f'Failed to create checkout session: {str(e)}'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        
+        except Exception as e:
+            logger.error(f"Checkout session creation error: {str(e)}")
             return Response(
-                {'error': f'Failed to create checkout session: {str(e)}'},
-                status=status.HTTP_400_BAD_REQUEST
+                {'error': 'Failed to create checkout session'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-    
-    except Exception as e:
-        logger.error(f"Checkout session creation error: {str(e)}")
-        return Response(
-            {'error': 'Failed to create checkout session'},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
+
+# Create an instance of the view that bypasses CSRF
+api_create_checkout_session = method_decorator(csrf_exempt, name='dispatch')(CreateCheckoutSessionView).as_view()
