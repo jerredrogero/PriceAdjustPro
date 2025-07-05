@@ -16,25 +16,108 @@ import {
   DialogContent,
   DialogActions,
   Divider,
+  FormControlLabel,
+  Switch,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemSecondaryAction,
+  Paper,
+  Chip,
 } from '@mui/material';
 import {
   Save as SaveIcon,
   Lock as LockIcon,
   DeleteForever as DeleteIcon,
+  Palette as PaletteIcon,
+  Notifications as NotificationsIcon,
+  Download as DownloadIcon,
+  Security as SecurityIcon,
+  Account as AccountIcon,
 } from '@mui/icons-material';
 import { UserContext } from '../components/Layout';
+import { useThemeContext } from '../contexts/ThemeContext';
 
 const Settings: React.FC = () => {
   const navigate = useNavigate();
   const user = useContext(UserContext);
+  const { mode, toggleTheme } = useThemeContext();
+  
+  // Profile settings
   const [email, setEmail] = useState(user?.email || '');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [deletePassword, setDeletePassword] = useState('');
+  
+  // Notification settings
+  const [emailNotifications, setEmailNotifications] = useState(true);
+  const [pushNotifications, setPushNotifications] = useState(true);
+  const [priceAlerts, setPriceAlerts] = useState(true);
+  const [weeklyReports, setWeeklyReports] = useState(false);
+  
+  // Data settings
+  const [dataRetention, setDataRetention] = useState('1year');
+  
+  // UI state
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  const handleUpdateNotifications = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch('/api/auth/update-notifications/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email_notifications: emailNotifications,
+          push_notifications: pushNotifications,
+          price_alerts: priceAlerts,
+          weekly_reports: weeklyReports,
+        }),
+      });
+
+      if (!response.ok) throw new Error('Failed to update notifications');
+      setSuccess('Notification preferences updated successfully');
+    } catch (err) {
+      setError('Failed to update notification preferences');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleExportData = async (format: 'csv' | 'json') => {
+    setLoading(true);
+    try {
+      const response = await fetch(`/api/auth/export-data/?format=${format}`, {
+        method: 'GET',
+      });
+
+      if (!response.ok) throw new Error('Failed to export data');
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `priceadjustpro-data.${format}`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+      
+      setSuccess(`Data exported successfully as ${format.toUpperCase()}`);
+    } catch (err) {
+      setError('Failed to export data');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -201,6 +284,189 @@ const Settings: React.FC = () => {
                   Change Password
                 </Button>
               </form>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* Theme Settings */}
+        <Grid item xs={12} md={6}>
+          <Card>
+            <CardHeader 
+              title="Theme Preferences" 
+              avatar={<PaletteIcon color="primary" />}
+            />
+            <CardContent>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={mode === 'dark'}
+                    onChange={toggleTheme}
+                    color="primary"
+                  />
+                }
+                label="Dark Mode"
+              />
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                Switch between light and dark themes for better viewing comfort.
+              </Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* Notification Settings */}
+        <Grid item xs={12} md={6}>
+          <Card>
+            <CardHeader 
+              title="Notifications" 
+              avatar={<NotificationsIcon color="primary" />}
+            />
+            <CardContent>
+              <List>
+                <ListItem>
+                  <ListItemText 
+                    primary="Email Notifications" 
+                    secondary="Receive updates via email"
+                  />
+                  <ListItemSecondaryAction>
+                    <Switch
+                      checked={emailNotifications}
+                      onChange={(e) => setEmailNotifications(e.target.checked)}
+                      color="primary"
+                    />
+                  </ListItemSecondaryAction>
+                </ListItem>
+                <ListItem>
+                  <ListItemText 
+                    primary="Push Notifications" 
+                    secondary="Browser push notifications"
+                  />
+                  <ListItemSecondaryAction>
+                    <Switch
+                      checked={pushNotifications}
+                      onChange={(e) => setPushNotifications(e.target.checked)}
+                      color="primary"
+                    />
+                  </ListItemSecondaryAction>
+                </ListItem>
+                <ListItem>
+                  <ListItemText 
+                    primary="Price Alerts" 
+                    secondary="Alerts for new price adjustments"
+                  />
+                  <ListItemSecondaryAction>
+                    <Switch
+                      checked={priceAlerts}
+                      onChange={(e) => setPriceAlerts(e.target.checked)}
+                      color="primary"
+                    />
+                  </ListItemSecondaryAction>
+                </ListItem>
+                <ListItem>
+                  <ListItemText 
+                    primary="Weekly Reports" 
+                    secondary="Weekly summary emails"
+                  />
+                  <ListItemSecondaryAction>
+                    <Switch
+                      checked={weeklyReports}
+                      onChange={(e) => setWeeklyReports(e.target.checked)}
+                      color="primary"
+                    />
+                  </ListItemSecondaryAction>
+                </ListItem>
+              </List>
+              <Box sx={{ mt: 2 }}>
+                <Button
+                  variant="contained"
+                  onClick={handleUpdateNotifications}
+                  disabled={loading}
+                  startIcon={<SaveIcon />}
+                >
+                  Save Preferences
+                </Button>
+              </Box>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* Data Management */}
+        <Grid item xs={12} md={6}>
+          <Card>
+            <CardHeader 
+              title="Data Management" 
+              avatar={<DownloadIcon color="primary" />}
+            />
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                Export Your Data
+              </Typography>
+              <Typography variant="body2" color="text.secondary" paragraph>
+                Download all your receipt data, price adjustments, and analytics.
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 1, mb: 3 }}>
+                <Button
+                  variant="outlined"
+                  onClick={() => handleExportData('csv')}
+                  disabled={loading}
+                >
+                  Export CSV
+                </Button>
+                <Button
+                  variant="outlined"
+                  onClick={() => handleExportData('json')}
+                  disabled={loading}
+                >
+                  Export JSON
+                </Button>
+              </Box>
+              
+              <Divider sx={{ my: 2 }} />
+              
+              <Typography variant="h6" gutterBottom>
+                Data Retention
+              </Typography>
+              <FormControl fullWidth sx={{ mb: 2 }}>
+                <InputLabel>Keep data for</InputLabel>
+                <Select
+                  value={dataRetention}
+                  onChange={(e) => setDataRetention(e.target.value)}
+                  label="Keep data for"
+                >
+                  <MenuItem value="6months">6 months</MenuItem>
+                  <MenuItem value="1year">1 year</MenuItem>
+                  <MenuItem value="2years">2 years</MenuItem>
+                  <MenuItem value="forever">Forever</MenuItem>
+                </Select>
+              </FormControl>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* Account Information */}
+        <Grid item xs={12} md={6}>
+          <Card>
+            <CardHeader 
+              title="Account Information" 
+              avatar={<AccountIcon color="primary" />}
+            />
+            <CardContent>
+              <Paper elevation={0} sx={{ p: 2, bgcolor: 'background.default' }}>
+                <Typography variant="body2" color="text.secondary">
+                  <strong>Username:</strong> {user?.username}
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                  <strong>Email:</strong> {user?.email || 'Not set'}
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                  <strong>Account Type:</strong> 
+                  <Chip 
+                    label={user?.is_superuser ? 'Admin' : 'User'} 
+                    size="small" 
+                    color={user?.is_superuser ? 'primary' : 'default'}
+                    sx={{ ml: 1 }}
+                  />
+                </Typography>
+              </Paper>
             </CardContent>
           </Card>
         </Grid>

@@ -279,6 +279,27 @@ const Subscription: React.FC = () => {
     }
   };
 
+  const handleManageSubscription = async () => {
+    try {
+      const response = await fetch('/api/subscriptions/customer-portal/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to create customer portal session');
+      }
+
+      const data = await response.json();
+      // Redirect to Stripe Customer Portal
+      window.location.href = data.url;
+    } catch (err) {
+      setError('Failed to access customer portal');
+    }
+  };
+
   const features = [
     { icon: <ReceiptIcon />, text: 'Unlimited receipt uploads' },
     { icon: <NotificationsIcon />, text: 'Real-time price adjustment alerts' },
@@ -357,13 +378,24 @@ const Subscription: React.FC = () => {
                     </Button>
                   </Box>
                 ) : (
-                  <Button 
-                    variant="outlined" 
-                    color="warning"
-                    onClick={handleCancelSubscription}
-                  >
-                    Cancel Subscription
-                  </Button>
+                  <Box sx={{ display: 'flex', gap: 1, flexDirection: 'column' }}>
+                    <Button 
+                      variant="contained" 
+                      color="primary"
+                      onClick={handleManageSubscription}
+                      sx={{ mb: 1 }}
+                    >
+                      Manage Subscription
+                    </Button>
+                    <Button 
+                      variant="outlined" 
+                      color="warning"
+                      onClick={handleCancelSubscription}
+                      size="small"
+                    >
+                      Cancel Subscription
+                    </Button>
+                  </Box>
                 )}
               </Grid>
             </Grid>
