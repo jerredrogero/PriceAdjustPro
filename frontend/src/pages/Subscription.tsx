@@ -27,6 +27,7 @@ import {
   Security as SecurityIcon,
 } from '@mui/icons-material';
 import { UserContext } from '../components/Layout';
+import api from '../api/axios';
 
 interface SubscriptionProduct {
   id: number;
@@ -75,43 +76,28 @@ const Subscription: React.FC = () => {
       setLoading(true);
       setError('');
 
-      // Fetch subscription status and products
-      const [statusResponse, productsResponse] = await Promise.all([
-        fetch('/api/subscriptions/status/', {
-          credentials: 'include',
-          headers: {
-            'Accept': 'application/json',
-          },
-        }),
-        fetch('/api/subscriptions/products/', {
-          credentials: 'include',
-          headers: {
-            'Accept': 'application/json',
-          },
-        }),
+      // Fetch subscription status and products using axios
+      const [statusResponse, productsResponse] = await Promise.allSettled([
+        api.get('/subscriptions/status/'),
+        api.get('/subscriptions/products/'),
       ]);
 
-      console.log('Subscription API responses:', {
-        statusResponse: statusResponse.status,
-        productsResponse: productsResponse.status,
-      });
-
-      if (statusResponse.ok) {
-        const statusData = await statusResponse.json();
-        console.log('Subscription status data:', statusData);
-        setSubscription(statusData);
+      // Handle subscription status
+      if (statusResponse.status === 'fulfilled') {
+        console.log('Subscription status data:', statusResponse.value.data);
+        setSubscription(statusResponse.value.data);
       } else {
-        console.warn('Subscription status API failed:', statusResponse.status, statusResponse.statusText);
+        console.warn('Subscription status API failed:', statusResponse.reason);
       }
 
+      // Handle products
       let fetchedProducts = [];
-      
-      if (productsResponse.ok) {
-        const productsData = await productsResponse.json();
+      if (productsResponse.status === 'fulfilled') {
+        const productsData = productsResponse.value.data;
         console.log('Products data:', productsData);
         fetchedProducts = productsData.products || productsData || [];
       } else {
-        console.warn('Products API failed:', productsResponse.status, productsResponse.statusText);
+        console.warn('Products API failed:', productsResponse.reason);
       }
 
       // Always set fallback products if none were fetched to ensure cards show up
@@ -174,38 +160,20 @@ const Subscription: React.FC = () => {
       setLoading(true);
       setError('');
 
-      // Create subscription directly - no modal
-      const response = await fetch('/api/subscriptions/create/', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          price_id: product.stripe_price_id,
-          product_id: product.id,
-        }),
+      console.log('Creating subscription with product:', product);
+
+      // Use axios for proper CSRF handling
+      const response = await api.post('/subscriptions/create/', {
+        price_id: product.stripe_price_id,
+        product_id: product.id,
       });
 
-      console.log('Direct subscription create response:', response.status);
+      console.log('Subscription create success:', response.data);
 
-      if (!response.ok) {
-        const contentType = response.headers.get('content-type');
-        if (contentType && contentType.includes('application/json')) {
-          const result = await response.json();
-          throw new Error(result.error || 'Subscription creation failed');
-        } else {
-          throw new Error(`Server error (${response.status}). Please contact support.`);
-        }
-      }
-
-      const result = await response.json();
-      console.log('Direct subscription create result:', result);
-
-      if (result.checkout_url) {
+      if (response.data.checkout_url) {
         // Redirect directly to Stripe Checkout
-        window.location.href = result.checkout_url;
-      } else if (result.success) {
+        window.location.href = response.data.checkout_url;
+      } else if (response.data.success) {
         // Subscription created successfully, refresh data
         fetchSubscriptionData();
         setSuccess('Subscription created successfully!');
@@ -214,7 +182,30 @@ const Subscription: React.FC = () => {
       }
     } catch (err: any) {
       console.error('Direct subscription error:', err);
-      setError(err.message || 'Failed to start subscription process. Please try again.');
+      
+      let errorMessage = 'Failed to start subscription process.';
+      
+      if (err.response) {
+        // Server responded with error status
+        const status = err.response.status;
+        const data = err.response.data;
+        
+        if (status === 403) {
+          errorMessage = 'Permission denied. Please make sure you are logged in.';
+        } else if (status === 404) {
+          errorMessage = 'Subscription service not available.';
+        } else if (status === 500) {
+          errorMessage = 'Server error. Please try again later.';
+        } else if (data?.error) {
+          errorMessage = data.error;
+        } else if (data?.message) {
+          errorMessage = data.message;
+        }
+      } else if (err.request) {
+        errorMessage = 'Network error. Please check your connection.';
+      }
+      
+      setError(`${errorMessage}\n\nFor immediate access, please contact us at support@priceadjustpro.com`);
     } finally {
       setLoading(false);
     }
