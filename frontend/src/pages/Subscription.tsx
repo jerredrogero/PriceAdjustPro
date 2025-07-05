@@ -90,49 +90,55 @@ const Subscription: React.FC = () => {
         console.warn('Subscription status API failed:', statusResponse.reason);
       }
 
-      // Handle products - for now, always use fallback products with correct pricing
+      // Handle products - use API data with fallback
       let fetchedProducts = [];
       if (productsResponse.status === 'fulfilled') {
         const productsData = productsResponse.value.data;
-        console.log('API Products data (using fallback instead):', productsData);
-        // Don't use API data for now since it has old pricing
-        // fetchedProducts = productsData.products || productsData || [];
+        console.log('API Products data:', productsData);
+        fetchedProducts = productsData.products || productsData || [];
+        
+        if (fetchedProducts.length === 0) {
+          console.warn('No products returned from API, using fallback');
+        }
       } else {
         console.warn('Products API failed:', productsResponse.reason);
       }
 
-      // Always use current pricing from fallback products
-      console.log('Using fallback products with updated pricing');
-      fetchedProducts = [
-        {
-          id: 1,
-          stripe_price_id: 'price_monthly',
-          name: 'PriceAdjustPro Monthly',
-          description: 'Full access to all features',
-          price: '2.99',
-          currency: 'usd',
-          billing_interval: 'month'
-        },
-        {
-          id: 2,
-          stripe_price_id: 'price_yearly',
-          name: 'PriceAdjustPro Yearly',
-          description: 'Full access to all features',
-          price: '29.99',
-          currency: 'usd',
-          billing_interval: 'year'
-        }
-      ];
+      // Use fallback products only if API didn't return any products
+      if (fetchedProducts.length === 0) {
+        console.log('Using fallback products');
+        fetchedProducts = [
+          {
+            id: 1,
+            stripe_price_id: 'price_1RhL3xCBOzePXFXgP8SfgJb4',
+            name: 'PriceAdjustPro Monthly',
+            description: 'Full access to all features',
+            price: '2.99',
+            currency: 'usd',
+            billing_interval: 'month'
+          },
+          {
+            id: 2,
+            stripe_price_id: 'price_1RhL67CBOzePXFXgetw6nh0K',
+            name: 'PriceAdjustPro Yearly',
+            description: 'Full access to all features',
+            price: '29.99',
+            currency: 'usd',
+            billing_interval: 'year'
+          }
+        ];
+      }
 
       setProducts(fetchedProducts);
     } catch (err) {
       console.error('Subscription data fetch error:', err);
       setError('Failed to load subscription information. Please try refreshing the page.');
       // Set fallback products even on error
+      console.log('Using fallback products due to error');
       setProducts([
         {
           id: 1,
-          stripe_price_id: 'price_monthly',
+          stripe_price_id: 'price_1RhL3xCBOzePXFXgP8SfgJb4',
           name: 'PriceAdjustPro Monthly',
           description: 'Full access to all features',
           price: '2.99',
@@ -141,7 +147,7 @@ const Subscription: React.FC = () => {
         },
         {
           id: 2,
-          stripe_price_id: 'price_yearly',
+          stripe_price_id: 'price_1RhL67CBOzePXFXgetw6nh0K',
           name: 'PriceAdjustPro Yearly',
           description: 'Full access to all features',
           price: '29.99',
@@ -159,21 +165,44 @@ const Subscription: React.FC = () => {
       setLoading(true);
       setError('');
 
-      console.log('Subscription requested for product:', product);
+      console.log('Creating checkout session for product:', product);
 
-      // For now, show a message that subscription processing is being finalized
-      setError(`Subscription processing is currently being finalized. 
+      // Create Stripe checkout session
+      const response = await api.post('/subscriptions/create-checkout-session/', {
+        price_id: product.stripe_price_id,
+        product_id: product.id,
+      });
 
-To subscribe to ${product.name} (${product.price}/${product.billing_interval}), please contact us at:
+      console.log('Checkout session created:', response.data);
 
-📧 support@priceadjustpro.com
-💬 Mention: "${product.name} subscription"
-
-We'll set up your subscription manually and provide immediate access to all premium features.`);
+      // Redirect to Stripe checkout
+      if (response.data.checkout_url) {
+        window.location.href = response.data.checkout_url;
+      } else {
+        throw new Error('No checkout URL received from server');
+      }
 
     } catch (err: any) {
-      console.error('Subscription error:', err);
-      setError('Unable to process subscription at this time. Please contact support@priceadjustpro.com for assistance.');
+      console.error('Checkout session error:', err);
+      
+      let errorMessage = 'Failed to create checkout session.';
+      
+      if (err.response) {
+        const status = err.response.status;
+        const data = err.response.data;
+        
+        if (status === 400 && data?.error) {
+          errorMessage = data.error;
+        } else if (status === 403) {
+          errorMessage = 'Permission denied. Please make sure you are logged in.';
+        } else if (status === 500) {
+          errorMessage = 'Server error. Please try again later.';
+        }
+      } else if (err.request) {
+        errorMessage = 'Network error. Please check your connection.';
+      }
+      
+      setError(`${errorMessage}\n\nIf the issue persists, contact support@priceadjustpro.com for assistance.`);
     } finally {
       setLoading(false);
     }

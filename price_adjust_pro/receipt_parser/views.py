@@ -1789,8 +1789,7 @@ import stripe
 from django.conf import settings
 from datetime import datetime
 
-# Configure Stripe API key
-stripe.api_key = getattr(settings, 'STRIPE_SECRET_KEY', '')
+# Note: Stripe API key is configured in each function to avoid module-level initialization issues
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
@@ -1862,6 +1861,9 @@ def api_subscription_create(request):
     """Create a new subscription."""
     try:
         from .models import SubscriptionProduct, UserSubscription
+        
+        # Configure Stripe API key
+        stripe.api_key = getattr(settings, 'STRIPE_SECRET_KEY', '')
         
         product_id = request.data.get('product_id')
         payment_method_id = request.data.get('payment_method_id')
@@ -1968,6 +1970,9 @@ def api_subscription_cancel(request):
     try:
         from .models import UserSubscription
         
+        # Configure Stripe API key
+        stripe.api_key = getattr(settings, 'STRIPE_SECRET_KEY', '')
+        
         try:
             user_subscription = UserSubscription.objects.get(user=request.user)
         except UserSubscription.DoesNotExist:
@@ -2023,6 +2028,9 @@ def api_subscription_update(request):
     try:
         from .models import UserSubscription
         
+        # Configure Stripe API key
+        stripe.api_key = getattr(settings, 'STRIPE_SECRET_KEY', '')
+        
         try:
             user_subscription = UserSubscription.objects.get(user=request.user)
         except UserSubscription.DoesNotExist:
@@ -2073,6 +2081,9 @@ def api_subscription_create_payment_intent(request):
     """Create a payment intent for one-time payments or setup intents."""
     try:
         from .models import UserSubscription
+        
+        # Configure Stripe API key
+        stripe.api_key = getattr(settings, 'STRIPE_SECRET_KEY', '')
         
         amount = request.data.get('amount')  # Amount in cents
         currency = request.data.get('currency', 'usd')
@@ -2278,3 +2289,93 @@ def api_subscription_webhook(request):
     except Exception as e:
         logger.error(f"Error processing webhook: {str(e)}")
         return Response({'error': 'Webhook processing failed'}, status=500)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def api_debug_stripe_config(request):
+    """Debug endpoint to check Stripe configuration."""
+    import os
+    from django.conf import settings
+    
+    stripe_secret_from_env = os.getenv('STRIPE_SECRET_KEY', '')
+    stripe_secret_from_settings = getattr(settings, 'STRIPE_SECRET_KEY', '')
+    
+    return Response({
+        'env_var_exists': bool(stripe_secret_from_env),
+        'env_var_starts_with': stripe_secret_from_env[:8] if stripe_secret_from_env else 'empty',
+        'settings_exists': bool(stripe_secret_from_settings),
+        'settings_starts_with': stripe_secret_from_settings[:8] if stripe_secret_from_settings else 'empty',
+        'debug_mode': settings.DEBUG,
+    })
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def api_create_checkout_session(request):
+    """Create a Stripe checkout session for subscription."""
+    try:
+        from .models import SubscriptionProduct
+        import stripe
+        from django.conf import settings
+        
+        # Configure Stripe API key
+        stripe_secret_key = getattr(settings, 'STRIPE_SECRET_KEY', '')
+        stripe.api_key = stripe_secret_key
+        
+        # Debug logging
+        logger.info(f"STRIPE_SECRET_KEY from settings: {stripe_secret_key[:8]}..." if stripe_secret_key else "STRIPE_SECRET_KEY is empty")
+        logger.info(f"Stripe API key configured: {bool(stripe.api_key)}")
+        
+        # Get the product/price ID from request
+        price_id = request.data.get('price_id')
+        product_id = request.data.get('product_id')
+        
+        if not price_id:
+            return Response(
+                {'error': 'price_id is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Determine success and cancel URLs
+        success_url = f"{request.scheme}://{request.get_host()}/subscription?success=true"
+        cancel_url = f"{request.scheme}://{request.get_host()}/subscription?canceled=true"
+        
+        # Create checkout session
+        try:
+            checkout_session = stripe.checkout.Session.create(
+                payment_method_types=['card'],
+                line_items=[{
+                    'price': price_id,
+                    'quantity': 1,
+                }],
+                mode='subscription',
+                success_url=success_url,
+                cancel_url=cancel_url,
+                customer_email=request.user.email,
+                client_reference_id=str(request.user.id),
+                metadata={
+                    'user_id': request.user.id,
+                    'product_id': product_id,
+                },
+                allow_promotion_codes=True,
+                billing_address_collection='auto',
+            )
+            
+            return Response({
+                'checkout_url': checkout_session.url,
+                'session_id': checkout_session.id
+            })
+            
+        except stripe.error.StripeError as e:
+            logger.error(f"Stripe checkout session creation error: {str(e)}")
+            return Response(
+                {'error': f'Failed to create checkout session: {str(e)}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    
+    except Exception as e:
+        logger.error(f"Checkout session creation error: {str(e)}")
+        return Response(
+            {'error': 'Failed to create checkout session'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
