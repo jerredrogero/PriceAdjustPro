@@ -109,7 +109,7 @@ const Subscription: React.FC = () => {
             stripe_price_id: 'price_monthly',
             name: 'PriceAdjustPro Monthly',
             description: 'Full access to all features',
-            price: '1.99',
+            price: '2.99',
             currency: 'usd',
             billing_interval: 'month'
           },
@@ -118,7 +118,7 @@ const Subscription: React.FC = () => {
             stripe_price_id: 'price_yearly',
             name: 'PriceAdjustPro Yearly',
             description: 'Full access to all features',
-            price: '19.99',
+            price: '29.99',
             currency: 'usd',
             billing_interval: 'year'
           }
@@ -136,7 +136,7 @@ const Subscription: React.FC = () => {
           stripe_price_id: 'price_monthly',
           name: 'PriceAdjustPro Monthly',
           description: 'Full access to all features',
-          price: '1.99',
+          price: '2.99',
           currency: 'usd',
           billing_interval: 'month'
         },
@@ -145,7 +145,7 @@ const Subscription: React.FC = () => {
           stripe_price_id: 'price_yearly',
           name: 'PriceAdjustPro Yearly',
           description: 'Full access to all features',
-          price: '19.99',
+          price: '29.99',
           currency: 'usd',
           billing_interval: 'year'
         }
