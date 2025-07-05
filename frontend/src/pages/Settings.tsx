@@ -37,7 +37,7 @@ import {
   Notifications as NotificationsIcon,
   Download as DownloadIcon,
   Security as SecurityIcon,
-  Account as AccountIcon,
+  AccountCircle as AccountIcon,
 } from '@mui/icons-material';
 import { UserContext } from '../components/Layout';
 import { useThemeContext } from '../contexts/ThemeContext';
