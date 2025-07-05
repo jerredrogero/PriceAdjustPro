@@ -2309,15 +2309,11 @@ def api_debug_stripe_config(request):
         'debug_mode': settings.DEBUG,
     })
 
+@csrf_exempt
 @api_view(['POST'])
+@permission_classes([IsAuthenticated])
 def api_create_checkout_session(request):
     """Create a Stripe checkout session for subscription."""
-    # Manual authentication check (bypass CSRF issues)
-    if not request.user.is_authenticated:
-        return Response(
-            {'error': 'Authentication required'},
-            status=status.HTTP_401_UNAUTHORIZED
-        )
     
     try:
         from .models import SubscriptionProduct
