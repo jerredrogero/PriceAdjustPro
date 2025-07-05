@@ -34,7 +34,6 @@ import {
   Lock as LockIcon,
   DeleteForever as DeleteIcon,
   Palette as PaletteIcon,
-  Notifications as NotificationsIcon,
   Download as DownloadIcon,
   Security as SecurityIcon,
   AccountCircle as AccountIcon,
@@ -54,11 +53,6 @@ const Settings: React.FC = () => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [deletePassword, setDeletePassword] = useState('');
   
-  // Notification settings
-  const [emailNotifications, setEmailNotifications] = useState(true);
-  const [pushNotifications, setPushNotifications] = useState(true);
-  const [priceAlerts, setPriceAlerts] = useState(true);
-  const [weeklyReports, setWeeklyReports] = useState(false);
   
   // Data settings
   const [dataRetention, setDataRetention] = useState('1year');
@@ -69,30 +63,6 @@ const Settings: React.FC = () => {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const handleUpdateNotifications = async () => {
-    setLoading(true);
-    try {
-      const response = await fetch('/api/auth/update-notifications/', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          email_notifications: emailNotifications,
-          push_notifications: pushNotifications,
-          price_alerts: priceAlerts,
-          weekly_reports: weeklyReports,
-        }),
-      });
-
-      if (!response.ok) throw new Error('Failed to update notifications');
-      setSuccess('Notification preferences updated successfully');
-    } catch (err) {
-      setError('Failed to update notification preferences');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleExportData = async (format: 'csv' | 'json') => {
     setLoading(true);
@@ -313,81 +283,6 @@ const Settings: React.FC = () => {
           </Card>
         </Grid>
 
-        {/* Notification Settings */}
-        <Grid item xs={12} md={6}>
-          <Card>
-            <CardHeader 
-              title="Notifications" 
-              avatar={<NotificationsIcon color="primary" />}
-            />
-            <CardContent>
-              <List>
-                <ListItem>
-                  <ListItemText 
-                    primary="Email Notifications" 
-                    secondary="Receive updates via email"
-                  />
-                  <ListItemSecondaryAction>
-                    <Switch
-                      checked={emailNotifications}
-                      onChange={(e) => setEmailNotifications(e.target.checked)}
-                      color="primary"
-                    />
-                  </ListItemSecondaryAction>
-                </ListItem>
-                <ListItem>
-                  <ListItemText 
-                    primary="Push Notifications" 
-                    secondary="Browser push notifications"
-                  />
-                  <ListItemSecondaryAction>
-                    <Switch
-                      checked={pushNotifications}
-                      onChange={(e) => setPushNotifications(e.target.checked)}
-                      color="primary"
-                    />
-                  </ListItemSecondaryAction>
-                </ListItem>
-                <ListItem>
-                  <ListItemText 
-                    primary="Price Alerts" 
-                    secondary="Alerts for new price adjustments"
-                  />
-                  <ListItemSecondaryAction>
-                    <Switch
-                      checked={priceAlerts}
-                      onChange={(e) => setPriceAlerts(e.target.checked)}
-                      color="primary"
-                    />
-                  </ListItemSecondaryAction>
-                </ListItem>
-                <ListItem>
-                  <ListItemText 
-                    primary="Weekly Reports" 
-                    secondary="Weekly summary emails"
-                  />
-                  <ListItemSecondaryAction>
-                    <Switch
-                      checked={weeklyReports}
-                      onChange={(e) => setWeeklyReports(e.target.checked)}
-                      color="primary"
-                    />
-                  </ListItemSecondaryAction>
-                </ListItem>
-              </List>
-              <Box sx={{ mt: 2 }}>
-                <Button
-                  variant="contained"
-                  onClick={handleUpdateNotifications}
-                  disabled={loading}
-                  startIcon={<SaveIcon />}
-                >
-                  Save Preferences
-                </Button>
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
 
         {/* Data Management */}
         <Grid item xs={12} md={6}>

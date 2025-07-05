@@ -182,14 +182,20 @@ const Subscription: React.FC = () => {
         console.warn('Subscription status API failed:', statusResponse.status, statusResponse.statusText);
       }
 
+      let fetchedProducts = [];
+      
       if (productsResponse.ok) {
         const productsData = await productsResponse.json();
         console.log('Products data:', productsData);
-        setProducts(productsData.products || productsData || []);
+        fetchedProducts = productsData.products || productsData || [];
       } else {
         console.warn('Products API failed:', productsResponse.status, productsResponse.statusText);
-        // If API fails, set fallback products for testing
-        setProducts([
+      }
+
+      // Always set fallback products if none were fetched to ensure cards show up
+      if (fetchedProducts.length === 0) {
+        console.log('Setting fallback products');
+        fetchedProducts = [
           {
             id: 1,
             stripe_price_id: 'price_monthly',
@@ -208,8 +214,10 @@ const Subscription: React.FC = () => {
             currency: 'usd',
             billing_interval: 'year'
           }
-        ]);
+        ];
       }
+
+      setProducts(fetchedProducts);
     } catch (err) {
       console.error('Subscription data fetch error:', err);
       setError('Failed to load subscription information. Please try refreshing the page.');
