@@ -29,6 +29,7 @@ import {
   LightMode as LightModeIcon,
   Upgrade as UpgradeIcon,
   Settings as SettingsIcon,
+  MoreVert as MoreIcon,
 } from '@mui/icons-material';
 import { useThemeContext } from '../contexts/ThemeContext';
 import LogoLight from '../assets/images/PAP_LM.svg';
@@ -43,6 +44,14 @@ interface User {
   is_superuser?: boolean;
 }
 
+// Define the NavigationItem interface
+interface NavigationItem {
+  text: string;
+  icon: React.ReactElement;
+  path: string;
+  badge?: number;
+}
+
 // Define props for the Navigation component
 interface NavigationProps {
   user: User | null;
@@ -55,6 +64,7 @@ const Navigation: React.FC<NavigationProps> = ({ user }) => {
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const isAuthenticated = !!user;
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
+  const [moreMenuAnchor, setMoreMenuAnchor] = useState<null | HTMLElement>(null);
   const [adjustmentCount, setAdjustmentCount] = useState(0);
 
   useEffect(() => {
@@ -83,6 +93,14 @@ const Navigation: React.FC<NavigationProps> = ({ user }) => {
     setMenuAnchor(null);
   };
 
+  const handleMoreMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
+    setMoreMenuAnchor(event.currentTarget);
+  };
+
+  const handleMoreMenuClose = () => {
+    setMoreMenuAnchor(null);
+  };
+
   const handleLogout = async () => {
     try {
       // Call the API logout endpoint with JSON request
@@ -104,18 +122,23 @@ const Navigation: React.FC<NavigationProps> = ({ user }) => {
     }
   };
 
-  const menuItems = [
+  // Primary navigation items (always visible)
+  const primaryItems: NavigationItem[] = [
     { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
     { text: 'Receipts', icon: <ReceiptIcon />, path: '/receipts' },
     {
-      text: 'Price Adjustments',
+      text: 'Adjustments',
       icon: <AdjustmentIcon />,
       path: '/price-adjustments',
       badge: adjustmentCount,
     },
-    { text: 'On Sale', icon: <SaleIcon />, path: '/on-sale' },
-    { text: 'Analytics', icon: <AnalyticsIcon />, path: '/analytics' },
     { text: 'Upload', icon: <UploadIcon />, path: '/upload' },
+  ];
+
+  // Secondary navigation items (in dropdown menu)
+  const secondaryItems: NavigationItem[] = [
+    { text: 'Analytics', icon: <AnalyticsIcon />, path: '/analytics' },
+    { text: 'On Sale', icon: <SaleIcon />, path: '/on-sale' },
     { text: 'Upgrade', icon: <UpgradeIcon />, path: '/subscription' },
     { text: 'Settings', icon: <SettingsIcon />, path: '/settings' },
   ];
@@ -209,7 +232,7 @@ const Navigation: React.FC<NavigationProps> = ({ user }) => {
           <>
             {!isMobile && (
               <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                {menuItems.map((item) => (
+                {primaryItems.map((item) => (
                   <Button
                     key={item.path}
                     color="inherit"
@@ -224,16 +247,26 @@ const Navigation: React.FC<NavigationProps> = ({ user }) => {
                         item.icon
                       )
                     }
-                    sx={{ ml: 1 }}
+                    sx={{ ml: 1, textTransform: 'none' }}
                   >
                     {item.text}
                   </Button>
                 ))}
+                
+                {/* More dropdown for secondary items */}
+                <IconButton
+                  color="inherit"
+                  onClick={handleMoreMenuOpen}
+                  sx={{ ml: 1 }}
+                >
+                  <MoreIcon />
+                </IconButton>
+                
                 <Button
                   color="inherit"
                   onClick={handleLogout}
                   startIcon={<LogoutIcon />}
-                  sx={{ ml: 1 }}
+                  sx={{ ml: 1, textTransform: 'none' }}
                 >
                   Logout
                 </Button>
@@ -253,12 +286,13 @@ const Navigation: React.FC<NavigationProps> = ({ user }) => {
           </IconButton>
         </Tooltip>
 
+        {/* Mobile hamburger menu */}
         <Menu
           anchorEl={menuAnchor}
           open={Boolean(menuAnchor)}
           onClose={handleMenuClose}
         >
-          {menuItems.map((item) => (
+          {[...primaryItems, ...secondaryItems].map((item) => (
             <MenuItem
               key={item.path}
               component={RouterLink}
@@ -286,6 +320,27 @@ const Navigation: React.FC<NavigationProps> = ({ user }) => {
             <LogoutIcon sx={{ mr: 1 }} />
             Logout
           </MenuItem>
+        </Menu>
+
+        {/* Desktop "More" dropdown menu */}
+        <Menu
+          anchorEl={moreMenuAnchor}
+          open={Boolean(moreMenuAnchor)}
+          onClose={handleMoreMenuClose}
+        >
+          {secondaryItems.map((item) => (
+            <MenuItem
+              key={item.path}
+              component={RouterLink}
+              to={item.path}
+              onClick={handleMoreMenuClose}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                {item.icon}
+                <Typography sx={{ ml: 1 }}>{item.text}</Typography>
+              </Box>
+            </MenuItem>
+          ))}
         </Menu>
       </Toolbar>
     </AppBar>

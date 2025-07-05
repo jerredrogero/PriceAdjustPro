@@ -1562,6 +1562,198 @@ def analytics(request):
         'spending_by_month': spending_by_month,
     })
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def api_enhanced_analytics(request):
+    """Get enhanced analytics with trends and categories."""
+    try:
+        from datetime import datetime, timedelta
+        from django.db.models import F, Q, Case, When, IntegerField
+        from django.db.models.functions import TruncWeek, TruncDay
+        
+        receipts = Receipt.objects.filter(user=request.user, parsed_successfully=True).prefetch_related('items')
+        
+        # Calculate date ranges
+        now = timezone.now()
+        thirty_days_ago = now - timedelta(days=30)
+        sixty_days_ago = now - timedelta(days=60)
+        ninety_days_ago = now - timedelta(days=90)
+        one_year_ago = now - timedelta(days=365)
+        
+        # Current period spending (last 30 days)
+        current_period = receipts.filter(transaction_date__gte=thirty_days_ago)
+        current_spending = current_period.aggregate(
+            total=Sum('total', default=Decimal('0.00'))
+        )['total']
+        current_receipts = current_period.count()
+        
+        # Previous period spending (30-60 days ago)
+        previous_period = receipts.filter(
+            transaction_date__gte=sixty_days_ago,
+            transaction_date__lt=thirty_days_ago
+        )
+        previous_spending = previous_period.aggregate(
+            total=Sum('total', default=Decimal('0.00'))
+        )['total']
+        previous_receipts = previous_period.count()
+        
+        # Calculate trends
+        spending_change = float(current_spending) - float(previous_spending)
+        spending_change_percent = (spending_change / float(previous_spending) * 100) if previous_spending > 0 else 0
+        
+        receipts_change = current_receipts - previous_receipts
+        receipts_change_percent = (receipts_change / previous_receipts * 100) if previous_receipts > 0 else 0
+        
+        # Weekly spending trend (last 12 weeks)
+        weekly_spending = receipts.filter(
+            transaction_date__gte=now - timedelta(weeks=12)
+        ).annotate(
+            week=TruncWeek('transaction_date')
+        ).values('week').annotate(
+            total=Sum('total'),
+            count=Count('id')
+        ).order_by('week')
+        
+        weekly_trend = []
+        for week_data in weekly_spending:
+            weekly_trend.append({
+                'week': week_data['week'].strftime('%Y-%m-%d'),
+                'total': float(week_data['total']),
+                'count': week_data['count']
+            })
+        
+        # Category analysis (simplified categories based on item codes and descriptions)
+        category_spending = {}
+        
+        # Get all line items for analysis
+        line_items = LineItem.objects.filter(
+            receipt__user=request.user,
+            receipt__parsed_successfully=True
+        ).select_related('receipt')
+        
+        # Categorize items (simplified categories)
+        for item in line_items:
+            category = categorize_item(item.description)
+            if category not in category_spending:
+                category_spending[category] = {
+                    'total': Decimal('0.00'),
+                    'count': 0,
+                    'items': 0
+                }
+            category_spending[category]['total'] += item.price * item.quantity
+            category_spending[category]['count'] += 1
+            category_spending[category]['items'] += item.quantity
+        
+        # Convert to list format
+        categories = []
+        for category, data in category_spending.items():
+            categories.append({
+                'category': category,
+                'total': float(data['total']),
+                'count': data['count'],
+                'items': data['items']
+            })
+        categories.sort(key=lambda x: x['total'], reverse=True)
+        
+        # Price adjustment savings tracking
+        from .models import PriceAdjustmentAlert
+        price_alerts = PriceAdjustmentAlert.objects.filter(
+            user=request.user,
+            created_at__gte=one_year_ago
+        )
+        
+        total_potential_savings = price_alerts.aggregate(
+            total=Sum(F('original_price') - F('lower_price'), default=Decimal('0.00'))
+        )['total']
+        
+        active_alerts = price_alerts.filter(is_active=True, is_dismissed=False).count()
+        
+        # Monthly savings opportunity
+        monthly_alerts = price_alerts.annotate(
+            month=TruncMonth('created_at')
+        ).values('month').annotate(
+            savings=Sum(F('original_price') - F('lower_price')),
+            count=Count('id')
+        ).order_by('-month')[:12]
+        
+        savings_by_month = {}
+        for alert_data in monthly_alerts:
+            month_key = alert_data['month'].strftime('%Y-%m')
+            savings_by_month[month_key] = {
+                'savings': float(alert_data['savings']),
+                'count': alert_data['count']
+            }
+        
+        return Response({
+            'trends': {
+                'current_period_spending': float(current_spending),
+                'previous_period_spending': float(previous_spending),
+                'spending_change': spending_change,
+                'spending_change_percent': round(spending_change_percent, 2),
+                'current_period_receipts': current_receipts,
+                'previous_period_receipts': previous_receipts,
+                'receipts_change': receipts_change,
+                'receipts_change_percent': round(receipts_change_percent, 2),
+                'weekly_spending': weekly_trend
+            },
+            'categories': categories[:10],  # Top 10 categories
+            'savings_tracking': {
+                'total_potential_savings': float(total_potential_savings),
+                'active_alerts': active_alerts,
+                'savings_by_month': savings_by_month
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error generating enhanced analytics: {str(e)}")
+        return Response(
+            {'error': 'Failed to generate enhanced analytics'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+def categorize_item(description):
+    """Categorize items based on description keywords."""
+    description_lower = description.lower()
+    
+    # Food categories
+    if any(word in description_lower for word in ['organic', 'produce', 'fruit', 'vegetable', 'banana', 'apple', 'lettuce', 'tomato']):
+        return 'Fresh Produce'
+    elif any(word in description_lower for word in ['meat', 'beef', 'chicken', 'pork', 'fish', 'salmon', 'turkey']):
+        return 'Meat & Seafood'
+    elif any(word in description_lower for word in ['milk', 'cheese', 'yogurt', 'butter', 'dairy', 'eggs']):
+        return 'Dairy & Eggs'
+    elif any(word in description_lower for word in ['bread', 'bakery', 'cake', 'muffin', 'bagel']):
+        return 'Bakery'
+    elif any(word in description_lower for word in ['frozen', 'ice cream', 'pizza']):
+        return 'Frozen Foods'
+    elif any(word in description_lower for word in ['cereal', 'pasta', 'rice', 'beans', 'canned']):
+        return 'Pantry & Dry Goods'
+    elif any(word in description_lower for word in ['snack', 'chips', 'candy', 'chocolate', 'cookie']):
+        return 'Snacks & Candy'
+    elif any(word in description_lower for word in ['beverage', 'soda', 'juice', 'water', 'coffee', 'tea']):
+        return 'Beverages'
+    
+    # Non-food categories
+    elif any(word in description_lower for word in ['shampoo', 'soap', 'toothpaste', 'deodorant', 'lotion', 'beauty']):
+        return 'Health & Beauty'
+    elif any(word in description_lower for word in ['vitamin', 'supplement', 'medicine', 'pharmacy']):
+        return 'Health & Pharmacy'
+    elif any(word in description_lower for word in ['detergent', 'paper towel', 'toilet paper', 'cleaning']):
+        return 'Household Essentials'
+    elif any(word in description_lower for word in ['clothing', 'shirt', 'pants', 'jacket', 'apparel']):
+        return 'Clothing & Apparel'
+    elif any(word in description_lower for word in ['electronics', 'tv', 'computer', 'phone', 'tablet']):
+        return 'Electronics'
+    elif any(word in description_lower for word in ['book', 'toy', 'game', 'sports', 'outdoor']):
+        return 'Entertainment & Sports'
+    elif any(word in description_lower for word in ['auto', 'tire', 'battery', 'oil', 'car']):
+        return 'Automotive'
+    elif any(word in description_lower for word in ['home', 'furniture', 'decor', 'kitchen', 'appliance']):
+        return 'Home & Garden'
+    
+    # Default category
+    return 'Other'
+
 @login_required
 def debug_alerts(request):
     """Debug endpoint to check price adjustment alerts."""
