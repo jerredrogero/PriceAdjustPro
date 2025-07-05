@@ -70,27 +70,48 @@ const CheckoutForm: React.FC<{
     setLoading(true);
 
     try {
-      // Create Stripe checkout session
-      const response = await fetch('/api/subscriptions/create-checkout-session/', {
+      // Try to create subscription using existing endpoint
+      const response = await fetch('/api/subscriptions/create/', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify({
           price_id: product.stripe_price_id,
+          product_id: product.id,
         }),
       });
 
-      const result = await response.json();
+      console.log('Subscription create response:', response.status);
 
       if (!response.ok) {
-        throw new Error(result.error || 'Checkout session creation failed');
+        // Handle non-JSON error responses
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const result = await response.json();
+          throw new Error(result.error || 'Subscription creation failed');
+        } else {
+          // Likely an HTML error page
+          throw new Error(`Server error (${response.status}). Please contact support.`);
+        }
       }
 
-      // Redirect to Stripe Checkout
-      window.location.href = result.url;
+      const result = await response.json();
+      console.log('Subscription create result:', result);
+
+      if (result.checkout_url) {
+        // Redirect to Stripe Checkout
+        window.location.href = result.checkout_url;
+      } else if (result.success) {
+        // Subscription created successfully
+        onSuccess();
+      } else {
+        throw new Error('Unexpected response from server');
+      }
     } catch (err: any) {
-      setError(err.message);
+      console.error('Subscription error:', err);
+      setError(err.message || 'Failed to start subscription process. Please try again.');
       setLoading(false);
     }
   };
@@ -125,6 +146,10 @@ const CheckoutForm: React.FC<{
           {loading ? 'Processing...' : 'Subscribe'}
         </Button>
       </Box>
+      
+      <Typography variant="caption" color="text.secondary" sx={{ mt: 2, display: 'block' }}>
+        Note: Subscription processing is currently being set up. For immediate access, please contact support.
+      </Typography>
     </Box>
   );
 };
