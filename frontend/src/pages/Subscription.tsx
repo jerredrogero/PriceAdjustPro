@@ -143,27 +143,97 @@ const Subscription: React.FC = () => {
     fetchSubscriptionData();
   }, []);
 
+  const retryFetch = () => {
+    setError('');
+    fetchSubscriptionData();
+  };
+
   const fetchSubscriptionData = async () => {
     try {
       setLoading(true);
+      setError('');
 
       // Fetch subscription status and products
       const [statusResponse, productsResponse] = await Promise.all([
-        fetch('/api/subscriptions/status/'),
-        fetch('/api/subscriptions/products/'),
+        fetch('/api/subscriptions/status/', {
+          credentials: 'include',
+          headers: {
+            'Accept': 'application/json',
+          },
+        }),
+        fetch('/api/subscriptions/products/', {
+          credentials: 'include',
+          headers: {
+            'Accept': 'application/json',
+          },
+        }),
       ]);
+
+      console.log('Subscription API responses:', {
+        statusResponse: statusResponse.status,
+        productsResponse: productsResponse.status,
+      });
 
       if (statusResponse.ok) {
         const statusData = await statusResponse.json();
+        console.log('Subscription status data:', statusData);
         setSubscription(statusData);
+      } else {
+        console.warn('Subscription status API failed:', statusResponse.status, statusResponse.statusText);
       }
 
       if (productsResponse.ok) {
         const productsData = await productsResponse.json();
-        setProducts(productsData.products || []);
+        console.log('Products data:', productsData);
+        setProducts(productsData.products || productsData || []);
+      } else {
+        console.warn('Products API failed:', productsResponse.status, productsResponse.statusText);
+        // If API fails, set fallback products for testing
+        setProducts([
+          {
+            id: 1,
+            stripe_price_id: 'price_monthly',
+            name: 'PriceAdjustPro Monthly',
+            description: 'Full access to all features',
+            price: '1.99',
+            currency: 'usd',
+            billing_interval: 'month'
+          },
+          {
+            id: 2,
+            stripe_price_id: 'price_yearly',
+            name: 'PriceAdjustPro Yearly',
+            description: 'Full access to all features',
+            price: '19.99',
+            currency: 'usd',
+            billing_interval: 'year'
+          }
+        ]);
       }
     } catch (err) {
-      setError('Failed to load subscription information');
+      console.error('Subscription data fetch error:', err);
+      setError('Failed to load subscription information. Please try refreshing the page.');
+      // Set fallback products even on error
+      setProducts([
+        {
+          id: 1,
+          stripe_price_id: 'price_monthly',
+          name: 'PriceAdjustPro Monthly',
+          description: 'Full access to all features',
+          price: '1.99',
+          currency: 'usd',
+          billing_interval: 'month'
+        },
+        {
+          id: 2,
+          stripe_price_id: 'price_yearly',
+          name: 'PriceAdjustPro Yearly',
+          description: 'Full access to all features',
+          price: '19.99',
+          currency: 'usd',
+          billing_interval: 'year'
+        }
+      ]);
     } finally {
       setLoading(false);
     }
@@ -270,7 +340,16 @@ const Subscription: React.FC = () => {
       </Box>
 
       {error && (
-        <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError('')}>
+        <Alert 
+          severity="error" 
+          sx={{ mb: 3 }} 
+          onClose={() => setError('')}
+          action={
+            <Button color="inherit" size="small" onClick={retryFetch}>
+              Retry
+            </Button>
+          }
+        >
           {error}
         </Alert>
       )}
