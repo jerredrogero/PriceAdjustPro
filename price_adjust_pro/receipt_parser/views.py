@@ -2309,8 +2309,8 @@ def api_debug_stripe_config(request):
         'debug_mode': settings.DEBUG,
     })
 
-@csrf_exempt
 @api_view(['POST'])
+@authentication_classes([SessionAuthentication, BasicAuthentication])
 @permission_classes([IsAuthenticated])
 def api_create_checkout_session(request):
     """Create a Stripe checkout session for subscription."""
