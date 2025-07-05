@@ -33,13 +33,7 @@ api_urlpatterns = [
     path('debug/reactivate/', views.reactivate_alerts, name='reactivate_alerts'),
     path('analytics/', views.api_user_analytics, name='api_user_analytics'),
     
-    # Authentication API endpoints
-    path('auth/user/', views.api_user_info, name='api_user_info'),
-    path('auth/login/', views.api_login, name='api_login'),
-    path('auth/logout/', views.api_logout, name='api_logout'),
-    path('auth/update-profile/', views.api_update_profile, name='api_update_profile'),
-    path('auth/change-password/', views.api_change_password, name='api_change_password'),
-    path('auth/delete-account/', views.api_delete_account, name='api_delete_account'),
+    # Authentication API endpoints (to be implemented)
     
     # Subscription API endpoints
     path('subscriptions/status/', views.api_subscription_status, name='api_subscription_status'),
