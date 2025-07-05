@@ -384,7 +384,7 @@ const Subscription: React.FC = () => {
                     icon={<StarIcon />}
                     sx={{
                       position: 'absolute',
-                      top: -10,
+                      top: 8,
                       right: 16,
                     }}
                   />
@@ -405,7 +405,7 @@ const Subscription: React.FC = () => {
                     </Typography>
                     {product.billing_interval === 'year' && (
                       <Typography variant="body2" color="primary">
-                        Save 50% compared to monthly
+                        Get two free months!
                       </Typography>
                     )}
                   </Box>
