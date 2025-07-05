@@ -2324,6 +2324,7 @@ def api_debug_auth_test(request):
         'message': 'This endpoint bypasses CSRF and permissions for testing'
     })
 
+@csrf_exempt
 @api_view(['POST'])
 def api_create_checkout_session(request):
     """Create a Stripe checkout session for subscription."""
