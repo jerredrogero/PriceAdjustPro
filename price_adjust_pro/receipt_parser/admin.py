@@ -21,6 +21,8 @@ from .models import (
     CostcoPromotion, CostcoPromotionPage, OfficialSaleItem,
     SubscriptionProduct, UserSubscription, SubscriptionEvent
 )
+from django.conf import settings
+from django.utils import timezone
 from .utils import process_official_promotion
 from django.contrib import messages
 from django.utils.safestring import mark_safe
@@ -46,10 +48,11 @@ admin.site.unregister(Group)
 # Custom User admin with limited fields and hijack functionality
 @admin.register(User)
 class CustomUserAdmin(UserAdmin):
-    list_display = ('username', 'email', 'date_joined', 'last_login', 'is_active', 'is_staff', 'hijack_user_button')
+    list_display = ('username', 'email', 'date_joined', 'last_login', 'is_active', 'is_staff', 'subscription_status', 'hijack_user_button')
     list_filter = ('is_active', 'is_staff', 'date_joined')
     readonly_fields = ('date_joined', 'last_login')
     ordering = ('-date_joined',)
+    actions = ['upgrade_user_subscription', 'downgrade_user_subscription']
     
     # Limit what fields can be changed
     fieldsets = (
@@ -96,6 +99,117 @@ class CustomUserAdmin(UserAdmin):
         """Store request for use in hijack_user_button method."""
         self.request = request
         return super().get_list_display(request)
+    
+    def subscription_status(self, obj):
+        """Display user's subscription status."""
+        try:
+            subscription = obj.subscription
+            if subscription.is_active:
+                return format_html('<span style="color: green">✓ {}</span>', subscription.product.name)
+            else:
+                return format_html('<span style="color: orange">{}</span>', subscription.get_status_display())
+        except UserSubscription.DoesNotExist:
+            return format_html('<span style="color: grey">No subscription</span>')
+    subscription_status.short_description = 'Subscription'
+    
+    def upgrade_user_subscription(self, request, queryset):
+        """Upgrade selected users to premium subscription (local only, no Stripe calls)."""
+        if not request.user.is_superuser:
+            messages.error(request, 'Only superusers can modify subscriptions.')
+            return
+        
+        # Get active subscription products
+        monthly_product = SubscriptionProduct.objects.filter(
+            billing_interval='month', 
+            is_active=True
+        ).first()
+        
+        if not monthly_product:
+            messages.error(request, 'No active monthly subscription product found. Please create one first.')
+            return
+        
+        upgraded_count = 0
+        errors = []
+        
+        for user in queryset:
+            try:
+                # Check if user already has an active subscription
+                if hasattr(user, 'subscription') and user.subscription.is_active:
+                    messages.info(request, f'{user.username} already has an active subscription.')
+                    continue
+                
+                # Create manual subscription (no Stripe calls)
+                import time
+                user_subscription, created = UserSubscription.objects.update_or_create(
+                    user=user,
+                    defaults={
+                        'product': monthly_product,
+                        'stripe_subscription_id': f'admin_manual_{user.id}_{int(time.time())}',
+                        'stripe_customer_id': f'admin_manual_cus_{user.id}',
+                        'status': 'active',
+                        'current_period_start': timezone.now(),
+                        'current_period_end': timezone.now() + timezone.timedelta(days=30),
+                        'cancel_at_period_end': False,
+                    }
+                )
+                
+                upgraded_count += 1
+                action_text = "created" if created else "updated"
+                messages.success(request, f'{user.username}: Admin subscription {action_text} successfully.')
+                    
+            except Exception as e:
+                errors.append(f'{user.username}: Error creating subscription - {str(e)}')
+                continue
+        
+        if upgraded_count > 0:
+            messages.success(request, f'Successfully upgraded {upgraded_count} user(s) to premium subscription.')
+        
+        for error in errors:
+            messages.error(request, error)
+    
+    upgrade_user_subscription.short_description = "⬆️ Upgrade to Premium Subscription"
+    
+    def downgrade_user_subscription(self, request, queryset):
+        """Cancel/downgrade selected users' subscriptions (local only, no Stripe calls)."""
+        if not request.user.is_superuser:
+            messages.error(request, 'Only superusers can modify subscriptions.')
+            return
+        
+        downgraded_count = 0
+        errors = []
+        
+        for user in queryset:
+            try:
+                if not hasattr(user, 'subscription'):
+                    messages.info(request, f'{user.username} has no subscription to downgrade.')
+                    continue
+                
+                subscription = user.subscription
+                
+                if not subscription.is_active:
+                    messages.info(request, f'{user.username} subscription is already inactive.')
+                    continue
+                
+                # Cancel subscription locally (no Stripe calls)
+                subscription.cancel_at_period_end = True
+                subscription.status = 'canceled'
+                subscription.canceled_at = timezone.now()
+                subscription.save()
+                
+                downgraded_count += 1
+                messages.success(request, f'{user.username}: Subscription canceled successfully.')
+                    
+            except Exception as e:
+                errors.append(f'{user.username}: Error canceling subscription - {str(e)}')
+                continue
+        
+        if downgraded_count > 0:
+            messages.success(request, f'Successfully canceled {downgraded_count} user subscription(s).')
+        
+        for error in errors:
+            messages.error(request, error)
+    
+    downgrade_user_subscription.short_description = "⬇️ Cancel Subscription"
 
 csrf_protect_m = method_decorator(csrf_protect)
 
