@@ -45,6 +45,7 @@ api_urlpatterns = [
     path('subscriptions/create-checkout-session/', views.api_create_checkout_session, name='api_create_checkout_session'),
     path('subscriptions/webhook/', views.api_subscription_webhook, name='api_subscription_webhook'),
     path('debug/stripe-config/', views.api_debug_stripe_config, name='api_debug_stripe_config'),
+    path('debug/auth-test/', views.api_debug_auth_test, name='api_debug_auth_test'),
 ]
 
 # Use web_urlpatterns by default

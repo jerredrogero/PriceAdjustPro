@@ -2309,6 +2309,21 @@ def api_debug_stripe_config(request):
         'debug_mode': settings.DEBUG,
     })
 
+
+@csrf_exempt
+@api_view(['GET', 'POST'])  
+def api_debug_auth_test(request):
+    """Debug endpoint to test authentication without strict permissions."""
+    return Response({
+        'method': request.method,
+        'user_authenticated': request.user.is_authenticated,
+        'user_id': request.user.id if request.user.is_authenticated else None,
+        'username': request.user.username if request.user.is_authenticated else None,
+        'timestamp': timezone.now().isoformat(),
+        'csrf_exempt': True,
+        'message': 'This endpoint bypasses CSRF and permissions for testing'
+    })
+
 @csrf_exempt
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
