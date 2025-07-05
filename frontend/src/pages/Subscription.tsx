@@ -1,6 +1,4 @@
-import React, { useState, useEffect } from 'react';
-import { loadStripe } from '@stripe/stripe-js';
-import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
+import React, { useState, useEffect, useContext } from 'react';
 import {
   Container,
   Grid,
@@ -33,10 +31,7 @@ import {
   Analytics as AnalyticsIcon,
   Security as SecurityIcon,
 } from '@mui/icons-material';
-import { useAuth } from '../contexts/AuthContext';
-
-// Load Stripe with the publishable key
-const stripePromise = loadStripe('pk_live_5Pl9Z3VnAi1DOLqNryAk7C7F');
+import { UserContext } from '../components/Layout';
 
 interface SubscriptionProduct {
   id: number;
@@ -67,80 +62,41 @@ const CheckoutForm: React.FC<{
   onSuccess: () => void;
   onCancel: () => void;
 }> = ({ product, onSuccess, onCancel }) => {
-  const stripe = useStripe();
-  const elements = useElements();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleSubmit = async (event: React.FormEvent) => {
-    event.preventDefault();
+  const handleSubmit = async () => {
     setError('');
-
-    if (!stripe || !elements) {
-      return;
-    }
-
     setLoading(true);
 
-    const cardElement = elements.getElement(CardElement);
-    if (!cardElement) {
-      setError('Card element not found');
-      setLoading(false);
-      return;
-    }
-
-    // Create payment method
-    const { error: pmError, paymentMethod } = await stripe.createPaymentMethod({
-      type: 'card',
-      card: cardElement,
-    });
-
-    if (pmError) {
-      setError(pmError.message || 'Failed to create payment method');
-      setLoading(false);
-      return;
-    }
-
     try {
-      // Create subscription
-      const response = await fetch('/api/subscriptions/create/', {
+      // Create Stripe checkout session
+      const response = await fetch('/api/subscriptions/create-checkout-session/', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          product_id: product.id,
-          payment_method_id: paymentMethod.id,
+          price_id: product.stripe_price_id,
         }),
       });
 
-      const data = await response.json();
+      const result = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to create subscription');
+        throw new Error(result.error || 'Checkout session creation failed');
       }
 
-      // Handle subscription confirmation if needed
-      if (data.client_secret) {
-        const { error: confirmError } = await stripe.confirmCardPayment(data.client_secret);
-        
-        if (confirmError) {
-          setError(confirmError.message || 'Payment confirmation failed');
-          setLoading(false);
-          return;
-        }
-      }
-
-      onSuccess();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create subscription');
+      // Redirect to Stripe Checkout
+      window.location.href = result.url;
+    } catch (err: any) {
+      setError(err.message);
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
   return (
-    <form onSubmit={handleSubmit}>
+    <Box>
       <Box sx={{ mb: 3 }}>
         <Typography variant="h6" gutterBottom>
           Subscribe to {product.name}
@@ -148,22 +104,6 @@ const CheckoutForm: React.FC<{
         <Typography variant="body2" color="text.secondary" gutterBottom>
           ${product.price}/{product.billing_interval}
         </Typography>
-      </Box>
-
-      <Box sx={{ mb: 3, p: 2, border: '1px solid #e0e0e0', borderRadius: 1 }}>
-        <CardElement
-          options={{
-            style: {
-              base: {
-                fontSize: '16px',
-                color: '#424770',
-                '::placeholder': {
-                  color: '#aab7c4',
-                },
-              },
-            },
-          }}
-        />
       </Box>
 
       {error && (
@@ -177,20 +117,20 @@ const CheckoutForm: React.FC<{
           Cancel
         </Button>
         <Button
-          type="submit"
           variant="contained"
-          disabled={!stripe || loading}
+          onClick={handleSubmit}
+          disabled={loading}
           startIcon={loading && <CircularProgress size={20} />}
         >
           {loading ? 'Processing...' : 'Subscribe'}
         </Button>
       </Box>
-    </form>
+    </Box>
   );
 };
 
 const Subscription: React.FC = () => {
-  const { user } = useAuth();
+  const user = useContext(UserContext);
   const [products, setProducts] = useState<SubscriptionProduct[]>([]);
   const [subscription, setSubscription] = useState<UserSubscription | null>(null);
   const [loading, setLoading] = useState(true);
@@ -508,13 +448,11 @@ const Subscription: React.FC = () => {
         <DialogTitle>Complete Your Subscription</DialogTitle>
         <DialogContent>
           {selectedProduct && (
-            <Elements stripe={stripePromise}>
-              <CheckoutForm
-                product={selectedProduct}
-                onSuccess={handleSubscriptionSuccess}
-                onCancel={() => setCheckoutOpen(false)}
-              />
-            </Elements>
+            <CheckoutForm
+              product={selectedProduct}
+              onSuccess={handleSubscriptionSuccess}
+              onCancel={() => setCheckoutOpen(false)}
+            />
           )}
         </DialogContent>
       </Dialog>
