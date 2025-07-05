@@ -2324,20 +2324,18 @@ def api_debug_auth_test(request):
         'message': 'This endpoint bypasses CSRF and permissions for testing'
     })
 
+class CsrfExemptSessionAuthentication(SessionAuthentication):
+    """Session authentication that doesn't enforce CSRF."""
+    def enforce_csrf(self, request):
+        return  # To not perform the csrf check previously happening
+
 class CreateCheckoutSessionView(APIView):
     """Create a Stripe checkout session for subscription."""
     
-    authentication_classes = []
-    permission_classes = []
+    authentication_classes = [CsrfExemptSessionAuthentication]
+    permission_classes = [IsAuthenticated]
     
     def post(self, request, *args, **kwargs):
-        # Manual authentication check (bypass CSRF)
-        if not request.user.is_authenticated:
-            return Response(
-                {'error': 'Authentication required'}, 
-                status=status.HTTP_401_UNAUTHORIZED
-            )
-            
         try:
             from .models import SubscriptionProduct
             import stripe
