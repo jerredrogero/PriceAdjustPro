@@ -53,7 +53,6 @@ interface UserSubscription {
   };
 }
 
-
 const Subscription: React.FC = () => {
   const user = useContext(UserContext);
   const [products, setProducts] = useState<SubscriptionProduct[]>([]);
@@ -61,13 +60,52 @@ const Subscription: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [debugInfo, setDebugInfo] = useState('');
+
+  // Fallback products for when API fails
+  const fallbackProducts = [
+    {
+      id: 1,
+      stripe_price_id: 'price_1RhL3xCBOzePXFXgP8SfgJb4',
+      name: 'PriceAdjustPro Monthly',
+      description: 'Full access to all features',
+      price: '2.99',
+      currency: 'usd',
+      billing_interval: 'month'
+    },
+    {
+      id: 2,
+      stripe_price_id: 'price_1RhL67CBOzePXFXgetw6nh0K',
+      name: 'PriceAdjustPro Yearly',
+      description: 'Full access to all features',
+      price: '29.99',
+      currency: 'usd',
+      billing_interval: 'year'
+    }
+  ];
 
   useEffect(() => {
-    fetchSubscriptionData();
+    console.log('Subscription component mounted');
+    
+    // Add a timeout to prevent indefinite loading
+    const timeoutId = setTimeout(() => {
+      console.log('Timeout reached, forcing loading to false');
+      setLoading(false);
+      setError('Loading timeout - using fallback data');
+      setProducts(fallbackProducts);
+      setDebugInfo('Forced fallback due to timeout');
+    }, 10000); // 10 second timeout
+
+    fetchSubscriptionData().finally(() => {
+      clearTimeout(timeoutId);
+    });
+
+    return () => clearTimeout(timeoutId);
   }, []);
 
   const retryFetch = () => {
     setError('');
+    setDebugInfo('');
     fetchSubscriptionData();
   };
 
@@ -75,19 +113,29 @@ const Subscription: React.FC = () => {
     try {
       setLoading(true);
       setError('');
+      setDebugInfo('Starting API calls...');
 
-      // Fetch subscription status and products using axios
+      console.log('Fetching subscription data...');
+
+      // Fetch subscription status and products using axios with timeout
+      const apiTimeout = 5000; // 5 second timeout for each API call
+      
       const [statusResponse, productsResponse] = await Promise.allSettled([
-        api.get('/subscriptions/status/'),
-        api.get('/subscriptions/products/'),
+        api.get('/subscriptions/status/', { timeout: apiTimeout }),
+        api.get('/subscriptions/products/', { timeout: apiTimeout }),
       ]);
+
+      console.log('API calls completed');
+      setDebugInfo('API calls completed');
 
       // Handle subscription status
       if (statusResponse.status === 'fulfilled') {
         console.log('Subscription status data:', statusResponse.value.data);
         setSubscription(statusResponse.value.data);
+        setDebugInfo(prev => prev + ' | Status: Success');
       } else {
         console.warn('Subscription status API failed:', statusResponse.reason);
+        setDebugInfo(prev => prev + ' | Status: Failed');
       }
 
       // Handle products - use API data with fallback
@@ -96,67 +144,39 @@ const Subscription: React.FC = () => {
         const productsData = productsResponse.value.data;
         console.log('API Products data:', productsData);
         fetchedProducts = productsData.products || productsData || [];
+        setDebugInfo(prev => prev + ` | Products: ${fetchedProducts.length} items`);
         
         if (fetchedProducts.length === 0) {
           console.warn('No products returned from API, using fallback');
+          setDebugInfo(prev => prev + ' | Using fallback products');
         }
       } else {
         console.warn('Products API failed:', productsResponse.reason);
+        setDebugInfo(prev => prev + ' | Products: Failed');
       }
 
-      // Use fallback products only if API didn't return any products
+      // Use fallback products if API didn't return any products
       if (fetchedProducts.length === 0) {
         console.log('Using fallback products');
-        fetchedProducts = [
-          {
-            id: 1,
-            stripe_price_id: 'price_1RhL3xCBOzePXFXgP8SfgJb4',
-            name: 'PriceAdjustPro Monthly',
-            description: 'Full access to all features',
-            price: '2.99',
-            currency: 'usd',
-            billing_interval: 'month'
-          },
-          {
-            id: 2,
-            stripe_price_id: 'price_1RhL67CBOzePXFXgetw6nh0K',
-            name: 'PriceAdjustPro Yearly',
-            description: 'Full access to all features',
-            price: '29.99',
-            currency: 'usd',
-            billing_interval: 'year'
-          }
-        ];
+        fetchedProducts = fallbackProducts;
+        setDebugInfo(prev => prev + ' | Fallback products loaded');
       }
 
       setProducts(fetchedProducts);
+      console.log('Products set:', fetchedProducts);
+      setDebugInfo(prev => prev + ` | Final: ${fetchedProducts.length} products`);
+
     } catch (err) {
       console.error('Subscription data fetch error:', err);
-      setError('Failed to load subscription information. Please try refreshing the page.');
+      setError('Failed to load subscription information. Using fallback data.');
+      setDebugInfo(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      
       // Set fallback products even on error
       console.log('Using fallback products due to error');
-      setProducts([
-        {
-          id: 1,
-          stripe_price_id: 'price_1RhL3xCBOzePXFXgP8SfgJb4',
-          name: 'PriceAdjustPro Monthly',
-          description: 'Full access to all features',
-          price: '2.99',
-          currency: 'usd',
-          billing_interval: 'month'
-        },
-        {
-          id: 2,
-          stripe_price_id: 'price_1RhL67CBOzePXFXgetw6nh0K',
-          name: 'PriceAdjustPro Yearly',
-          description: 'Full access to all features',
-          price: '29.99',
-          currency: 'usd',
-          billing_interval: 'year'
-        }
-      ]);
+      setProducts(fallbackProducts);
     } finally {
       setLoading(false);
+      console.log('Loading complete');
     }
   };
 
@@ -207,7 +227,6 @@ const Subscription: React.FC = () => {
       setLoading(false);
     }
   };
-
 
   const handleCancelSubscription = async () => {
     try {
@@ -275,19 +294,34 @@ const Subscription: React.FC = () => {
     { icon: <SecurityIcon />, text: 'Priority customer support' },
   ];
 
-  if (loading) {
+  // Force render content even if loading is stuck
+  const shouldShowContent = !loading || products.length > 0;
+
+  if (loading && products.length === 0) {
     return (
-      <Container maxWidth="lg" sx={{ py: 4, textAlign: 'center' }}>
+      <Container maxWidth="lg" sx={{ py: 4, textAlign: 'center', minHeight: '60vh' }}>
         <CircularProgress />
         <Typography variant="h6" sx={{ mt: 2 }}>
           Loading subscription information...
         </Typography>
+        {debugInfo && (
+          <Typography variant="body2" sx={{ mt: 1, color: 'text.secondary' }}>
+            Debug: {debugInfo}
+          </Typography>
+        )}
+        <Button 
+          variant="outlined" 
+          onClick={retryFetch}
+          sx={{ mt: 2 }}
+        >
+          Skip Loading
+        </Button>
       </Container>
     );
   }
 
   return (
-    <Container maxWidth="lg" sx={{ py: 4 }}>
+    <Container maxWidth="lg" sx={{ py: 4, minHeight: '100vh' }}>
       <Box sx={{ textAlign: 'center', mb: 4 }}>
         <Typography variant="h3" gutterBottom>
           Upgrade Your Account
@@ -315,6 +349,13 @@ const Subscription: React.FC = () => {
       {success && (
         <Alert severity="success" sx={{ mb: 3 }} onClose={() => setSuccess('')}>
           {success}
+        </Alert>
+      )}
+
+      {/* Debug info for troubleshooting */}
+      {debugInfo && (
+        <Alert severity="info" sx={{ mb: 3 }} onClose={() => setDebugInfo('')}>
+          Debug: {debugInfo}
         </Alert>
       )}
 
@@ -465,8 +506,9 @@ const Subscription: React.FC = () => {
                     fullWidth
                     size="large"
                     onClick={() => handleSubscribe(product)}
+                    disabled={loading}
                   >
-                    Subscribe Now
+                    {loading ? 'Processing...' : 'Subscribe Now'}
                   </Button>
                   <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center' }}>
                     Contact support@priceadjustpro.com for instant setup
@@ -478,7 +520,22 @@ const Subscription: React.FC = () => {
         </Grid>
       )}
 
-      {/* Checkout Dialog */}
+      {/* Fallback message if no products */}
+      {products.length === 0 && !loading && (
+        <Card sx={{ textAlign: 'center', py: 4 }}>
+          <CardContent>
+            <Typography variant="h6" gutterBottom>
+              Unable to load subscription plans
+            </Typography>
+            <Typography color="text.secondary" paragraph>
+              We're having trouble loading the subscription information. Please try refreshing the page or contact support.
+            </Typography>
+            <Button variant="contained" onClick={retryFetch}>
+              Retry Loading
+            </Button>
+          </CardContent>
+        </Card>
+      )}
     </Container>
   );
 };
