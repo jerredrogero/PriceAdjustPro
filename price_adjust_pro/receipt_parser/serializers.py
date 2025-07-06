@@ -1,9 +1,56 @@
 from rest_framework import serializers
-from .models import Receipt, LineItem
+from django.contrib.auth.models import User
+from .models import Receipt, LineItem, UserProfile
 from decimal import Decimal
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+class UserSerializer(serializers.ModelSerializer):
+    """Serializer for User model with account type information."""
+    account_type = serializers.SerializerMethodField()
+    account_type_display = serializers.SerializerMethodField()
+    is_paid_account = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = User
+        fields = [
+            'id', 'username', 'email', 'first_name', 'last_name',
+            'account_type', 'account_type_display', 'is_paid_account'
+        ]
+    
+    def get_account_type(self, obj):
+        """Get account type from UserProfile, return iOS app compatible value."""
+        try:
+            profile = obj.profile
+            # Return iOS app compatible values
+            if profile.is_paid_account:
+                return 'paid'  # iOS app expects: "paid", "premium", "pro", "subscription", "active", "subscriber"
+            else:
+                return 'free'  # iOS app expects: "free", "basic", "trial", "inactive"
+        except UserProfile.DoesNotExist:
+            # Create profile if it doesn't exist
+            UserProfile.objects.create(user=obj, account_type='free')
+            return 'free'
+    
+    def get_account_type_display(self, obj):
+        """Get human-readable account type."""
+        try:
+            profile = obj.profile
+            return profile.get_account_type_display()
+        except UserProfile.DoesNotExist:
+            UserProfile.objects.create(user=obj, account_type='free')
+            return 'Free Account'
+    
+    def get_is_paid_account(self, obj):
+        """Boolean indicating if user has paid account."""
+        try:
+            profile = obj.profile
+            return profile.is_paid_account
+        except UserProfile.DoesNotExist:
+            UserProfile.objects.create(user=obj, account_type='free')
+            return False
 
 class LineItemSerializer(serializers.ModelSerializer):
     total_price = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)

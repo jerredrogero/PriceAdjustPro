@@ -69,10 +69,26 @@ def api_login(request):
                 # Ensure CSRF token is set
                 csrf_token = get_token(request)
                 
+                # Get account type from user profile
+                try:
+                    from receipt_parser.models import UserProfile
+                    profile = UserProfile.objects.get(user=user)
+                    account_type = 'paid' if profile.is_paid_account else 'free'
+                    is_paid_account = profile.is_paid_account
+                except UserProfile.DoesNotExist:
+                    # Create profile if it doesn't exist
+                    UserProfile.objects.create(user=user, account_type='free')
+                    account_type = 'free'
+                    is_paid_account = False
+                
                 response = JsonResponse({
                     'id': user.id,
                     'username': user.username,
                     'email': user.email,
+                    'first_name': user.first_name,
+                    'last_name': user.last_name,
+                    'account_type': account_type,
+                    'is_paid_account': is_paid_account,
                 })
                 
                 # Set CSRF cookie explicitly
@@ -201,12 +217,28 @@ def api_register(request):
             # Ensure CSRF token is set
             csrf_token = get_token(request)
             
+            # Get account type from user profile (should be 'free' for new users)
+            try:
+                from receipt_parser.models import UserProfile
+                profile = UserProfile.objects.get(user=user)
+                account_type = 'paid' if profile.is_paid_account else 'free'
+                is_paid_account = profile.is_paid_account
+            except UserProfile.DoesNotExist:
+                # Create profile if it doesn't exist (should have been created by signal)
+                UserProfile.objects.create(user=user, account_type='free')
+                account_type = 'free'
+                is_paid_account = False
+            
             response = JsonResponse({
                 'message': 'Account created successfully',
                 'user': {
                     'id': user.id,
                     'username': user.username,
-                    'email': user.email
+                    'email': user.email,
+                    'first_name': user.first_name,
+                    'last_name': user.last_name,
+                    'account_type': account_type,
+                    'is_paid_account': is_paid_account,
                 }
             })
             
@@ -231,9 +263,26 @@ def api_register(request):
 def api_user(request):
     print(f"API User request received - Auth: {request.user.is_authenticated}")
     if request.user.is_authenticated:
+        # Get account type from user profile
+        try:
+            from receipt_parser.models import UserProfile
+            profile = UserProfile.objects.get(user=request.user)
+            account_type = 'paid' if profile.is_paid_account else 'free'
+            is_paid_account = profile.is_paid_account
+        except UserProfile.DoesNotExist:
+            # Create profile if it doesn't exist
+            UserProfile.objects.create(user=request.user, account_type='free')
+            account_type = 'free'
+            is_paid_account = False
+        
         user_data = {
             'id': request.user.id,
             'username': request.user.username,
+            'email': request.user.email,
+            'first_name': request.user.first_name,
+            'last_name': request.user.last_name,
+            'account_type': account_type,
+            'is_paid_account': is_paid_account,
         }
         print(f"Returning authenticated user data: {user_data}")
         return JsonResponse(user_data)
