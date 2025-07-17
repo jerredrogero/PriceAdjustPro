@@ -1,8 +1,9 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
-from .models import Receipt, LineItem, UserProfile
+from .models import Receipt, LineItem, UserProfile, OfficialSaleItem, CostcoPromotion
 from decimal import Decimal
 import logging
+from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
@@ -126,3 +127,59 @@ class ReceiptSerializer(serializers.ModelSerializer):
                 )
                 
         return instance
+
+
+class PromotionSerializer(serializers.ModelSerializer):
+    """Serializer for promotion information."""
+    days_remaining = serializers.SerializerMethodField()
+    items_count = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = CostcoPromotion
+        fields = [
+            'title', 'sale_start_date', 'sale_end_date', 
+            'days_remaining', 'items_count'
+        ]
+    
+    def get_days_remaining(self, obj):
+        """Calculate days remaining until promotion ends."""
+        today = timezone.now().date()
+        if obj.sale_end_date > today:
+            return (obj.sale_end_date - today).days
+        return 0
+    
+    def get_items_count(self, obj):
+        """Get count of items in this promotion."""
+        return obj.sale_items.count()
+
+
+class OnSaleItemSerializer(serializers.ModelSerializer):
+    """Serializer for individual sale items."""
+    savings = serializers.SerializerMethodField()
+    promotion = PromotionSerializer(read_only=True)
+    
+    class Meta:
+        model = OfficialSaleItem
+        fields = [
+            'id', 'item_code', 'description', 'regular_price', 
+            'sale_price', 'instant_rebate', 'savings', 'sale_type', 'promotion'
+        ]
+    
+    def get_savings(self, obj):
+        """Calculate savings amount."""
+        if obj.sale_type == 'discount_only' and obj.instant_rebate:
+            return obj.instant_rebate
+        elif obj.regular_price and obj.sale_price:
+            return obj.regular_price - obj.sale_price
+        elif obj.instant_rebate:
+            return obj.instant_rebate
+        return None
+
+
+class OnSaleResponseSerializer(serializers.Serializer):
+    """Serializer for the complete on-sale API response."""
+    sales = OnSaleItemSerializer(many=True)
+    total_count = serializers.IntegerField()
+    active_promotions = PromotionSerializer(many=True)
+    current_date = serializers.DateField()
+    last_updated = serializers.DateTimeField()

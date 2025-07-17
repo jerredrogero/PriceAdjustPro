@@ -33,6 +33,7 @@ api_urlpatterns = [
     path('debug/reactivate/', views.reactivate_alerts, name='reactivate_alerts'),
     path('analytics/', views.api_user_analytics, name='api_user_analytics'),
     path('analytics/enhanced/', views.api_enhanced_analytics, name='api_enhanced_analytics'),
+    path('on-sale/', views.api_on_sale, name='api_on_sale'),
     
     # Authentication API endpoints (to be implemented)
     

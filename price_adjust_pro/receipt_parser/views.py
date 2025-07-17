@@ -1987,6 +1987,72 @@ class ReceiptUpdateAPIView(APIView):
         except Exception as e:
             logger.error(f"Error updating price database: {str(e)}")
 
+# On-Sale API View
+@api_view(['GET'])
+def api_on_sale(request):
+    """Get current on-sale items from active promotions (public endpoint)."""
+    try:
+        from django.db.models import Q, Count
+        from .serializers import OnSaleItemSerializer, PromotionSerializer, OnSaleResponseSerializer
+        
+        # Get current date
+        today = timezone.now().date()
+        
+        # Get active promotions (current or future, not ended)
+        active_promotions = CostcoPromotion.objects.filter(
+            is_processed=True,
+            sale_end_date__gte=today
+        ).annotate(
+            items_count=Count('sale_items')
+        ).order_by('-sale_start_date')
+        
+        # Get all sale items from active promotions
+        on_sale_items = OfficialSaleItem.objects.select_related('promotion').filter(
+            promotion__in=active_promotions
+        ).order_by('promotion__sale_start_date', 'item_code')
+        
+        # Serialize the data
+        sales_serializer = OnSaleItemSerializer(on_sale_items, many=True)
+        promotions_serializer = PromotionSerializer(active_promotions, many=True)
+        
+        # Build response data
+        response_data = {
+            'sales': sales_serializer.data,
+            'total_count': on_sale_items.count(),
+            'active_promotions': promotions_serializer.data,
+            'current_date': today,
+            'last_updated': timezone.now()
+        }
+        
+        # Add CORS headers for iOS app
+        response = Response(response_data)
+        response['Access-Control-Allow-Origin'] = '*'
+        response['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+        response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error in api_on_sale: {str(e)}")
+        error_response = Response(
+            {
+                'error': 'Failed to fetch on-sale items',
+                'sales': [],
+                'total_count': 0,
+                'active_promotions': [],
+                'current_date': timezone.now().date(),
+                'last_updated': timezone.now()
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+        # Add CORS headers even for error responses
+        error_response['Access-Control-Allow-Origin'] = '*'
+        error_response['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+        error_response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        
+        return error_response
+
+
 # Subscription API Views
 import stripe
 from django.conf import settings
