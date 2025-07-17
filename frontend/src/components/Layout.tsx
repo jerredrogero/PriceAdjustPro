@@ -2,6 +2,7 @@ import React, { useContext } from 'react';
 import { Box } from '@mui/material';
 import { Outlet } from 'react-router-dom';
 import Navigation from './Navigation';
+import Footer from './Footer';
 
 // Define the User interface
 interface User {
@@ -20,12 +21,13 @@ const Layout: React.FC = () => {
   const user = useContext(UserContext);
   
   return (
-    <>
+    <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
       <Navigation user={user} />
-      <Box component="main" sx={{ pt: 8, pb: 4 }}>
+      <Box component="main" sx={{ pt: 8, pb: 4, flexGrow: 1 }}>
         <Outlet />
       </Box>
-    </>
+      <Footer />
+    </Box>
   );
 };
 

@@ -18,7 +18,10 @@ import Landing from './pages/Landing';
 import Subscription from './pages/Subscription';
 import Settings from './pages/Settings';
 import Navigation from './components/Navigation';
+import Footer from './components/Footer';
 import ReceiptDetail from './pages/ReceiptDetail';
+import PrivacyPolicy from './pages/PrivacyPolicy';
+import TermsOfService from './pages/TermsOfService';
 import api from './api/axios';
 import { UserContext } from './components/Layout';
 
@@ -45,7 +48,7 @@ const AppContent: React.FC = () => {
     const maybeFromHijack = document.referrer.includes('/admin/') || document.referrer.includes('/hijack/');
     
     // Public pages that don't require authentication check
-    const publicPages = ['/', '/login', '/register', '/reset-password'];
+    const publicPages = ['/', '/login', '/register', '/reset-password', '/privacy-policy', '/terms-of-service'];
     const isPublicPage = publicPages.some(page => 
       location.pathname === page || location.pathname.startsWith('/reset-password/')
     );
@@ -111,21 +114,32 @@ const AppContent: React.FC = () => {
     );
   }
 
+  const PublicPageLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+    <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+      <Box component="main" sx={{ pt: 8, pb: 4, flexGrow: 1 }}>
+        {children}
+      </Box>
+      <Footer />
+    </Box>
+  );
+
   return (
     <UserContext.Provider value={user}>
         <Navigation user={user} />
         <Routes>
-        <Route path="/" element={<Box component="main" sx={{ pt: 8, pb: 4 }}><Landing /></Box>} />
+        <Route path="/" element={<PublicPageLayout><Landing /></PublicPageLayout>} />
+        <Route path="/privacy-policy" element={<PublicPageLayout><PrivacyPolicy /></PublicPageLayout>} />
+        <Route path="/terms-of-service" element={<PublicPageLayout><TermsOfService /></PublicPageLayout>} />
         <Route path="/reset-password/:uid/:token" element={
-          <Box component="main" sx={{ pt: 8, pb: 4 }}><PasswordResetConfirm /></Box>
+          <PublicPageLayout><PasswordResetConfirm /></PublicPageLayout>
         } />
         <Route path="/reset-password" element={
-          user ? <Navigate to="/dashboard" /> : <Box component="main" sx={{ pt: 8, pb: 4 }}><PasswordReset /></Box>
+          user ? <Navigate to="/dashboard" /> : <PublicPageLayout><PasswordReset /></PublicPageLayout>
         } />
         <Route path="/login" element={
-          user ? <Navigate to="/dashboard" /> : <Box component="main" sx={{ pt: 8, pb: 4 }}><Login /></Box>
+          user ? <Navigate to="/dashboard" /> : <PublicPageLayout><Login /></PublicPageLayout>
         } />
-        <Route path="/register" element={user ? <Navigate to="/dashboard" /> : <Box component="main" sx={{ pt: 8, pb: 4 }}><Register /></Box>} />
+        <Route path="/register" element={user ? <Navigate to="/dashboard" /> : <PublicPageLayout><Register /></PublicPageLayout>} />
         <Route element={<PrivateRoute authChecked={authChecked}><Layout /></PrivateRoute>}>
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/receipts" element={<ReceiptList />} />
