@@ -37,6 +37,15 @@ const Footer: React.FC = () => {
             <Box sx={{ display: 'flex', justifyContent: { xs: 'center', sm: 'flex-end' }, gap: 3 }}>
               <Link
                 component={RouterLink}
+                to="/support"
+                variant="body2"
+                color="text.secondary"
+                underline="hover"
+              >
+                Support
+              </Link>
+              <Link
+                component={RouterLink}
                 to="/privacy-policy"
                 variant="body2"
                 color="text.secondary"

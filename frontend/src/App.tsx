@@ -22,6 +22,7 @@ import Footer from './components/Footer';
 import ReceiptDetail from './pages/ReceiptDetail';
 import PrivacyPolicy from './pages/PrivacyPolicy';
 import TermsOfService from './pages/TermsOfService';
+import Support from './pages/Support';
 import api from './api/axios';
 import { UserContext } from './components/Layout';
 
@@ -48,7 +49,7 @@ const AppContent: React.FC = () => {
     const maybeFromHijack = document.referrer.includes('/admin/') || document.referrer.includes('/hijack/');
     
     // Public pages that don't require authentication check
-    const publicPages = ['/', '/login', '/register', '/reset-password', '/privacy-policy', '/terms-of-service'];
+    const publicPages = ['/', '/login', '/register', '/reset-password', '/privacy-policy', '/terms-of-service', '/support'];
     const isPublicPage = publicPages.some(page => 
       location.pathname === page || location.pathname.startsWith('/reset-password/')
     );
@@ -128,6 +129,7 @@ const AppContent: React.FC = () => {
         <Navigation user={user} />
         <Routes>
         <Route path="/" element={<PublicPageLayout><Landing /></PublicPageLayout>} />
+        <Route path="/support" element={<PublicPageLayout><Support /></PublicPageLayout>} />
         <Route path="/privacy-policy" element={<PublicPageLayout><PrivacyPolicy /></PublicPageLayout>} />
         <Route path="/terms-of-service" element={<PublicPageLayout><TermsOfService /></PublicPageLayout>} />
         <Route path="/reset-password/:uid/:token" element={
