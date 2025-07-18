@@ -260,6 +260,97 @@ def api_register(request):
     
     return JsonResponse({'error': 'Method not allowed'}, status=405)
 
+@csrf_exempt
+def api_delete_account(request):
+    """Delete user account and all associated data."""
+    if request.method == 'DELETE':
+        try:
+            if not request.user.is_authenticated:
+                return JsonResponse({'error': 'Authentication required'}, status=401)
+            
+            data = json.loads(request.body) if request.body else {}
+            password = data.get('password')
+            
+            if not password:
+                return JsonResponse({'error': 'Password is required for account deletion'}, status=400)
+            
+            user = request.user
+            
+            # Verify password
+            if not user.check_password(password):
+                return JsonResponse({'error': 'Incorrect password'}, status=400)
+            
+            # Import models here to avoid circular imports
+            from receipt_parser.models import Receipt, PriceAdjustmentAlert, UserProfile
+            import logging
+            
+            logger = logging.getLogger(__name__)
+            
+            try:
+                # Log account deletion for audit purposes
+                logger.info(f"Deleting account for user: {user.username} (ID: {user.id})")
+                
+                # Delete user's uploaded files
+                user_receipts = Receipt.objects.filter(user=user)
+                files_deleted = 0
+                for receipt in user_receipts:
+                    if receipt.file:
+                        try:
+                            from django.core.files.storage import default_storage
+                            default_storage.delete(receipt.file.name)
+                            files_deleted += 1
+                        except Exception as e:
+                            logger.warning(f"Failed to delete file for receipt {receipt.transaction_number}: {str(e)}")
+                
+                # Get counts for logging
+                receipts_count = user_receipts.count()
+                alerts_count = PriceAdjustmentAlert.objects.filter(user=user).count()
+                
+                # Handle subscription cancellation if exists
+                try:
+                    from receipt_parser.models import UserSubscription
+                    user_subscription = UserSubscription.objects.filter(user=user).first()
+                    if user_subscription and user_subscription.is_active:
+                        import stripe
+                        stripe.api_key = settings.STRIPE_SECRET_KEY
+                        try:
+                            stripe.Subscription.delete(user_subscription.stripe_subscription_id)
+                            logger.info(f"Cancelled Stripe subscription for user {user.username}")
+                        except Exception as stripe_error:
+                            logger.warning(f"Failed to cancel Stripe subscription: {str(stripe_error)}")
+                except ImportError:
+                    # UserSubscription model might not exist in all deployments
+                    pass
+                except Exception as sub_error:
+                    logger.warning(f"Error handling subscription cancellation: {str(sub_error)}")
+                
+                # Delete the user account (this will cascade delete all related data)
+                username = user.username
+                user.delete()
+                
+                logger.info(f"Successfully deleted account for {username}. Removed {receipts_count} receipts, {alerts_count} alerts, and {files_deleted} files.")
+                
+                return JsonResponse({
+                    'message': 'Account successfully deleted',
+                    'deleted_data': {
+                        'receipts': receipts_count,
+                        'alerts': alerts_count,
+                        'files': files_deleted
+                    }
+                })
+                
+            except Exception as delete_error:
+                logger.error(f"Error during account deletion for user {user.username}: {str(delete_error)}")
+                return JsonResponse({'error': 'Failed to delete account. Please try again or contact support.'}, status=500)
+            
+        except json.JSONDecodeError:
+            return JsonResponse({'error': 'Invalid JSON in request body'}, status=400)
+        except Exception as e:
+            logger.error(f"Unexpected error in account deletion: {str(e)}")
+            return JsonResponse({'error': 'An unexpected error occurred'}, status=500)
+    
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
 def api_user(request):
     print(f"API User request received - Auth: {request.user.is_authenticated}")
     if request.user.is_authenticated:
@@ -461,6 +552,7 @@ api_urlpatterns = [
     path('auth/user/', api_user, name='api_user'),
     path('auth/password-reset/', api_password_reset, name='api_password_reset'),
     path('auth/password-reset-confirm/', api_password_reset_confirm, name='api_password_reset_confirm'),
+    path('auth/delete-account/', api_delete_account, name='api_delete_account'),
     path('debug/session/', debug_session, name='debug_session'),
 ] + receipt_api_urls()
 
