@@ -266,13 +266,42 @@ def api_delete_account(request):
     if request.method == 'DELETE':
         try:
             if not request.user.is_authenticated:
+                print(f"Delete account: User not authenticated")
                 return JsonResponse({'error': 'Authentication required'}, status=401)
             
-            data = json.loads(request.body) if request.body else {}
-            password = data.get('password')
+            print(f"Delete account request from user: {request.user.username}")
+            print(f"Request body: {request.body}")
+            print(f"Content type: {request.content_type}")
+            
+            # Try to parse JSON data first, then fall back to form data
+            password = None
+            try:
+                if request.body:
+                    data = json.loads(request.body)
+                    password = data.get('password')
+                    print(f"Parsed JSON data: {data}")
+                else:
+                    print("No request body provided")
+                    data = {}
+            except json.JSONDecodeError:
+                # Fall back to form data or query parameters
+                print("Failed to parse JSON, trying form data")
+                data = {}
+                if hasattr(request, 'POST') and request.POST:
+                    password = request.POST.get('password')
+                    print(f"Found password in POST data")
+                elif hasattr(request, 'GET') and request.GET:
+                    password = request.GET.get('password')
+                    print(f"Found password in GET data")
+            
+            print(f"Final password status: {'[PRESENT]' if password else '[MISSING]'}")
             
             if not password:
-                return JsonResponse({'error': 'Password is required for account deletion'}, status=400)
+                print(f"Delete account: Missing password. Body: {request.body}, POST: {getattr(request, 'POST', {})}")
+                return JsonResponse({
+                    'error': 'Password is required for account deletion',
+                    'details': 'Please include password in request body as JSON: {"password": "your_password"}'
+                }, status=400)
             
             user = request.user
             
@@ -349,6 +378,15 @@ def api_delete_account(request):
             logger.error(f"Unexpected error in account deletion: {str(e)}")
             return JsonResponse({'error': 'An unexpected error occurred'}, status=500)
     
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+@csrf_exempt
+def api_get_csrf_token(request):
+    """Get CSRF token for API requests (though most endpoints are exempt)."""
+    if request.method == 'GET':
+        from django.middleware.csrf import get_token
+        token = get_token(request)
+        return JsonResponse({'csrf_token': token})
     return JsonResponse({'error': 'Method not allowed'}, status=405)
 
 def api_user(request):
@@ -553,6 +591,9 @@ api_urlpatterns = [
     path('auth/password-reset/', api_password_reset, name='api_password_reset'),
     path('auth/password-reset-confirm/', api_password_reset_confirm, name='api_password_reset_confirm'),
     path('auth/delete-account/', api_delete_account, name='api_delete_account'),
+    path('csrf/', api_get_csrf_token, name='api_get_csrf_token'),
+    path('get-csrf-token/', api_get_csrf_token, name='api_get_csrf_token_alt'),
+    path('auth/csrf/', api_get_csrf_token, name='api_get_csrf_token_auth'),
     path('debug/session/', debug_session, name='debug_session'),
 ] + receipt_api_urls()
 
