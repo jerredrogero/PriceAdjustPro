@@ -31,7 +31,6 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import path, reverse
 import os
 import logging
-from django.middleware.csrf import get_token
 from decimal import Decimal, InvalidOperation
 import io
 
@@ -79,27 +78,20 @@ class CustomUserAdmin(UserAdmin):
     )
     
     def hijack_user_button(self, obj):
-        """Custom hijack button for user admin."""
+        """Hijack button using django-hijack package."""
         if obj.pk == self.request.user.pk:
             return format_html('<span style="color: grey;">Cannot hijack yourself</span>')
         
         if not self.request.user.is_superuser:
             return format_html('<span style="color: grey;">Permission denied</span>')
         
-        # Get CSRF token from request
-        csrf_token = get_token(self.request)
-        
-        # Use a simple form to POST to the hijack URL with CSRF token
+        # Use django-hijack acquire URL with user_id parameter 
+        hijack_url = f'/hijack/acquire/?user_id={obj.pk}'
         return format_html(
-            '<form method="post" action="/hijack/acquire/" style="display: inline;">'
-            '<input type="hidden" name="csrfmiddlewaretoken" value="{}">'
-            '<input type="hidden" name="user_pk" value="{}">'
-            '<input type="hidden" name="next" value="/">'
-            '<button type="submit" class="button" style="background-color: #417690; color: white; padding: 4px 8px; '
-            'border: none; border-radius: 3px; font-size: 11px; cursor: pointer;" '
-            'onclick="return confirm(\'Are you sure you want to hijack user {}?\');">🔓 Hijack</button>'
-            '</form>',
-            csrf_token, obj.pk, obj.username
+            '<a href="{}" class="button" style="background-color: #417690; color: white; padding: 4px 8px; '
+            'text-decoration: none; border-radius: 3px; font-size: 11px;" '
+            'onclick="return confirm(\'Are you sure you want to hijack user {}?\');">🔓 Hijack</a>',
+            hijack_url, obj.username
         )
     hijack_user_button.short_description = 'Hijack'
     hijack_user_button.allow_tags = True
