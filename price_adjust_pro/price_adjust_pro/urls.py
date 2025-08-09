@@ -595,6 +595,37 @@ def api_password_reset_confirm(request):
     
     return JsonResponse({'error': 'Method not allowed'}, status=405)
 
+def custom_release_hijack(request):
+    """Custom release hijack view."""
+    if 'hijack_is_active' in request.session and request.session['hijack_is_active']:
+        try:
+            # Get the original user
+            original_user_id = request.session.get('hijacked_by')
+            original_username = request.session.get('original_username', 'admin')
+            
+            if original_user_id:
+                original_user = User.objects.get(pk=original_user_id)
+                
+                # Clear hijack session data
+                request.session.pop('hijack_is_active', None)
+                request.session.pop('hijacked_by', None)
+                request.session.pop('hijacked_user_id', None)
+                request.session.pop('hijacked_user_username', None)
+                request.session.pop('original_username', None)
+                
+                # Log out current (hijacked) user and log back in as original user
+                from django.contrib.auth import logout, login
+                logout(request)
+                login(request, original_user, backend='django.contrib.auth.backends.ModelBackend')
+                
+                return redirect('/admin/')
+            else:
+                return redirect('/admin/')
+        except User.DoesNotExist:
+            return redirect('/admin/')
+    
+    return redirect('/admin/')
+
 # API URLs
 api_urlpatterns = [
     path('auth/login/', api_login, name='api_login'),
@@ -617,6 +648,7 @@ django_urlpatterns = [
     
     # Hijack URLs
     path('hijack/', include('hijack.urls')),
+    path('custom-hijack-release/', custom_release_hijack, name='custom_release_hijack'),
     
     # API URLs
     path('api/', include(api_urlpatterns)),

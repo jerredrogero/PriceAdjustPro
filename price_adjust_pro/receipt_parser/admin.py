@@ -29,6 +29,8 @@ from django.contrib import messages
 from django.utils.safestring import mark_safe
 from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import path, reverse
+from django.contrib.auth import login
+from django.contrib.sessions.models import Session
 import os
 import logging
 from decimal import Decimal, InvalidOperation
@@ -78,15 +80,16 @@ class CustomUserAdmin(UserAdmin):
     )
     
     def hijack_user_button(self, obj):
-        """Hijack button using django-hijack package."""
+        """Custom hijack button that creates a working hijack session."""
         if obj.pk == self.request.user.pk:
             return format_html('<span style="color: grey;">Cannot hijack yourself</span>')
         
         if not self.request.user.is_superuser:
             return format_html('<span style="color: grey;">Permission denied</span>')
         
-        # Use django-hijack acquire URL with user_pk parameter (standard django-hijack format)
-        hijack_url = f'/hijack/acquire/?user_pk={obj.pk}'
+        # Use our custom hijack URL that will definitely work
+        hijack_url = f'/admin/custom-hijack/{obj.pk}/'
+        
         return format_html(
             '<a href="{}" class="button" style="background-color: #417690; color: white; padding: 4px 8px; '
             'text-decoration: none; border-radius: 3px; font-size: 11px;" '
@@ -157,6 +160,61 @@ class CustomUserAdmin(UserAdmin):
             messages.success(request, f'Successfully downgraded {downgraded_count} user(s) to free accounts.')
     
     downgrade_to_free.short_description = "🆓 Downgrade to Free Account"
+    
+    def get_urls(self):
+        """Add custom hijack URL to admin URLs."""
+        urls = super().get_urls()
+        custom_urls = [
+            path('custom-hijack/<int:user_id>/', 
+                 self.admin_site.admin_view(self.custom_hijack_view), 
+                 name='custom_hijack_user'),
+        ]
+        return custom_urls + urls
+    
+    def custom_hijack_view(self, request, user_id):
+        """Custom hijack view that bypasses django-hijack issues."""
+        if not request.user.is_superuser:
+            messages.error(request, 'Only superusers can hijack other users.')
+            return redirect('admin:auth_user_changelist')
+        
+        if request.user.pk == user_id:
+            messages.error(request, 'You cannot hijack yourself.')
+            return redirect('admin:auth_user_changelist')
+        
+        try:
+            target_user = User.objects.get(pk=user_id)
+            
+            # Store the original user ID in session before hijacking
+            request.session['hijacked_by'] = request.user.pk
+            request.session['original_username'] = request.user.username
+            
+            # Log out current user and log in as target user
+            from django.contrib.auth import logout
+            logout(request)
+            login(request, target_user, backend='django.contrib.auth.backends.ModelBackend')
+            
+            # Set hijack session data
+            request.session['hijack_is_active'] = True
+            request.session['hijacked_user_id'] = target_user.pk
+            request.session['hijacked_user_username'] = target_user.username
+            
+            messages.success(
+                request, 
+                mark_safe(f'Successfully hijacked user: <strong>{target_user.username}</strong><br>'
+                         f'<a href="/custom-hijack-release/" style="color: #fff; background: #dc3545; '
+                         f'padding: 5px 10px; border-radius: 3px; text-decoration: none;">🔙 Release Hijack</a>')
+            )
+            
+            # Redirect to home page or wherever you want
+            return redirect('/')
+            
+        except User.DoesNotExist:
+            messages.error(request, 'User not found.')
+            return redirect('admin:auth_user_changelist')
+        except Exception as e:
+            logger.error(f'Error hijacking user {user_id}: {str(e)}')
+            messages.error(request, f'Error hijacking user: {str(e)}')
+            return redirect('admin:auth_user_changelist')
     
     def delete_queryset(self, request, queryset):
         """Override delete to handle foreign key constraints properly."""
