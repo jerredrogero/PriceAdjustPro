@@ -969,11 +969,6 @@ def process_official_promotion(promotion_id: int, max_pages: int = None) -> dict
                     gc.collect()
                     logger.info(f"Memory cleanup after page {page_num}")
                 
-                # Extra cleanup if we're processing large discount items
-                if len(sale_items) > 15:  # Many items on page
-                    gc.collect()
-                    logger.info(f"Extra memory cleanup - large page with {len(sale_items)} items")
-                
                 # Check if image file exists
                 if not page.image or not os.path.exists(page.image.path):
                     error_msg = f"Image file not found for page {page.page_number}: {page.image.name if page.image else 'No image'}"
@@ -990,6 +985,11 @@ def process_official_promotion(promotion_id: int, max_pages: int = None) -> dict
                 # Parse the sale items
                 sale_items = parse_promo_text(extracted_text)
                 logger.info(f"Found {len(sale_items)} sale items on page {page.page_number}")
+                
+                # Extra cleanup if we're processing large pages with many discount items
+                if len(sale_items) > 15:  # Many items on page
+                    gc.collect()
+                    logger.info(f"Extra memory cleanup - large page with {len(sale_items)} items")
                 
                 # Create OfficialSaleItem records
                 page_items_created = 0

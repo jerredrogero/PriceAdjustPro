@@ -273,8 +273,10 @@ def api_delete_account(request):
             print(f"Request body: {request.body}")
             print(f"Content type: {request.content_type}")
             
-            # Try to parse JSON data first, then fall back to form data
+            # Try multiple ways to get the password
             password = None
+            
+            # 1. Try JSON body first
             try:
                 if request.body:
                     data = json.loads(request.body)
@@ -284,23 +286,34 @@ def api_delete_account(request):
                     print("No request body provided")
                     data = {}
             except json.JSONDecodeError:
-                # Fall back to form data or query parameters
-                print("Failed to parse JSON, trying form data")
+                print("Failed to parse JSON from request body")
                 data = {}
-                if hasattr(request, 'POST') and request.POST:
-                    password = request.POST.get('password')
+            
+            # 2. Try query parameters
+            if not password and request.GET:
+                password = request.GET.get('password')
+                if password:
+                    print(f"Found password in query parameters")
+            
+            # 3. Try HTTP headers
+            if not password:
+                password = request.META.get('HTTP_X_PASSWORD') or request.META.get('HTTP_PASSWORD')
+                if password:
+                    print(f"Found password in HTTP headers")
+            
+            # 4. Try form data (though unlikely for DELETE)
+            if not password and hasattr(request, 'POST') and request.POST:
+                password = request.POST.get('password')
+                if password:
                     print(f"Found password in POST data")
-                elif hasattr(request, 'GET') and request.GET:
-                    password = request.GET.get('password')
-                    print(f"Found password in GET data")
             
             print(f"Final password status: {'[PRESENT]' if password else '[MISSING]'}")
             
             if not password:
-                print(f"Delete account: Missing password. Body: {request.body}, POST: {getattr(request, 'POST', {})}")
+                print(f"Delete account: Missing password everywhere. Body: {request.body}, GET: {request.GET}, Headers: {[k for k in request.META.keys() if 'PASSWORD' in k.upper()]}")
                 return JsonResponse({
                     'error': 'Password is required for account deletion',
-                    'details': 'Please include password in request body as JSON: {"password": "your_password"}'
+                    'details': 'Please include password in request body as JSON: {"password": "your_password"} or as query parameter ?password=your_password or in header X-Password'
                 }, status=400)
             
             user = request.user
