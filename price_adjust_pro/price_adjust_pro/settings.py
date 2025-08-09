@@ -358,7 +358,7 @@ HIJACK_LOGIN_REDIRECT_URL = '/'  # Redirect to home page after hijacking
 HIJACK_LOGOUT_REDIRECT_URL = '/admin/'  # Redirect to admin after releasing hijack
 HIJACK_REGISTER_ADMIN = True  # Register hijack admin buttons
 HIJACK_ALLOW_GET_REQUESTS = True  # Allow hijacking via GET requests (for convenience)
-HIJACK_AUTHORIZATION_CHECK = 'hijack.permissions.superusers_only'  # Only superusers can hijack
+HIJACK_PERMISSION_CHECK = 'hijack.permissions.superusers_only'  # Only superusers can hijack
 HIJACK_DISPLAY_WARNING = True  # Show warning banner when hijacking
 HIJACK_USE_BOOTSTRAP = True  # Use Bootstrap styling
 
