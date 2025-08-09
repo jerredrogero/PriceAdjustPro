@@ -166,6 +166,8 @@ class LineItem(models.Model):
 
     @property
     def total_price(self):
+        if self.price is None:
+            return None
         return self.price * self.quantity
 
     def save(self, *args, **kwargs):
