@@ -58,7 +58,7 @@ admin.site.unregister(Group)
 # Custom User admin with limited fields and hijack functionality
 @admin.register(User)
 class CustomUserAdmin(UserAdmin):
-    list_display = ('username', 'email', 'date_joined', 'last_login', 'is_active', 'is_staff', 'account_type_display', 'hijack_user_button')
+    list_display = ('username', 'email', 'date_joined', 'last_login', 'is_active', 'is_staff', 'account_type_display')  # 'hijack_user_button' temporarily removed
     list_filter = ('is_active', 'is_staff', 'date_joined')
     readonly_fields = ('date_joined', 'last_login')
     ordering = ('-date_joined',)
@@ -92,15 +92,14 @@ class CustomUserAdmin(UserAdmin):
         csrf_token = get_token(self.request)
         
         return format_html(
-            '<form method="post" action="/hijack/acquire/" style="display: inline;">'
+            '<form method="post" action="/hijack/acquire/" style="display: inline;" onsubmit="console.log(\'Hijack form submitting for user {}\'); return confirm(\'Are you sure you want to hijack user {}?\');">'
             '<input type="hidden" name="user_pk" value="{}">'
             '<input type="hidden" name="csrfmiddlewaretoken" value="{}">'
             '<input type="submit" value="🔓 Hijack" class="button" '
             'style="background-color: #417690; color: white; padding: 4px 8px; '
-            'border: none; border-radius: 3px; font-size: 11px; cursor: pointer;" '
-            'onclick="return confirm(\'Are you sure you want to hijack user {}?\');">'
+            'border: none; border-radius: 3px; font-size: 11px; cursor: pointer;">'
             '</form>',
-            obj.pk, csrf_token, obj.username
+            obj.username, obj.username, obj.pk, csrf_token
         )
     hijack_user_button.short_description = 'Hijack'
     hijack_user_button.allow_tags = True
