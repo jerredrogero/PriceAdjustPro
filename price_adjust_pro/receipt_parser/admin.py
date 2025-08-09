@@ -85,8 +85,8 @@ class CustomUserAdmin(UserAdmin):
         if not self.request.user.is_superuser:
             return format_html('<span style="color: grey;">Permission denied</span>')
         
-        # Use django-hijack acquire URL with user_id parameter 
-        hijack_url = f'/hijack/acquire/?user_id={obj.pk}'
+        # Use django-hijack acquire URL with user_pk parameter (standard django-hijack format)
+        hijack_url = f'/hijack/acquire/?user_pk={obj.pk}'
         return format_html(
             '<a href="{}" class="button" style="background-color: #417690; color: white; padding: 4px 8px; '
             'text-decoration: none; border-radius: 3px; font-size: 11px;" '
