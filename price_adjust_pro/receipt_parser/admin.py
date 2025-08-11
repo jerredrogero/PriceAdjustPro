@@ -11,6 +11,7 @@ from django.contrib.postgres.search import SearchVector, SearchQuery, SearchRank
 from django.contrib import admin
 from django.contrib.auth.models import User, Group
 from django.contrib.auth.admin import UserAdmin
+from hijack.contrib.admin import HijackUserAdminMixin
 from django.http import HttpResponse
 import csv
 import json
@@ -57,8 +58,8 @@ admin.site.unregister(Group)
 
 # Custom User admin with limited fields and hijack functionality
 @admin.register(User)
-class CustomUserAdmin(UserAdmin):
-    list_display = ('username', 'email', 'date_joined', 'last_login', 'is_active', 'is_staff', 'account_type_display', 'hijack_user_button')
+class CustomUserAdmin(HijackUserAdminMixin, UserAdmin):
+    list_display = ('username', 'email', 'date_joined', 'last_login', 'is_active', 'is_staff', 'account_type_display')
     list_filter = ('is_active', 'is_staff', 'date_joined')
     readonly_fields = ('date_joined', 'last_login')
     ordering = ('-date_joined',)
@@ -79,49 +80,7 @@ class CustomUserAdmin(UserAdmin):
         }),
     )
     
-    def hijack_user_button(self, obj):
-        """Simple direct login-as-user functionality."""
-        if obj.pk == self.request.user.pk:
-            return format_html('<span style="color: grey;">Cannot hijack yourself</span>')
-        
-        if not self.request.user.is_superuser:
-            return format_html('<span style="color: grey;">Permission denied</span>')
-        
-        # Create a direct JavaScript approach that calls our simple API
-        return format_html(
-            '<button onclick="loginAsUser({})" class="button" '
-            'style="background-color: #417690; color: white; padding: 4px 8px; '
-            'border: none; border-radius: 3px; font-size: 11px; cursor: pointer;">'
-            '🔓 Login as {}'
-            '</button>'
-            '<script>'
-            'function loginAsUser(userId) {{'
-            '  if (confirm("Are you sure you want to login as this user?")) {{'
-            '    fetch("/api/admin-hijack/" + userId + "/", {{'
-            '      method: "POST",'
-            '      headers: {{'
-            '        "X-CSRFToken": document.querySelector("[name=csrfmiddlewaretoken]").value || "",'
-            '        "Content-Type": "application/json"'
-            '      }}'
-            '    }}).then(response => {{'
-            '      if (response.ok) {{'
-            '        window.location.href = "/"'
-            '      }} else {{'
-            '        alert("Hijack failed")'
-            '      }}'
-            '    }}'
-            '  }}'
-            '}}'
-            '</script>',
-            obj.pk, obj.username
-        )
-    hijack_user_button.short_description = 'Hijack'
-    hijack_user_button.allow_tags = True
-    
-    def get_list_display(self, request):
-        """Store request for use in hijack_user_button method."""
-        self.request = request
-        return super().get_list_display(request)
+    # HijackUserAdminMixin will add a "hijack user" button column automatically
     
     def account_type_display(self, obj):
         """Display user's account type."""

@@ -58,6 +58,7 @@ INSTALLED_APPS = [
     'receipt_parser.apps.ReceiptParserConfig',
     'rest_framework',
     'hijack',
+    'hijack.contrib.admin',
 ]
 
 # Add middleware to bypass authentication checks for admin and registration
@@ -281,9 +282,10 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Authentication settings
-LOGIN_URL = 'login'
+# Use absolute paths instead of named URLs to avoid NoReverseMatch issues
+LOGIN_URL = '/login'
 LOGIN_REDIRECT_URL = '/'  # Redirect to home page
-LOGOUT_REDIRECT_URL = 'login'
+LOGOUT_REDIRECT_URL = '/admin/'
 
 # CORS settings
 CORS_ALLOW_ALL_ORIGINS = DEBUG  # Allow all origins in development

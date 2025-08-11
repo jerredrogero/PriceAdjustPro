@@ -102,7 +102,21 @@ def api_login(request):
                     domain=settings.CSRF_COOKIE_DOMAIN if not settings.DEBUG else None
                 )
                 
+                # Also set session cookie explicitly if needed
+                if request.session.session_key:
+                    response.set_cookie(
+                        settings.SESSION_COOKIE_NAME,
+                        request.session.session_key,
+                        max_age=settings.SESSION_COOKIE_AGE,
+                        secure=not settings.DEBUG,
+                        httponly=settings.SESSION_COOKIE_HTTPONLY,
+                        samesite=settings.SESSION_COOKIE_SAMESITE,
+                        domain=settings.SESSION_COOKIE_DOMAIN if not settings.DEBUG else None
+                    )
+                
                 print(f"Login response prepared for {username}")
+                print(f"Session key after login: {request.session.session_key}")
+                print(f"Session data after login: {dict(request.session)}")
                 return response
                 
             print(f"Login failed: Invalid credentials for {username}")
@@ -404,6 +418,9 @@ def api_get_csrf_token(request):
 
 def api_user(request):
     print(f"API User request received - Auth: {request.user.is_authenticated}")
+    print(f"Session key: {request.session.session_key}")
+    print(f"Cookies received: {list(request.COOKIES.keys())}")
+    print(f"Session data: {dict(request.session)}")
     if request.user.is_authenticated:
         # Get account type from user profile
         try:
@@ -595,14 +612,16 @@ def api_password_reset_confirm(request):
     
     return JsonResponse({'error': 'Method not allowed'}, status=405)
 
-@csrf_exempt
 def api_admin_hijack(request, user_id):
     """Simple admin hijack functionality."""
+    print(f"Hijack request: method={request.method}, user={request.user}, target_user_id={user_id}")
+    
     if request.method != 'POST':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
     
     # Check if user is superuser
     if not request.user.is_authenticated or not request.user.is_superuser:
+        print(f"Permission denied: authenticated={request.user.is_authenticated}, superuser={request.user.is_superuser}")
         return JsonResponse({'error': 'Permission denied'}, status=403)
     
     if int(user_id) == request.user.pk:
@@ -619,10 +638,14 @@ def api_admin_hijack(request, user_id):
         
         # Login as target user
         from django.contrib.auth import logout, login
+        print(f"Logging out {request.user.username} and logging in as {target_user.username}")
         logout(request)
         login(request, target_user, backend='django.contrib.auth.backends.ModelBackend')
         
-        return JsonResponse({'success': True, 'message': f'Logged in as {target_user.username}'})
+        print(f"Hijack successful: now logged in as {request.user.username}")
+        # Redirect to the user's dashboard (React app handles routing)
+        from django.shortcuts import redirect
+        return redirect('/')
         
     except User.DoesNotExist:
         return JsonResponse({'error': 'User not found'}, status=404)
