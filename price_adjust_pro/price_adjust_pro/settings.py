@@ -284,7 +284,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # Authentication settings
 # Use absolute paths instead of named URLs to avoid NoReverseMatch issues
 LOGIN_URL = '/login'
-LOGIN_REDIRECT_URL = '/'  # Redirect to home page
+LOGIN_REDIRECT_URL = '/dashboard'  # Redirect to dashboard so frontend runs auth check
 LOGOUT_REDIRECT_URL = '/admin/'
 
 # CORS settings
@@ -364,8 +364,8 @@ HIJACK_PERMISSION_CHECK = 'hijack.permissions.superusers_only'  # Only superuser
 HIJACK_DISPLAY_WARNING = True  # Show warning banner when hijacking
 HIJACK_USE_BOOTSTRAP = True  # Use Bootstrap styling
 
-# Override the default success URL to avoid 'dashboard' lookup error
-HIJACK_SUCCESS_URL = '/'
+# Override the default success URL to go to a protected route
+HIJACK_SUCCESS_URL = '/dashboard'
 
 # Stripe Configuration
 STRIPE_PUBLISHABLE_KEY = os.getenv('STRIPE_PUBLISHABLE_KEY', '')
