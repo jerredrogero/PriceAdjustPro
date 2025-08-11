@@ -218,20 +218,29 @@ Parse this receipt:
                     item_parts = line.replace('-', '').strip().split(',')
                     if len(item_parts) >= 6:
                         try:
-                            price = Decimal(item_parts[2].strip())
-                            instant_savings = item_parts[4].strip()
-                            original_price = item_parts[5].strip()
+                            line_price = Decimal(item_parts[2].strip())
+                            instant_savings_str = item_parts[4].strip()
+                            # The 6th field from the parser is expected to be original price, but we will compute it to be safe
+                            
+                            has_instant_savings = instant_savings_str != 'null' and instant_savings_str != ''
+                            instant_savings_val = None
+                            if has_instant_savings:
+                                instant_savings_val = Decimal(instant_savings_str)
+                            
+                            original_price_val = None
+                            if instant_savings_val is not None:
+                                original_price_val = line_price + instant_savings_val
                             
                             # Each line is one item
                             item = {
                                 'item_code': item_parts[0].strip(),
                                 'description': item_parts[1].strip(),
-                                'original_price': price,  # The price on the line is the original price
+                                'original_price': original_price_val,  # Original price before instant savings
                                 'quantity': 1,  # Each line represents one item
                                 'is_taxable': item_parts[3].strip().upper() == 'Y',
-                                'instant_savings': Decimal(instant_savings) if instant_savings != 'null' else None,
-                                'price': price - Decimal(instant_savings) if instant_savings != 'null' else price,  # Final price after discount
-                                'total_price': str(price)  # Store original receipt total for this line
+                                'instant_savings': instant_savings_val,
+                                'price': line_price,  # Final price shown on receipt after discount
+                                'total_price': str(line_price)
                             }
                             parsed_data['items'].append(item)
                         except (ValueError, IndexError, InvalidOperation) as e:
@@ -889,8 +898,9 @@ def parse_promo_text(text: str) -> list:
                         clean_rebate = rebate_amount_str.replace('$', '').replace(',', '').strip()
                         try:
                             instant_rebate = Decimal(clean_rebate)
-                            sale_price = instant_rebate
-                            logger.info(f"Treating legacy null sale price as discount: ${instant_rebate}")
+                            # Keep sale_price as None; treat as discount-only style
+                            sale_price = None
+                            logger.info(f"Legacy promo format with null sale price: using discount amount ${instant_rebate}")
                         except (ValueError, InvalidOperation):
                             logger.warning(f"Could not parse rebate amount: '{rebate_amount_str}' - skipping item")
                             continue
@@ -1016,6 +1026,32 @@ def process_official_promotion(promotion_id: int, max_pages: int = None) -> dict
                             alerts_created = create_official_price_alerts(official_item)
                             official_item.alerts_created = alerts_created
                             official_item.save()
+                            page_alerts_created += alerts_created
+                        else:
+                            # Update existing record if fields have changed, and (re)create alerts
+                            updated = False
+                            if official_item.description != item_data['description']:
+                                official_item.description = item_data['description']
+                                updated = True
+                            if official_item.regular_price != item_data['regular_price']:
+                                official_item.regular_price = item_data['regular_price']
+                                updated = True
+                            if official_item.sale_price != item_data['sale_price']:
+                                official_item.sale_price = item_data['sale_price']
+                                updated = True
+                            if official_item.instant_rebate != item_data['instant_rebate']:
+                                official_item.instant_rebate = item_data['instant_rebate']
+                                updated = True
+                            if official_item.sale_type != item_data['sale_type']:
+                                official_item.sale_type = item_data['sale_type']
+                                updated = True
+                            
+                            if updated:
+                                official_item.save()
+                            
+                            # Always attempt to create/update alerts for current promotion items
+                            alerts_created = create_official_price_alerts(official_item)
+                            # Do not overwrite cumulative count; track for page summary
                             page_alerts_created += alerts_created
                             
                     except Exception as e:
