@@ -595,6 +595,39 @@ def api_password_reset_confirm(request):
     
     return JsonResponse({'error': 'Method not allowed'}, status=405)
 
+@csrf_exempt
+def api_admin_hijack(request, user_id):
+    """Simple admin hijack functionality."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    
+    # Check if user is superuser
+    if not request.user.is_authenticated or not request.user.is_superuser:
+        return JsonResponse({'error': 'Permission denied'}, status=403)
+    
+    if int(user_id) == request.user.pk:
+        return JsonResponse({'error': 'Cannot hijack yourself'}, status=400)
+    
+    try:
+        from django.contrib.auth.models import User
+        target_user = User.objects.get(pk=user_id)
+        
+        # Store original admin user info in session
+        request.session['original_admin_user_id'] = request.user.pk
+        request.session['original_admin_username'] = request.user.username
+        request.session['hijack_active'] = True
+        
+        # Login as target user
+        from django.contrib.auth import logout, login
+        logout(request)
+        login(request, target_user, backend='django.contrib.auth.backends.ModelBackend')
+        
+        return JsonResponse({'success': True, 'message': f'Logged in as {target_user.username}'})
+        
+    except User.DoesNotExist:
+        return JsonResponse({'error': 'User not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
 
 # API URLs
 api_urlpatterns = [
@@ -605,6 +638,7 @@ api_urlpatterns = [
     path('auth/password-reset/', api_password_reset, name='api_password_reset'),
     path('auth/password-reset-confirm/', api_password_reset_confirm, name='api_password_reset_confirm'),
     path('auth/delete-account/', api_delete_account, name='api_delete_account'),
+    path('admin-hijack/<int:user_id>/', api_admin_hijack, name='api_admin_hijack'),
     path('csrf/', api_get_csrf_token, name='api_get_csrf_token'),
     path('get-csrf-token/', api_get_csrf_token, name='api_get_csrf_token_alt'),
     path('auth/csrf/', api_get_csrf_token, name='api_get_csrf_token_auth'),
