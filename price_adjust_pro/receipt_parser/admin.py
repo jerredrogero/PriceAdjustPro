@@ -952,11 +952,6 @@ class CostcoPromotionAdmin(admin.ModelAdmin):
         urls = super().get_urls()
         custom_urls = [
             path(
-                '<int:promotion_id>/bulk-upload/',
-                self.admin_site.admin_view(self.bulk_upload_view),
-                name='receipt_parser_costcopromotion_bulk_upload',
-            ),
-            path(
                 '<int:promotion_id>/csv-import/',
                 self.admin_site.admin_view(self.csv_import_view),
                 name='receipt_parser_costcopromotion_csv_import',
@@ -964,62 +959,7 @@ class CostcoPromotionAdmin(admin.ModelAdmin):
         ]
         return custom_urls + urls
     
-    def bulk_upload_view(self, request, promotion_id):
-        """Custom view for bulk uploading promotional images."""
-        promotion = get_object_or_404(CostcoPromotion, id=promotion_id)
-        
-        if request.method == 'POST':
-            uploaded_files = request.FILES.getlist('images')
-            if not uploaded_files:
-                messages.error(request, 'No files were uploaded.')
-                return redirect(request.path)
-            
-            # Validate file types
-            allowed_extensions = ['.jpg', '.jpeg', '.png', '.webp', '.avif', '.gif', '.bmp']
-            valid_files = []
-            
-            for file in uploaded_files:
-                file_ext = os.path.splitext(file.name)[1].lower()
-                if file_ext in allowed_extensions:
-                    valid_files.append(file)
-                else:
-                    messages.warning(request, f'Skipped invalid file type: {file.name}')
-            
-            if not valid_files:
-                messages.error(request, 'No valid image files found.')
-                return redirect(request.path)
-            
-            # Get the next page number
-            last_page = promotion.pages.order_by('-page_number').first()
-            next_page_number = (last_page.page_number + 1) if last_page else 1
-            
-            # Create CostcoPromotionPage records
-            created_pages = 0
-            for i, file in enumerate(valid_files):
-                try:
-                    page = CostcoPromotionPage.objects.create(
-                        promotion=promotion,
-                        image=file,
-                        page_number=next_page_number + i
-                    )
-                    created_pages += 1
-                except Exception as e:
-                    messages.error(request, f'Error uploading {file.name}: {str(e)}')
-            
-            if created_pages > 0:
-                messages.success(request, f'Successfully uploaded {created_pages} promotional page(s).')
-            
-            # Redirect to the promotion change page
-            return redirect('admin:receipt_parser_costcopromotion_change', promotion.id)
-        
-        # GET request - show the upload form
-        context = {
-            'promotion': promotion,
-            'title': f'Bulk Upload Images for {promotion.title}',
-            'opts': self.model._meta,
-            'has_change_permission': self.has_change_permission(request, promotion),
-        }
-        return render(request, 'admin/receipt_parser/bulk_upload.html', context)
+
     
     def csv_import_view(self, request, promotion_id):
         """Custom view for importing sale items from CSV."""
@@ -1193,7 +1133,7 @@ class CostcoPromotionAdmin(admin.ModelAdmin):
         super().save_model(request, obj, form, change)
     
     def process_next_batch(self, request, queryset):
-        """Process the next batch of unprocessed pages (up to 10 pages per promotion)."""
+        """Process the next batch of unprocessed pages (up to 5 pages per promotion)."""
         processed_count = 0
         for promotion in queryset:
             try:
@@ -1203,7 +1143,7 @@ class CostcoPromotionAdmin(admin.ModelAdmin):
                     messages.info(request, f"'{promotion.title}' - All pages already processed.")
                     continue
                 
-                max_pages = 10
+                max_pages = 5
                 
                 messages.info(
                     request,
@@ -1241,7 +1181,7 @@ class CostcoPromotionAdmin(admin.ModelAdmin):
         if processed_count > 0:
             messages.success(request, f"Successfully processed batches for {processed_count} promotion(s)")
     
-    process_next_batch.short_description = "📦 Process next 10 pages"
+    process_next_batch.short_description = "📦 Process next 5 pages"
     
     def export_promotion_data_csv(self, request, queryset):
         """Export all sale items from selected promotions to CSV."""
@@ -1338,14 +1278,8 @@ class CostcoPromotionAdmin(admin.ModelAdmin):
     get_promotion_status.short_description = "Processing Status"
     
     def change_view(self, request, object_id, form_url='', extra_context=None):
-        """Override change view to add bulk upload button."""
+        """Override change view."""
         extra_context = extra_context or {}
-        if object_id:
-            extra_context['show_bulk_upload'] = True
-            extra_context['bulk_upload_url'] = reverse(
-                'admin:receipt_parser_costcopromotion_bulk_upload',
-                args=[object_id]
-            )
         return super().change_view(request, object_id, form_url, extra_context)
 
 @admin.register(CostcoPromotionPage)

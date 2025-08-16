@@ -124,6 +124,7 @@ def upload_receipt(request):
                     
                     # Create new line items
                     price_adjustments_created = 0  # Initialize counter for tracking price adjustment alerts
+                    created_line_items = []
                     if parsed_data.get('items'):
                         for item_data in parsed_data['items']:
                             try:
@@ -138,11 +139,19 @@ def upload_receipt(request):
                                     instant_savings=Decimal(str(item_data['instant_savings'])) if item_data.get('instant_savings') else None,
                                     original_price=Decimal(str(item_data['original_price'])) if item_data.get('original_price') else None
                                 )
+                                created_line_items.append(line_item)
                                 # Check if current user can benefit from existing promotions
                                 from .utils import check_current_user_for_price_adjustments
                                 check_current_user_for_price_adjustments(line_item, existing_receipt)
                             except Exception as e:
                                 logger.error(f"Line item error: {str(e)}")
+                    
+                    # Calculate and update receipt-level instant_savings from line items to avoid double counting
+                    calculated_instant_savings = sum(item.instant_savings or Decimal('0.00') for item in created_line_items)
+                    if calculated_instant_savings > 0:
+                        existing_receipt.instant_savings = calculated_instant_savings
+                        existing_receipt.save()
+                        logger.info(f"Updated existing receipt instant_savings to: {existing_receipt.instant_savings}")
                     
                     update_price_database(parsed_data, user=request.user)
                     messages.success(request, 'Receipt updated successfully')
@@ -224,6 +233,7 @@ def upload_receipt(request):
                 
                 # Create LineItem objects only if we have valid items
                 price_adjustments_created = 0  # Initialize counter for tracking price adjustment alerts
+                created_line_items = []
                 if parsed_data.get('items'):
                     for item_data in parsed_data['items']:
                         try:
@@ -238,12 +248,20 @@ def upload_receipt(request):
                                 instant_savings=Decimal(str(item_data['instant_savings'])) if item_data.get('instant_savings') else None,
                                 original_price=Decimal(str(item_data['original_price'])) if item_data.get('original_price') else None
                             )
+                            created_line_items.append(line_item)
                             # Check if current user can benefit from existing promotions
                             from .utils import check_current_user_for_price_adjustments
                             check_current_user_for_price_adjustments(line_item, receipt)
                         except Exception as e:
                             logger.error(f"Line item error: {str(e)}")
                             continue
+                
+                # Calculate and update receipt-level instant_savings from line items to avoid double counting
+                calculated_instant_savings = sum(item.instant_savings or Decimal('0.00') for item in created_line_items)
+                if calculated_instant_savings > 0:
+                    receipt.instant_savings = calculated_instant_savings
+                    receipt.save()
+                    logger.info(f"Updated new receipt instant_savings to: {receipt.instant_savings}")
                 
                 messages.success(request, 'Receipt uploaded successfully.')
                 return JsonResponse({
@@ -658,6 +676,7 @@ def api_receipt_upload(request):
         
         # Create LineItem objects only if we have valid items
         price_adjustments_created = 0  # Initialize counter for tracking price adjustment alerts
+        created_line_items = []
         if parsed_data.get('items'):
             for item_data in parsed_data['items']:
                 try:
@@ -674,12 +693,20 @@ def api_receipt_upload(request):
                         original_price=Decimal(str(item_data['original_price'])) if item_data.get('original_price') else None,
                         original_total_price=Decimal(str(item_data['total_price'])) if item_data.get('total_price') else None
                     )
+                    created_line_items.append(line_item)
                     # Check if current user can benefit from existing promotions
                     from .utils import check_current_user_for_price_adjustments
                     check_current_user_for_price_adjustments(line_item, receipt)
                 except Exception as e:
                     logger.error(f"Error creating line item: {str(e)}")
                     continue
+        
+        # Calculate and update receipt-level instant_savings from line items to avoid double counting
+        calculated_instant_savings = sum(item.instant_savings or Decimal('0.00') for item in created_line_items)
+        if calculated_instant_savings > 0:
+            receipt.instant_savings = calculated_instant_savings
+            receipt.save()
+            logger.info(f"Updated API receipt instant_savings to: {receipt.instant_savings}")
         
         return JsonResponse({
             'transaction_number': receipt.transaction_number,
@@ -1433,9 +1460,15 @@ def api_receipt_update(request, transaction_number):
             
             logger.info(f"After creating line items, receipt totals: subtotal={receipt.subtotal}, tax={receipt.tax}, total={receipt.total}, instant_savings={receipt.instant_savings}")
             
-            # Check if any code is automatically recalculating instant_savings from line items
+            # Automatically calculate receipt-level instant_savings from line items to avoid double counting
             calculated_instant_savings = sum(item.instant_savings or Decimal('0.00') for item in created_line_items)
             logger.info(f"Calculated instant_savings from line items: {calculated_instant_savings}")
+            
+            # Update receipt's instant_savings to match sum of line items (prevents double counting)
+            if calculated_instant_savings > 0:
+                receipt.instant_savings = calculated_instant_savings
+                receipt.save()
+                logger.info(f"Updated receipt instant_savings to: {receipt.instant_savings}")
             
             # Only update price database and check adjustments if not accepting manual edits
             if not accept_manual_edits:

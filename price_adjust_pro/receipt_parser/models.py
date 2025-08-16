@@ -171,8 +171,11 @@ class LineItem(models.Model):
         return self.price * self.quantity
 
     def save(self, *args, **kwargs):
-        if self.instant_savings and not self.original_price:
-            self.original_price = self.price + self.instant_savings
+        # Remove automatic original_price calculation since utils.py now handles this correctly
+        # The parsing logic sets:
+        # - price = final price paid (after discounts)
+        # - instant_savings = discount amount
+        # - original_price = price before discount (if applicable)
         super().save(*args, **kwargs)
 
 class CostcoItem(models.Model):

@@ -3,12 +3,7 @@
 
 {% block object-tools-items %}
     {{ block.super }}
-    {% if show_bulk_upload and object_id %}
-        <li>
-            <a href="{{ bulk_upload_url }}" class="addlink" style="background-image: url('{% static 'admin/img/icon-addlink.svg' %}');">
-                Bulk Upload Images
-            </a>
-        </li>
+    {% if object_id %}
         <li>
             <a href="{% url 'admin:receipt_parser_costcopromotion_csv_import' object_id %}" class="addlink" style="background-image: url('{% static 'admin/img/icon-addlink.svg' %}');">
                 CSV Import
@@ -67,35 +62,19 @@
 {% endblock %}
 
 {% block after_field_sets %}
-    {% if show_bulk_upload and object_id %}
-        <div class="bulk-upload-info">
-            <h3>📸 Bulk Image Upload</h3>
-            <p>Need to upload multiple promotional images at once? Use the bulk upload feature!</p>
-            <ul>
-                <li>Upload all pages of a promotional booklet simultaneously</li>
-                <li>Drag-and-drop multiple files with preview</li>
-                <li>Automatic page numbering</li>
-                <li>Supports AVIF, JPG, PNG, WebP, and other image formats</li>
-            </ul>
-            <p>
-                <a href="{{ bulk_upload_url }}" class="button default">
-                    🚀 Start Bulk Upload
-                </a>
-            </p>
-        </div>
-        
+    {% if object_id %}
         <div class="bulk-upload-info" style="background: #fff3cd; border-color: #ffeaa7;">
             <h3>⚡ Smart Batch Processing</h3>
-            <p><strong>Handles the 10-page processing limit automatically!</strong></p>
+            <p><strong>Handles the 5-page processing limit automatically!</strong></p>
             <ul>
-                <li><strong>📦 Process next 10 pages</strong> - Safely processes unprocessed pages in batches</li>
+                <li><strong>📦 Process next 5 pages</strong> - Safely processes unprocessed pages in batches</li>
                 <li><strong>📊 Export to CSV</strong> - Download all promotion data when complete</li>
                 <li><strong>⏳ Status tracking</strong> - See exactly which pages are processed vs pending</li>
             </ul>
             <div style="background: #e8f5e8; padding: 10px; border-radius: 4px; margin-top: 10px;">
                 <strong>🔄 Simple Workflow:</strong><br>
-                1. Upload all images via bulk upload<br>
-                2. Use "📦 Process next 10 pages" repeatedly until complete<br>
+                1. Upload individual promotion pages<br>
+                2. Use "📦 Process next 5 pages" repeatedly until complete<br>
                 3. Use "📊 Export to CSV" to download the final dataset
             </div>
         </div>
