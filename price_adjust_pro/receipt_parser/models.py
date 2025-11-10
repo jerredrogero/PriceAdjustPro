@@ -17,12 +17,28 @@ class UserProfile(models.Model):
         ('paid', 'Paid Account'),
     ]
     
+    SUBSCRIPTION_TYPE_CHOICES = [
+        ('free', 'Free'),
+        ('stripe', 'Stripe'),
+        ('apple', 'Apple In-App Purchase'),
+    ]
+    
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
     account_type = models.CharField(
         max_length=10,
         choices=ACCOUNT_TYPE_CHOICES,
         default='free',
         help_text='Simple account type for subscription management'
+    )
+    is_premium = models.BooleanField(
+        default=False,
+        help_text='Whether user has an active premium subscription'
+    )
+    subscription_type = models.CharField(
+        max_length=10,
+        choices=SUBSCRIPTION_TYPE_CHOICES,
+        default='free',
+        help_text='Type of subscription: free, stripe, or apple'
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -37,12 +53,79 @@ class UserProfile(models.Model):
     @property
     def is_paid_account(self):
         """Check if user has a paid account."""
-        return self.account_type == 'paid'
+        return self.account_type == 'paid' or self.is_premium
     
     @property
     def is_free_account(self):
         """Check if user has a free account."""
-        return self.account_type == 'free'
+        return self.account_type == 'free' and not self.is_premium
+
+class AppleSubscription(models.Model):
+    """
+    Stores Apple In-App Purchase subscription information.
+    """
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='apple_subscriptions')
+    transaction_id = models.CharField(max_length=255, db_index=True, help_text='Apple transaction ID')
+    original_transaction_id = models.CharField(
+        max_length=255, 
+        unique=True, 
+        db_index=True,
+        help_text='Original transaction ID (unique identifier for the subscription)'
+    )
+    product_id = models.CharField(
+        max_length=255,
+        db_index=True,
+        help_text='Product identifier (e.g., com.priceadjustpro.monthly)'
+    )
+    receipt_data = models.TextField(help_text='Base64 encoded receipt data from Apple')
+    purchase_date = models.DateTimeField(help_text='Date of purchase')
+    expiration_date = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text='Subscription expiration date'
+    )
+    is_active = models.BooleanField(default=True, help_text='Whether subscription is currently active')
+    is_sandbox = models.BooleanField(default=False, help_text='Whether this is a sandbox (test) purchase')
+    last_validation_response = models.JSONField(
+        null=True,
+        blank=True,
+        help_text='Last response from Apple receipt validation'
+    )
+    last_validated_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text='Last time this subscription was validated with Apple'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', 'is_active']),
+            models.Index(fields=['original_transaction_id']),
+            models.Index(fields=['expiration_date']),
+        ]
+        verbose_name = 'Apple Subscription'
+        verbose_name_plural = 'Apple Subscriptions'
+
+    def __str__(self):
+        return f"{self.user.username} - {self.product_id} ({'Active' if self.is_active else 'Inactive'})"
+
+    @property
+    def is_expired(self):
+        """Check if subscription is expired."""
+        if not self.expiration_date:
+            return False
+        return timezone.now() > self.expiration_date
+
+    @property
+    def days_remaining(self):
+        """Calculate days remaining until expiration."""
+        if not self.expiration_date:
+            return None
+        delta = self.expiration_date - timezone.now()
+        return max(0, delta.days)
 
 class Receipt(models.Model):
     """

@@ -46,6 +46,12 @@ api_urlpatterns = [
     path('subscriptions/create-payment-intent/', views.api_subscription_create_payment_intent, name='api_subscription_create_payment_intent'),
     path('subscriptions/create-checkout-session/', views.api_create_checkout_session, name='api_create_checkout_session'),
     path('subscriptions/webhook/', views.api_subscription_webhook, name='api_subscription_webhook'),
+    
+    # Apple In-App Purchase API endpoints
+    path('subscriptions/apple/purchase/', views.api_apple_purchase, name='api_apple_purchase'),
+    path('subscriptions/apple/validate/', views.api_apple_validate, name='api_apple_validate'),
+    
+    # Debug endpoints
     path('debug/stripe-config/', views.api_debug_stripe_config, name='api_debug_stripe_config'),
     path('debug/auth-test/', views.api_debug_auth_test, name='api_debug_auth_test'),
 ]

@@ -375,3 +375,8 @@ STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET', '')
 # Stripe settings for subscription management
 STRIPE_LIVE_MODE = not DEBUG  # Use live mode in production
 STRIPE_TEST_MODE = DEBUG  # Use test mode in development
+
+# Apple In-App Purchase Configuration
+APPLE_SHARED_SECRET = os.getenv('APPLE_SHARED_SECRET', '')
+APPLE_PRODUCTION_URL = 'https://buy.itunes.apple.com/verifyReceipt'
+APPLE_SANDBOX_URL = 'https://sandbox.itunes.apple.com/verifyReceipt'

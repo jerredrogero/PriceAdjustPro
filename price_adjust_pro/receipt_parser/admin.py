@@ -21,7 +21,7 @@ from .models import (
     ItemPriceHistory, PriceAdjustmentAlert,
     CostcoPromotion, CostcoPromotionPage, OfficialSaleItem,
     SubscriptionProduct, UserSubscription, SubscriptionEvent,
-    UserProfile
+    UserProfile, AppleSubscription
 )
 from django.conf import settings
 from django.utils import timezone
@@ -177,8 +177,8 @@ csrf_protect_m = method_decorator(csrf_protect)
 
 @admin.register(UserProfile)
 class UserProfileAdmin(admin.ModelAdmin):
-    list_display = ('user', 'account_type', 'created_at', 'updated_at')
-    list_filter = ('account_type', 'created_at')
+    list_display = ('user', 'account_type', 'is_premium', 'subscription_type', 'created_at', 'updated_at')
+    list_filter = ('account_type', 'is_premium', 'subscription_type', 'created_at')
     search_fields = ('user__username', 'user__email')
     readonly_fields = ('created_at', 'updated_at')
     raw_id_fields = ('user',)
@@ -187,13 +187,13 @@ class UserProfileAdmin(admin.ModelAdmin):
     
     def upgrade_to_paid(self, request, queryset):
         """Upgrade selected profiles to paid accounts."""
-        count = queryset.filter(account_type='free').update(account_type='paid')
+        count = queryset.filter(account_type='free').update(account_type='paid', is_premium=True)
         self.message_user(request, f'{count} user(s) upgraded to paid accounts.')
     upgrade_to_paid.short_description = "💎 Upgrade to Paid Account"
     
     def downgrade_to_free(self, request, queryset):
         """Downgrade selected profiles to free accounts."""
-        count = queryset.filter(account_type='paid').update(account_type='free')
+        count = queryset.filter(account_type='paid').update(account_type='free', is_premium=False, subscription_type='free')
         self.message_user(request, f'{count} user(s) downgraded to free accounts.')
     downgrade_to_free.short_description = "🆓 Downgrade to Free Account"
 
@@ -1686,3 +1686,89 @@ class SubscriptionEventAdmin(BaseModelAdmin):
         
         return response
     export_as_csv.short_description = 'Export selected events as CSV'
+
+
+# Apple In-App Purchase Subscription Admin
+@admin.register(AppleSubscription)
+class AppleSubscriptionAdmin(BaseModelAdmin):
+    list_display = ('user', 'product_id', 'status_display', 'is_sandbox', 'purchase_date', 'expiration_date', 'days_remaining', 'created_at')
+    list_filter = ('is_active', 'is_sandbox', 'product_id', 'purchase_date', 'expiration_date')
+    search_fields = ('user__username', 'user__email', 'transaction_id', 'original_transaction_id', 'product_id')
+    readonly_fields = ('transaction_id', 'original_transaction_id', 'is_expired', 'days_remaining', 
+                      'last_validation_response', 'last_validated_at', 'created_at', 'updated_at')
+    raw_id_fields = ('user',)
+    date_hierarchy = 'created_at'
+    ordering = ('-created_at',)
+    actions = ['mark_as_inactive', 'export_as_csv']
+    
+    fieldsets = (
+        ('User Information', {
+            'fields': ('user', 'product_id', 'is_active', 'is_sandbox')
+        }),
+        ('Transaction Details', {
+            'fields': ('transaction_id', 'original_transaction_id', 'purchase_date', 'expiration_date')
+        }),
+        ('Receipt Data', {
+            'fields': ('receipt_data',),
+            'classes': ('collapse',)
+        }),
+        ('Validation', {
+            'fields': ('last_validated_at', 'last_validation_response'),
+            'classes': ('collapse',)
+        }),
+        ('Status', {
+            'fields': ('is_expired', 'days_remaining')
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related('user')
+    
+    def status_display(self, obj):
+        """Display subscription status with color coding."""
+        if obj.is_expired:
+            return format_html('<span style="color: red;">⏰ Expired</span>')
+        elif obj.is_active:
+            return format_html('<span style="color: green;">✓ Active</span>')
+        else:
+            return format_html('<span style="color: orange;">⚠ Inactive</span>')
+    status_display.short_description = 'Status'
+    
+    def mark_as_inactive(self, request, queryset):
+        """Mark selected subscriptions as inactive."""
+        count = queryset.update(is_active=False)
+        self.message_user(request, f'{count} subscription(s) marked as inactive.')
+    mark_as_inactive.short_description = 'Mark as inactive'
+    
+    def export_as_csv(self, request, queryset):
+        """Export selected Apple subscriptions as CSV."""
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = f'attachment; filename="apple_subscriptions_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv"'
+        
+        writer = csv.writer(response)
+        writer.writerow([
+            'User', 'Email', 'Product ID', 'Transaction ID', 'Original Transaction ID',
+            'Purchase Date', 'Expiration Date', 'Is Active', 'Is Sandbox', 'Days Remaining', 'Created'
+        ])
+        
+        for subscription in queryset:
+            writer.writerow([
+                subscription.user.username,
+                subscription.user.email,
+                subscription.product_id,
+                subscription.transaction_id,
+                subscription.original_transaction_id,
+                subscription.purchase_date.strftime('%Y-%m-%d %H:%M:%S'),
+                subscription.expiration_date.strftime('%Y-%m-%d %H:%M:%S') if subscription.expiration_date else '',
+                subscription.is_active,
+                subscription.is_sandbox,
+                subscription.days_remaining,
+                subscription.created_at.strftime('%Y-%m-%d %H:%M:%S')
+            ])
+        
+        return response
+    export_as_csv.short_description = 'Export selected subscriptions as CSV'

@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
-from .models import Receipt, LineItem, UserProfile, OfficialSaleItem, CostcoPromotion
+from .models import Receipt, LineItem, UserProfile, OfficialSaleItem, CostcoPromotion, AppleSubscription
 from decimal import Decimal
 import logging
 from django.utils import timezone
@@ -183,3 +183,36 @@ class OnSaleResponseSerializer(serializers.Serializer):
     active_promotions = PromotionSerializer(many=True)
     current_date = serializers.DateField()
     last_updated = serializers.DateTimeField()
+
+
+class AppleSubscriptionSerializer(serializers.ModelSerializer):
+    """Serializer for Apple In-App Purchase subscriptions."""
+    days_remaining = serializers.SerializerMethodField()
+    is_expired = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = AppleSubscription
+        fields = [
+            'id', 'transaction_id', 'original_transaction_id', 'product_id',
+            'purchase_date', 'expiration_date', 'is_active', 'is_sandbox',
+            'days_remaining', 'is_expired', 'last_validated_at', 'created_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'last_validated_at']
+    
+    def get_days_remaining(self, obj):
+        """Get days remaining until expiration."""
+        return obj.days_remaining
+    
+    def get_is_expired(self, obj):
+        """Check if subscription is expired."""
+        return obj.is_expired
+
+
+class ApplePurchaseRequestSerializer(serializers.Serializer):
+    """Serializer for Apple purchase request."""
+    transaction_id = serializers.CharField(max_length=255, required=True)
+    product_id = serializers.CharField(max_length=255, required=True)
+    receipt_data = serializers.CharField(required=True)
+    original_transaction_id = serializers.CharField(max_length=255, required=True)
+    purchase_date = serializers.DateTimeField(required=True)
+    expiration_date = serializers.DateTimeField(required=False, allow_null=True)

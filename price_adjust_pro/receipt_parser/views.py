@@ -2713,3 +2713,329 @@ class CreateCheckoutSessionView(APIView):
 
 # Create an instance of the view that bypasses CSRF
 api_create_checkout_session = method_decorator(csrf_exempt, name='dispatch')(CreateCheckoutSessionView).as_view()
+
+
+# ============================================================================
+# Apple In-App Purchase Subscription Endpoints
+# ============================================================================
+
+def validate_apple_receipt(receipt_data, shared_secret):
+    """
+    Validate receipt with Apple's servers.
+    
+    Strategy:
+    1. Try production server first
+    2. If status code is 21007 (sandbox receipt sent to production), retry with sandbox
+    3. If status code is 21008 (production receipt sent to sandbox), retry with production
+    
+    Returns:
+        tuple: (is_valid, response_data, is_sandbox)
+    """
+    import requests
+    from django.conf import settings
+    
+    payload = {
+        'receipt-data': receipt_data,
+        'password': shared_secret,
+        'exclude-old-transactions': False
+    }
+    
+    # Try production first
+    try:
+        logger.info("Validating receipt with Apple production server")
+        response = requests.post(settings.APPLE_PRODUCTION_URL, json=payload, timeout=10)
+        response_data = response.json()
+        
+        status_code = response_data.get('status')
+        logger.info(f"Apple production validation status: {status_code}")
+        
+        # Status 21007 means this is a sandbox receipt sent to production
+        if status_code == 21007:
+            logger.info("Sandbox receipt detected, retrying with sandbox server")
+            response = requests.post(settings.APPLE_SANDBOX_URL, json=payload, timeout=10)
+            response_data = response.json()
+            status_code = response_data.get('status')
+            logger.info(f"Apple sandbox validation status: {status_code}")
+            
+            if status_code == 0:
+                return True, response_data, True
+            else:
+                return False, response_data, True
+        
+        # Status 0 means success
+        elif status_code == 0:
+            return True, response_data, False
+        
+        # Any other status code is an error
+        else:
+            logger.warning(f"Apple receipt validation failed with status {status_code}")
+            return False, response_data, False
+            
+    except requests.RequestException as e:
+        logger.error(f"Error validating receipt with Apple: {str(e)}")
+        return False, {'error': str(e)}, False
+    except Exception as e:
+        logger.error(f"Unexpected error during receipt validation: {str(e)}")
+        return False, {'error': str(e)}, False
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def api_apple_purchase(request):
+    """
+    Process a new Apple In-App Purchase subscription.
+    
+    Expected request body:
+    {
+        "transaction_id": "1000000123456789",
+        "product_id": "com.priceadjustpro.monthly",
+        "receipt_data": "MIITtgYJKoZIhvcNAQcCoIITpzCCE...",
+        "original_transaction_id": "1000000123456789",
+        "purchase_date": "2025-01-15T10:30:00Z",
+        "expiration_date": "2025-02-15T10:30:00Z"
+    }
+    
+    Returns:
+    {
+        "success": true,
+        "subscription_id": 123,
+        "is_sandbox": true,
+        "created": true
+    }
+    """
+    from .serializers import ApplePurchaseRequestSerializer, AppleSubscriptionSerializer
+    from .models import AppleSubscription, UserProfile
+    from dateutil import parser as date_parser
+    
+    logger.info(f"Apple purchase request from user: {request.user.username}")
+    
+    # Validate request data
+    serializer = ApplePurchaseRequestSerializer(data=request.data)
+    if not serializer.is_valid():
+        logger.warning(f"Invalid Apple purchase request: {serializer.errors}")
+        return Response(
+            {'success': False, 'error': 'Invalid request data', 'details': serializer.errors},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    data = serializer.validated_data
+    receipt_data = data['receipt_data']
+    original_transaction_id = data['original_transaction_id']
+    
+    # Validate receipt with Apple
+    shared_secret = settings.APPLE_SHARED_SECRET
+    if not shared_secret:
+        logger.error("APPLE_SHARED_SECRET not configured")
+        return Response(
+            {'success': False, 'error': 'Server configuration error'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+    
+    is_valid, validation_response, is_sandbox = validate_apple_receipt(receipt_data, shared_secret)
+    
+    if not is_valid:
+        logger.warning(f"Invalid Apple receipt for user {request.user.username}")
+        return Response(
+            {
+                'success': False,
+                'error': 'Receipt validation failed',
+                'apple_status': validation_response.get('status'),
+                'apple_message': validation_response.get('error', 'Unknown error')
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    # Extract subscription info from Apple's response
+    try:
+        receipt = validation_response.get('receipt', {})
+        latest_receipt_info = validation_response.get('latest_receipt_info', [])
+        
+        # Find the matching transaction in the receipt info
+        transaction_info = None
+        for info in latest_receipt_info:
+            if info.get('original_transaction_id') == original_transaction_id:
+                transaction_info = info
+                break
+        
+        # If not found in latest_receipt_info, use the data from the request
+        if transaction_info:
+            # Parse dates from Apple's response (in milliseconds)
+            purchase_date_ms = transaction_info.get('purchase_date_ms')
+            expiration_date_ms = transaction_info.get('expires_date_ms')
+            
+            if purchase_date_ms:
+                purchase_date = timezone.datetime.fromtimestamp(int(purchase_date_ms) / 1000, tz=timezone.utc)
+            else:
+                purchase_date = data['purchase_date']
+            
+            if expiration_date_ms:
+                expiration_date = timezone.datetime.fromtimestamp(int(expiration_date_ms) / 1000, tz=timezone.utc)
+            else:
+                expiration_date = data.get('expiration_date')
+        else:
+            # Use dates from request
+            purchase_date = data['purchase_date']
+            expiration_date = data.get('expiration_date')
+        
+    except Exception as e:
+        logger.error(f"Error parsing Apple receipt response: {str(e)}")
+        # Fall back to request data
+        purchase_date = data['purchase_date']
+        expiration_date = data.get('expiration_date')
+    
+    # Create or update subscription
+    try:
+        with transaction.atomic():
+            subscription, created = AppleSubscription.objects.update_or_create(
+                original_transaction_id=original_transaction_id,
+                defaults={
+                    'user': request.user,
+                    'transaction_id': data['transaction_id'],
+                    'product_id': data['product_id'],
+                    'receipt_data': receipt_data,
+                    'purchase_date': purchase_date,
+                    'expiration_date': expiration_date,
+                    'is_active': True,
+                    'is_sandbox': is_sandbox,
+                    'last_validation_response': validation_response,
+                    'last_validated_at': timezone.now()
+                }
+            )
+            
+            # Update user profile to premium
+            profile, _ = UserProfile.objects.get_or_create(user=request.user)
+            profile.is_premium = True
+            profile.subscription_type = 'apple'
+            profile.account_type = 'paid'
+            profile.save()
+            
+            logger.info(f"Apple subscription {'created' if created else 'updated'} for user {request.user.username}")
+            
+            return Response({
+                'success': True,
+                'subscription_id': subscription.id,
+                'is_sandbox': is_sandbox,
+                'created': created,
+                'expiration_date': subscription.expiration_date.isoformat() if subscription.expiration_date else None
+            }, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+            
+    except Exception as e:
+        logger.error(f"Error creating Apple subscription: {str(e)}")
+        return Response(
+            {'success': False, 'error': 'Failed to create subscription'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def api_apple_validate(request):
+    """
+    Validate current Apple subscription status.
+    
+    This endpoint checks if the user has an active Apple subscription
+    and optionally re-validates it with Apple's servers.
+    
+    Request body (optional):
+    {
+        "receipt_data": "MIITtgYJKoZIhvcNAQcCoIITpzCCE...",
+        "revalidate": true
+    }
+    
+    Returns:
+    {
+        "has_subscription": true,
+        "is_active": true,
+        "subscription": { ... subscription details ... },
+        "revalidated": false
+    }
+    """
+    from .serializers import AppleSubscriptionSerializer
+    from .models import AppleSubscription, UserProfile
+    
+    logger.info(f"Apple subscription validation request from user: {request.user.username}")
+    
+    # Get user's active Apple subscriptions
+    subscriptions = AppleSubscription.objects.filter(
+        user=request.user,
+        is_active=True
+    ).order_by('-created_at')
+    
+    if not subscriptions.exists():
+        logger.info(f"No active Apple subscriptions found for user {request.user.username}")
+        return Response({
+            'has_subscription': False,
+            'is_active': False,
+            'subscription': None,
+            'revalidated': False
+        })
+    
+    subscription = subscriptions.first()
+    
+    # Check if subscription is expired
+    if subscription.is_expired:
+        logger.info(f"Apple subscription expired for user {request.user.username}")
+        subscription.is_active = False
+        subscription.save()
+        
+        # Update user profile
+        profile = request.user.profile
+        profile.is_premium = False
+        profile.subscription_type = 'free'
+        profile.account_type = 'free'
+        profile.save()
+        
+        return Response({
+            'has_subscription': True,
+            'is_active': False,
+            'subscription': AppleSubscriptionSerializer(subscription).data,
+            'revalidated': False,
+            'message': 'Subscription expired'
+        })
+    
+    # Optionally revalidate with Apple
+    should_revalidate = request.data.get('revalidate', False)
+    receipt_data = request.data.get('receipt_data')
+    revalidated = False
+    
+    if should_revalidate and receipt_data:
+        logger.info(f"Revalidating Apple subscription for user {request.user.username}")
+        
+        shared_secret = settings.APPLE_SHARED_SECRET
+        if shared_secret:
+            is_valid, validation_response, is_sandbox = validate_apple_receipt(receipt_data, shared_secret)
+            
+            if is_valid:
+                # Update subscription with new validation data
+                try:
+                    latest_receipt_info = validation_response.get('latest_receipt_info', [])
+                    
+                    for info in latest_receipt_info:
+                        if info.get('original_transaction_id') == subscription.original_transaction_id:
+                            expiration_date_ms = info.get('expires_date_ms')
+                            if expiration_date_ms:
+                                expiration_date = timezone.datetime.fromtimestamp(
+                                    int(expiration_date_ms) / 1000,
+                                    tz=timezone.utc
+                                )
+                                subscription.expiration_date = expiration_date
+                            break
+                    
+                    subscription.last_validation_response = validation_response
+                    subscription.last_validated_at = timezone.now()
+                    subscription.save()
+                    revalidated = True
+                    
+                    logger.info(f"Apple subscription revalidated successfully for user {request.user.username}")
+                    
+                except Exception as e:
+                    logger.error(f"Error updating subscription after revalidation: {str(e)}")
+            else:
+                logger.warning(f"Apple subscription revalidation failed for user {request.user.username}")
+    
+    return Response({
+        'has_subscription': True,
+        'is_active': subscription.is_active,
+        'subscription': AppleSubscriptionSerializer(subscription).data,
+        'revalidated': revalidated
+    })
