@@ -136,6 +136,10 @@ IMPORTANT: Look for discount lines that follow item lines. These lines:
 2. Contain a forward slash followed by the item code (e.g. "/1726362")
 3. The amount is the instant savings for the previous item
 
+CRITICAL: Only count discount lines that IMMEDIATELY follow an item line and contain a forward slash with an item code.
+DO NOT count lines like "TOTAL INSTANT SAVINGS" or summary lines as discount lines.
+DO NOT extract instant_savings from summary text at the bottom of the receipt.
+
 Example receipt text:
 E 1347776 KS WD FL HNY 12.99 3
 346014 /1347776 3.00-
@@ -151,7 +155,7 @@ Format each item line as: "item_code, description, price, is_taxable, instant_sa
 subtotal: Total before tax
 tax: Tax amount
 total: Final total
-instant_savings: Total of all discount lines (amounts ending in minus)
+instant_savings: ONLY sum the discount lines that have a forward slash with item code (e.g. "346014 /1726362 3.00-"). If no such discount lines exist, this should be 0.00 or null, NOT any "TOTAL INSTANT SAVINGS" text from the receipt.
 total_items_sold: The number from "Items Sold: X" line
 
 Format each field on a new line with a colon separator like this:
@@ -165,8 +169,10 @@ items:
 subtotal: 59.15
 tax: 1.28
 total: 60.43
-instant_savings: 7.00
+instant_savings: 3.00
 total_items_sold: 8
+
+IMPORTANT: If there are NO discount lines with forward slashes (e.g. "/item_code"), then instant_savings should be 0.00 or null, even if the receipt mentions "instant savings" in text somewhere. Only actual discount lines count.
 
 Parse this receipt:
 {text}"""
