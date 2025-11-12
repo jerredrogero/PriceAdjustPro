@@ -8,6 +8,9 @@ from django.core.files.storage import default_storage
 from django.core.files.base import ContentFile
 from django.conf import settings
 from django.http import JsonResponse
+from django.core.mail import send_mail
+from django.template.loader import render_to_string
+from django.utils.html import strip_tags
 from django.views.decorators.csrf import csrf_exempt
 from django.urls import reverse
 import os
@@ -31,7 +34,8 @@ from django.db import transaction
 
 from .models import (
     Receipt, LineItem, CostcoItem,
-    CostcoWarehouse, PriceAdjustmentAlert, OfficialSaleItem, CostcoPromotion
+    CostcoWarehouse, PriceAdjustmentAlert, OfficialSaleItem, CostcoPromotion,
+    EmailVerificationToken, UserProfile
 )
 from .utils import (
     process_receipt_pdf, extract_text_from_pdf, parse_receipt,
@@ -911,6 +915,10 @@ def api_register(request):
             # Check if username exists
             if User.objects.filter(username=username).exists():
                 return JsonResponse({'error': 'Username already exists'}, status=400)
+            
+            # Check if email already exists
+            if User.objects.filter(email=email).exists():
+                return JsonResponse({'error': 'Email already registered'}, status=400)
 
             # Create user
             user = User.objects.create_user(
@@ -924,6 +932,10 @@ def api_register(request):
             
             if not all([first_name, email, password]):
                 return JsonResponse({'error': 'All fields are required'}, status=400)
+            
+            # Check if email already exists
+            if User.objects.filter(email=email).exists():
+                return JsonResponse({'error': 'Email already registered'}, status=400)
             
             # Create username from first name and email domain
             base_username = first_name.lower()
@@ -946,21 +958,167 @@ def api_register(request):
                 last_name=last_name
             )
 
-        # Log the user in
-        login(request, user)
+        # Create verification token
+        verification_token = EmailVerificationToken.create_token(user)
+        
+        # Build verification URL
+        protocol = 'https' if not settings.DEBUG else 'http'
+        domain = request.get_host()
+        verification_url = f"{protocol}://{domain}/api/auth/verify-email/{verification_token.token}/"
+        
+        # Send verification email
+        try:
+            subject = 'Verify your PriceAdjustPro account'
+            message = f"""
+Hi {user.first_name or user.username},
 
+Thank you for signing up for PriceAdjustPro!
+
+Please verify your email address by clicking the link below:
+
+{verification_url}
+
+This link will expire in 24 hours.
+
+If you didn't create this account, you can safely ignore this email.
+
+Best regards,
+The PriceAdjustPro Team
+            """
+            
+            send_mail(
+                subject,
+                message,
+                settings.DEFAULT_FROM_EMAIL,
+                [user.email],
+                fail_silently=False,
+            )
+            logger.info(f"Verification email sent to {user.email}")
+        except Exception as e:
+            logger.error(f"Failed to send verification email: {str(e)}")
+            # Don't fail registration if email fails - user can request resend
+        
         return JsonResponse({
-            'message': 'Account created successfully',
-            'user': {
-                'id': user.id,
-                'username': user.username,
-                'email': user.email
-            }
+            'message': 'Account created successfully. Please check your email to verify your account.',
+            'email': user.email,
+            'verification_required': True
         })
 
     except Exception as e:
         logger.error(f"Registration error: {str(e)}")
         return JsonResponse({'error': str(e)}, status=500)
+
+def api_verify_email(request, token):
+    """API endpoint to verify user email with token."""
+    try:
+        # Find the verification token
+        verification_token = EmailVerificationToken.objects.filter(token=token).first()
+        
+        if not verification_token:
+            return JsonResponse({'error': 'Invalid verification token'}, status=400)
+        
+        if verification_token.is_used:
+            return JsonResponse({'error': 'This verification link has already been used'}, status=400)
+        
+        if verification_token.is_expired:
+            return JsonResponse({'error': 'This verification link has expired'}, status=400)
+        
+        # Mark token as used
+        verification_token.is_used = True
+        verification_token.used_at = timezone.now()
+        verification_token.save()
+        
+        # Mark user's email as verified
+        user = verification_token.user
+        profile = user.profile
+        profile.is_email_verified = True
+        profile.email_verified_at = timezone.now()
+        profile.save()
+        
+        logger.info(f"Email verified for user: {user.email}")
+        
+        return JsonResponse({
+            'message': 'Email verified successfully! You can now log in.',
+            'verified': True
+        })
+        
+    except Exception as e:
+        logger.error(f"Email verification error: {str(e)}")
+        return JsonResponse({'error': 'An error occurred during verification'}, status=500)
+
+def api_resend_verification(request):
+    """API endpoint to resend verification email."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    
+    try:
+        data = json.loads(request.body)
+        email = data.get('email')
+        
+        if not email:
+            return JsonResponse({'error': 'Email is required'}, status=400)
+        
+        # Find user by email
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            # Don't reveal if email exists or not for security
+            return JsonResponse({
+                'message': 'If this email is registered, a verification link has been sent.'
+            })
+        
+        # Check if already verified
+        if user.profile.is_email_verified:
+            return JsonResponse({'error': 'Email is already verified'}, status=400)
+        
+        # Invalidate old tokens
+        EmailVerificationToken.objects.filter(user=user, is_used=False).update(is_used=True)
+        
+        # Create new verification token
+        verification_token = EmailVerificationToken.create_token(user)
+        
+        # Build verification URL
+        protocol = 'https' if not settings.DEBUG else 'http'
+        domain = request.get_host()
+        verification_url = f"{protocol}://{domain}/api/auth/verify-email/{verification_token.token}/"
+        
+        # Send verification email
+        try:
+            subject = 'Verify your PriceAdjustPro account'
+            message = f"""
+Hi {user.first_name or user.username},
+
+Here's your new verification link for PriceAdjustPro:
+
+{verification_url}
+
+This link will expire in 24 hours.
+
+If you didn't request this, you can safely ignore this email.
+
+Best regards,
+The PriceAdjustPro Team
+            """
+            
+            send_mail(
+                subject,
+                message,
+                settings.DEFAULT_FROM_EMAIL,
+                [user.email],
+                fail_silently=False,
+            )
+            logger.info(f"Verification email resent to {user.email}")
+        except Exception as e:
+            logger.error(f"Failed to send verification email: {str(e)}")
+            return JsonResponse({'error': 'Failed to send verification email'}, status=500)
+        
+        return JsonResponse({
+            'message': 'Verification email sent. Please check your inbox.'
+        })
+        
+    except Exception as e:
+        logger.error(f"Resend verification error: {str(e)}")
+        return JsonResponse({'error': 'An error occurred'}, status=500)
 
 def register(request):
     """Web view for user registration."""

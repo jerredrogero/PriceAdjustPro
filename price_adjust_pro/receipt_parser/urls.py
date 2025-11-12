@@ -35,7 +35,9 @@ api_urlpatterns = [
     path('analytics/enhanced/', views.api_enhanced_analytics, name='api_enhanced_analytics'),
     path('on-sale/', views.api_on_sale, name='api_on_sale'),
     
-    # Authentication API endpoints (to be implemented)
+    # Authentication API endpoints
+    path('auth/verify-email/<str:token>/', views.api_verify_email, name='api_verify_email'),
+    path('auth/resend-verification/', views.api_resend_verification, name='api_resend_verification'),
     
     # Subscription API endpoints
     path('subscriptions/status/', views.api_subscription_status, name='api_subscription_status'),

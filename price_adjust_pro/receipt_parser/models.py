@@ -6,6 +6,7 @@ from django.core.validators import RegexValidator
 from django.db.models import Q
 from django.db.models.signals import post_save
 from django.dispatch import receiver
+import secrets
 
 # Create your models here.
 
@@ -40,6 +41,15 @@ class UserProfile(models.Model):
         default='free',
         help_text='Type of subscription: free, stripe, or apple'
     )
+    is_email_verified = models.BooleanField(
+        default=False,
+        help_text='Whether the user has verified their email address'
+    )
+    email_verified_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text='When the user verified their email'
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -59,6 +69,46 @@ class UserProfile(models.Model):
     def is_free_account(self):
         """Check if user has a free account."""
         return self.account_type == 'free' and not self.is_premium
+
+class EmailVerificationToken(models.Model):
+    """
+    Stores email verification tokens for new user signups.
+    """
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='verification_tokens')
+    token = models.CharField(max_length=64, unique=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    is_used = models.BooleanField(default=False)
+    used_at = models.DateTimeField(null=True, blank=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Email Verification Token'
+        verbose_name_plural = 'Email Verification Tokens'
+    
+    def __str__(self):
+        return f"Verification token for {self.user.email} ({'Used' if self.is_used else 'Active'})"
+    
+    @classmethod
+    def create_token(cls, user):
+        """Create a new verification token for a user."""
+        token = secrets.token_urlsafe(48)
+        expires_at = timezone.now() + timezone.timedelta(hours=24)  # 24 hour expiration
+        return cls.objects.create(
+            user=user,
+            token=token,
+            expires_at=expires_at
+        )
+    
+    @property
+    def is_expired(self):
+        """Check if token is expired."""
+        return timezone.now() > self.expires_at
+    
+    @property
+    def is_valid(self):
+        """Check if token is valid (not used and not expired)."""
+        return not self.is_used and not self.is_expired
 
 class AppleSubscription(models.Model):
     """

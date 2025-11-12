@@ -21,7 +21,7 @@ from .models import (
     ItemPriceHistory, PriceAdjustmentAlert,
     CostcoPromotion, CostcoPromotionPage, OfficialSaleItem,
     SubscriptionProduct, UserSubscription, SubscriptionEvent,
-    UserProfile, AppleSubscription
+    UserProfile, AppleSubscription, EmailVerificationToken
 )
 from django.conf import settings
 from django.utils import timezone
@@ -177,10 +177,10 @@ csrf_protect_m = method_decorator(csrf_protect)
 
 @admin.register(UserProfile)
 class UserProfileAdmin(admin.ModelAdmin):
-    list_display = ('user', 'account_type', 'is_premium', 'subscription_type', 'created_at', 'updated_at')
-    list_filter = ('account_type', 'is_premium', 'subscription_type', 'created_at')
+    list_display = ('user', 'account_type', 'is_premium', 'subscription_type', 'is_email_verified', 'created_at', 'updated_at')
+    list_filter = ('account_type', 'is_premium', 'subscription_type', 'is_email_verified', 'created_at')
     search_fields = ('user__username', 'user__email')
-    readonly_fields = ('created_at', 'updated_at')
+    readonly_fields = ('created_at', 'updated_at', 'email_verified_at')
     raw_id_fields = ('user',)
     ordering = ('-created_at',)
     actions = ['upgrade_to_paid', 'downgrade_to_free']
@@ -196,6 +196,35 @@ class UserProfileAdmin(admin.ModelAdmin):
         count = queryset.filter(account_type='paid').update(account_type='free', is_premium=False, subscription_type='free')
         self.message_user(request, f'{count} user(s) downgraded to free accounts.')
     downgrade_to_free.short_description = "🆓 Downgrade to Free Account"
+
+@admin.register(EmailVerificationToken)
+class EmailVerificationTokenAdmin(admin.ModelAdmin):
+    list_display = ('user', 'user_email', 'is_used', 'is_expired', 'created_at', 'expires_at')
+    list_filter = ('is_used', 'created_at', 'expires_at')
+    search_fields = ('user__username', 'user__email', 'token')
+    readonly_fields = ('token', 'created_at', 'expires_at', 'used_at', 'is_expired', 'is_valid')
+    raw_id_fields = ('user',)
+    ordering = ('-created_at',)
+    actions = ['mark_as_used', 'delete_expired_tokens']
+    
+    def user_email(self, obj):
+        return obj.user.email
+    user_email.short_description = 'Email'
+    
+    def mark_as_used(self, request, queryset):
+        """Mark selected tokens as used."""
+        count = queryset.filter(is_used=False).update(is_used=True, used_at=timezone.now())
+        self.message_user(request, f'{count} token(s) marked as used.')
+    mark_as_used.short_description = 'Mark as used'
+    
+    def delete_expired_tokens(self, request, queryset):
+        """Delete expired verification tokens."""
+        now = timezone.now()
+        expired = queryset.filter(expires_at__lt=now)
+        count = expired.count()
+        expired.delete()
+        self.message_user(request, f'Deleted {count} expired token(s).')
+    delete_expired_tokens.short_description = 'Delete expired tokens'
 
 class BaseModelAdmin(admin.ModelAdmin):
     @csrf_protect_m
