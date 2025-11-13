@@ -1126,9 +1126,49 @@ def register(request):
         form = UserCreationForm(request.POST)
         if form.is_valid():
             user = form.save()
-            login(request, user)
-            messages.success(request, 'Account created successfully!')
-            return redirect('receipt_list')
+            
+            # Create verification token
+            verification_token = EmailVerificationToken.create_token(user)
+            
+            # Build verification URL
+            protocol = 'https' if not settings.DEBUG else 'http'
+            domain = request.get_host()
+            verification_url = f"{protocol}://{domain}/api/auth/verify-email/{verification_token.token}/"
+            
+            # Send verification email
+            try:
+                subject = 'Verify your PriceAdjustPro account'
+                message = f"""
+Hi {user.username},
+
+Thank you for signing up for PriceAdjustPro!
+
+Please verify your email address by clicking the link below:
+
+{verification_url}
+
+This link will expire in 24 hours.
+
+If you didn't create this account, you can safely ignore this email.
+
+Best regards,
+The PriceAdjustPro Team
+                """
+                
+                send_mail(
+                    subject,
+                    message,
+                    settings.DEFAULT_FROM_EMAIL,
+                    [user.email],
+                    fail_silently=False,
+                )
+                logger.info(f"Verification email sent to {user.email}")
+                messages.success(request, 'Account created successfully! Please check your email to verify your account.')
+            except Exception as e:
+                logger.error(f"Failed to send verification email: {str(e)}")
+                messages.warning(request, 'Account created, but we could not send a verification email. Please contact support.')
+            
+            return redirect('login')
     else:
         form = UserCreationForm()
     return render(request, 'receipt_parser/register.html', {'form': form})

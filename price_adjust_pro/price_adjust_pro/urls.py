@@ -61,6 +61,31 @@ def api_login(request):
             user = authenticate(request, username=username, password=password)
             if user is not None:
                 print(f"User {username} authenticated successfully")
+                
+                # Check if email is verified
+                try:
+                    from receipt_parser.models import UserProfile
+                    profile = UserProfile.objects.get(user=user)
+                    if not profile.is_email_verified:
+                        print(f"User {username} attempted login without verifying email")
+                        return JsonResponse({
+                            'error': 'Email not verified',
+                            'message': 'Please verify your email address before logging in. Check your email for the verification link.',
+                            'email': user.email,
+                            'verification_required': True
+                        }, status=403)
+                except UserProfile.DoesNotExist:
+                    # Create profile if it doesn't exist
+                    profile = UserProfile.objects.create(user=user, account_type='free', is_email_verified=False)
+                    print(f"Created profile for {username}, email verification required")
+                    return JsonResponse({
+                        'error': 'Email not verified',
+                        'message': 'Please verify your email address before logging in.',
+                        'email': user.email,
+                        'verification_required': True
+                    }, status=403)
+                
+                # User is verified, proceed with login
                 login(request, user)
                 
                 # Set session cookie attributes
@@ -70,16 +95,8 @@ def api_login(request):
                 csrf_token = get_token(request)
                 
                 # Get account type from user profile
-                try:
-                    from receipt_parser.models import UserProfile
-                    profile = UserProfile.objects.get(user=user)
-                    account_type = 'paid' if profile.is_paid_account else 'free'
-                    is_paid_account = profile.is_paid_account
-                except UserProfile.DoesNotExist:
-                    # Create profile if it doesn't exist
-                    UserProfile.objects.create(user=user, account_type='free')
-                    account_type = 'free'
-                    is_paid_account = False
+                account_type = 'paid' if profile.is_paid_account else 'free'
+                is_paid_account = profile.is_paid_account
                 
                 response = JsonResponse({
                     'id': user.id,
@@ -221,53 +238,54 @@ def api_register(request):
                     last_name=last_name
                 )
             
-            # Log the user in
-            login(request, user)
-            print(f"User {username} created and logged in successfully")
+            print(f"User {username} created successfully")
             
-            # Set session cookie attributes and expiry
-            request.session.set_expiry(1209600)  # 2 weeks
+            # Create verification token
+            from receipt_parser.models import EmailVerificationToken
+            verification_token = EmailVerificationToken.create_token(user)
             
-            # Ensure CSRF token is set
-            csrf_token = get_token(request)
+            # Build verification URL
+            protocol = 'https' if not settings.DEBUG else 'http'
+            domain = request.get_host()
+            verification_url = f"{protocol}://{domain}/api/auth/verify-email/{verification_token.token}/"
             
-            # Get account type from user profile (should be 'free' for new users)
+            # Send verification email
             try:
-                from receipt_parser.models import UserProfile
-                profile = UserProfile.objects.get(user=user)
-                account_type = 'paid' if profile.is_paid_account else 'free'
-                is_paid_account = profile.is_paid_account
-            except UserProfile.DoesNotExist:
-                # Create profile if it doesn't exist (should have been created by signal)
-                UserProfile.objects.create(user=user, account_type='free')
-                account_type = 'free'
-                is_paid_account = False
+                subject = 'Verify your PriceAdjustPro account'
+                message = f"""
+Hi {user.first_name or user.username},
+
+Thank you for signing up for PriceAdjustPro!
+
+Please verify your email address by clicking the link below:
+
+{verification_url}
+
+This link will expire in 24 hours.
+
+If you didn't create this account, you can safely ignore this email.
+
+Best regards,
+The PriceAdjustPro Team
+                """
+                
+                send_mail(
+                    subject,
+                    message,
+                    settings.DEFAULT_FROM_EMAIL,
+                    [user.email],
+                    fail_silently=False,
+                )
+                print(f"Verification email sent to {user.email}")
+            except Exception as e:
+                print(f"Failed to send verification email: {str(e)}")
+                # Don't fail registration if email fails - user can request resend
             
-            response = JsonResponse({
-                'message': 'Account created successfully',
-                'user': {
-                    'id': user.id,
-                    'username': user.username,
-                    'email': user.email,
-                    'first_name': user.first_name,
-                    'last_name': user.last_name,
-                    'account_type': account_type,
-                    'is_paid_account': is_paid_account,
-                }
+            return JsonResponse({
+                'message': 'Account created successfully. Please check your email to verify your account.',
+                'email': user.email,
+                'verification_required': True
             })
-            
-            # Set CSRF cookie explicitly
-            response.set_cookie(
-                'csrftoken',
-                csrf_token,
-                max_age=31536000,  # 1 year
-                secure=not settings.DEBUG,
-                httponly=False,
-                samesite='Lax',
-                domain=settings.CSRF_COOKIE_DOMAIN if not settings.DEBUG else None
-            )
-            
-            return response
         except Exception as e:
             print(f"Registration error: {str(e)}")
             return JsonResponse({'error': str(e)}, status=500)

@@ -39,10 +39,6 @@ const Register: React.FC = () => {
     try {
       console.log('Registration: Sending registration request');
       
-      // Check session state before registration
-      const sessionCheck = await axios.get('/api/debug/session/', { withCredentials: true });
-      console.log('Pre-registration session state:', sessionCheck.data);
-      
       // Use axios instead of fetch to ensure cookies are handled properly
       const response = await axios.post('/api/auth/register/', {
         username,
@@ -58,28 +54,15 @@ const Register: React.FC = () => {
       
       console.log('Registration successful:', response.data);
       
-      // Check session state after registration
-      const postRegSession = await axios.get('/api/debug/session/', { withCredentials: true });
-      console.log('Post-registration session state:', postRegSession.data);
-
-      // Wait a bit longer to ensure session is established
-      await new Promise(resolve => setTimeout(resolve, 2000));
-
-      try {
-        // Log in the user after successful registration
-        console.log('Attempting login after registration');
-        await login(username, password);
-        
-        // Check session after login
-        const postLoginSession = await axios.get('/api/debug/session/', { withCredentials: true });
-        console.log('Post-login session state:', postLoginSession.data);
-        
-        console.log('Login successful, navigating to dashboard');
-        window.location.href = '/dashboard';  // Force a full page navigation instead of React Router
-      } catch (loginErr) {
-        console.error('Post-registration login failed:', loginErr);
-        // If login fails, try to continue with registration success
-        window.location.href = '/dashboard';  // Force a full page navigation instead of React Router
+      // Check if verification is required
+      if (response.data.verification_required) {
+        // Redirect to verification pending page with email
+        navigate('/verification-pending', { 
+          state: { email: response.data.email } 
+        });
+      } else {
+        // Old behavior - shouldn't happen with new backend, but keep as fallback
+        navigate('/login');
       }
     } catch (err) {
       console.error('Registration error:', err);

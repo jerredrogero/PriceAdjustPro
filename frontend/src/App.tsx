@@ -23,6 +23,8 @@ import ReceiptDetail from './pages/ReceiptDetail';
 import PrivacyPolicy from './pages/PrivacyPolicy';
 import TermsOfService from './pages/TermsOfService';
 import Support from './pages/Support';
+import VerifyEmail from './pages/VerifyEmail';
+import VerificationPending from './pages/VerificationPending';
 import api from './api/axios';
 import { UserContext } from './components/Layout';
 
@@ -49,9 +51,11 @@ const AppContent: React.FC = () => {
     const maybeFromHijack = document.referrer.includes('/admin/') || document.referrer.includes('/hijack/');
     
     // Public pages that don't require authentication check
-    const publicPages = ['/', '/login', '/register', '/reset-password', '/privacy-policy', '/terms-of-service', '/support'];
+    const publicPages = ['/', '/login', '/register', '/reset-password', '/privacy-policy', '/terms-of-service', '/support', '/verification-pending'];
     const isPublicPage = publicPages.some(page => 
-      location.pathname === page || location.pathname.startsWith('/reset-password/')
+      location.pathname === page || 
+      location.pathname.startsWith('/reset-password/') ||
+      location.pathname.startsWith('/verify-email/')
     );
 
     console.log('App.tsx: isPublicPage check:', isPublicPage, 'for path:', location.pathname);
@@ -137,6 +141,12 @@ const AppContent: React.FC = () => {
         } />
         <Route path="/reset-password" element={
           user ? <Navigate to="/dashboard" /> : <PublicPageLayout><PasswordReset /></PublicPageLayout>
+        } />
+        <Route path="/verify-email/:token" element={
+          <PublicPageLayout><VerifyEmail /></PublicPageLayout>
+        } />
+        <Route path="/verification-pending" element={
+          <PublicPageLayout><VerificationPending /></PublicPageLayout>
         } />
         <Route path="/login" element={
           user ? <Navigate to="/dashboard" /> : <PublicPageLayout><Login /></PublicPageLayout>

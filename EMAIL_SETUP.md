@@ -1,6 +1,10 @@
-# Email Setup for Password Reset
+# Email Setup for Password Reset and Email Verification
 
-To enable password reset functionality, you need to configure the following environment variables:
+This project uses email for two main features:
+1. **Email Verification**: New users must verify their email address before logging in
+2. **Password Reset**: Users can reset their passwords via email
+
+To enable these features, you need to configure the following environment variables:
 
 ## For Production (Recommended): Use SendGrid
 
@@ -61,17 +65,27 @@ EMAIL_HOST_PASSWORD=bocx-nvcy-wgss-cbsp
 
 ## Testing
 
-You can test the password reset functionality by:
-1. Going to `/reset-password` on your website
-2. Entering an email address
-3. Checking that the email is sent successfully
+### Email Verification
+1. Register a new account at `/register`
+2. Check that you're redirected to the verification pending page
+3. Check your email for the verification link
+4. Click the verification link
+5. Try to log in - you should be able to access the dashboard
+
+### Password Reset
+1. Go to `/reset-password` on your website
+2. Enter an email address
+3. Check that the email is sent successfully
+4. Click the reset link and set a new password
 
 ## Production Notes
 
 - In production, make sure `DEBUG=False` in your environment
-- The password reset emails will use HTTPS URLs in production
+- Emails will use HTTPS URLs in production
 - Email timeout is set to 30 seconds
 - Password reset tokens expire after 1 hour
+- Email verification tokens expire after 24 hours
+- Users cannot log in until they verify their email address
 
 ## Troubleshooting
 

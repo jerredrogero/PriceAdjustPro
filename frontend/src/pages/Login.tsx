@@ -39,8 +39,27 @@ const Login: React.FC = () => {
       }, 100);
       
       // Don't set loading to false here since we're redirecting
-    } catch (err) {
-      setError('Invalid username or password');
+    } catch (err: any) {
+      console.error('Login error:', err);
+      
+      // Check if this is an email verification error
+      if (err.response?.status === 403 && err.response?.data?.verification_required) {
+        // Redirect to verification pending page
+        navigate('/verification-pending', { 
+          state: { email: err.response.data.email } 
+        });
+        return;
+      }
+      
+      // Handle other errors
+      let message = 'Invalid username or password';
+      if (err.response?.data?.message) {
+        message = err.response.data.message;
+      } else if (err.response?.data?.error) {
+        message = err.response.data.error;
+      }
+      
+      setError(message);
       setLoading(false);
     }
   };
