@@ -5,7 +5,7 @@ import { ThemeContextProvider } from './contexts/ThemeContext';
 import Layout from './components/Layout';
 import PrivateRoute from './components/PrivateRoute';
 import Login from './components/Login';
-import Register from './components/Register';
+import Register from './pages/Register';
 import PasswordReset from './components/PasswordReset';
 import PasswordResetConfirm from './components/PasswordResetConfirm';
 import Dashboard from './pages/Dashboard';
