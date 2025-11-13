@@ -34,6 +34,10 @@ cp -r build/static/* ../price_adjust_pro/staticfiles/static/
 # Copy asset-manifest.json to the root
 cp build/asset-manifest.json ../price_adjust_pro/staticfiles/
 
+# Copy index.html to Django templates directory
+mkdir -p ../price_adjust_pro/templates/
+cp build/index.html ../price_adjust_pro/templates/index.html
+
 cd ..
 
 # Collect static files
