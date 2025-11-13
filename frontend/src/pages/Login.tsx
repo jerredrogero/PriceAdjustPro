@@ -46,7 +46,10 @@ const Login: React.FC = () => {
       if (err.response?.status === 403 && err.response?.data?.verification_required) {
         // Redirect to verification pending page
         navigate('/verification-pending', { 
-          state: { email: err.response.data.email } 
+          state: { 
+            email: err.response.data.email,
+            username: username
+          } 
         });
         return;
       }

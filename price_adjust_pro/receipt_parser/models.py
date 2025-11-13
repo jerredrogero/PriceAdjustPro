@@ -73,9 +73,11 @@ class UserProfile(models.Model):
 class EmailVerificationToken(models.Model):
     """
     Stores email verification tokens for new user signups.
+    Supports both token-based (link) and code-based (6-digit) verification.
     """
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='verification_tokens')
     token = models.CharField(max_length=64, unique=True, db_index=True)
+    code = models.CharField(max_length=6, db_index=True, null=True, blank=True, help_text='6-digit verification code')
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField()
     is_used = models.BooleanField(default=False)
@@ -87,16 +89,26 @@ class EmailVerificationToken(models.Model):
         verbose_name_plural = 'Email Verification Tokens'
     
     def __str__(self):
-        return f"Verification token for {self.user.email} ({'Used' if self.is_used else 'Active'})"
+        return f"Verification code {self.code} for {self.user.email} ({'Used' if self.is_used else 'Active'})"
     
     @classmethod
     def create_token(cls, user):
-        """Create a new verification token for a user."""
+        """Create a new verification token and code for a user."""
+        import random
+        
+        # Generate URL-safe token for link-based verification (backup)
         token = secrets.token_urlsafe(48)
-        expires_at = timezone.now() + timezone.timedelta(hours=24)  # 24 hour expiration
+        
+        # Generate 6-digit code for in-app verification (primary method)
+        code = ''.join([str(random.randint(0, 9)) for _ in range(6)])
+        
+        # Set expiration to 30 minutes for code-based verification
+        expires_at = timezone.now() + timezone.timedelta(minutes=30)
+        
         return cls.objects.create(
             user=user,
             token=token,
+            code=code,
             expires_at=expires_at
         )
     

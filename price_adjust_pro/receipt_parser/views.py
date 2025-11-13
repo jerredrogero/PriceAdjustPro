@@ -961,24 +961,21 @@ def api_register(request):
         # Create verification token
         verification_token = EmailVerificationToken.create_token(user)
         
-        # Build verification URL
-        protocol = 'https' if not settings.DEBUG else 'http'
-        domain = request.get_host()
-        verification_url = f"{protocol}://{domain}/api/auth/verify-email/{verification_token.token}/"
-        
-        # Send verification email
+        # Send verification email with 6-digit code
         try:
-            subject = 'Verify your PriceAdjustPro account'
+            subject = 'Your PriceAdjustPro Verification Code'
             message = f"""
 Hi {user.first_name or user.username},
 
 Thank you for signing up for PriceAdjustPro!
 
-Please verify your email address by clicking the link below:
+Your verification code is:
 
-{verification_url}
+{verification_token.code}
 
-This link will expire in 24 hours.
+Enter this code in the app to verify your email address.
+
+This code will expire in 30 minutes.
 
 If you didn't create this account, you can safely ignore this email.
 
@@ -993,14 +990,15 @@ The PriceAdjustPro Team
                 [user.email],
                 fail_silently=False,
             )
-            logger.info(f"Verification email sent to {user.email}")
+            logger.info(f"Verification code sent to {user.email}")
         except Exception as e:
             logger.error(f"Failed to send verification email: {str(e)}")
             # Don't fail registration if email fails - user can request resend
         
         return JsonResponse({
-            'message': 'Account created successfully. Please check your email to verify your account.',
+            'message': 'Account created successfully. Please check your email for your verification code.',
             'email': user.email,
+            'username': user.username,
             'verification_required': True
         })
 
@@ -1046,6 +1044,91 @@ def api_verify_email(request, token):
         logger.error(f"Email verification error: {str(e)}")
         return JsonResponse({'error': 'An error occurred during verification'}, status=500)
 
+@csrf_exempt
+def api_verify_code(request):
+    """API endpoint to verify user email with 6-digit code."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    
+    try:
+        data = json.loads(request.body)
+        username = data.get('username')
+        email = data.get('email')
+        code = data.get('code', '').strip()
+        
+        if not code:
+            return JsonResponse({'error': 'Verification code is required'}, status=400)
+        
+        if len(code) != 6 or not code.isdigit():
+            return JsonResponse({'error': 'Please enter a valid 6-digit code'}, status=400)
+        
+        # Find user by username or email
+        user = None
+        if username:
+            try:
+                user = User.objects.get(username=username)
+            except User.DoesNotExist:
+                pass
+        
+        if not user and email:
+            try:
+                user = User.objects.get(email=email)
+            except User.DoesNotExist:
+                pass
+        
+        if not user:
+            return JsonResponse({'error': 'User not found'}, status=404)
+        
+        # Check if already verified
+        try:
+            profile = user.profile
+            if profile.is_email_verified:
+                return JsonResponse({'error': 'Email is already verified'}, status=400)
+        except:
+            pass
+        
+        # Find the verification token by code
+        verification_token = EmailVerificationToken.objects.filter(
+            user=user,
+            code=code,
+            is_used=False
+        ).first()
+        
+        if not verification_token:
+            return JsonResponse({
+                'error': 'Invalid verification code. Please check the code and try again.'
+            }, status=400)
+        
+        if verification_token.is_expired:
+            return JsonResponse({
+                'error': 'This verification code has expired. Please request a new one.'
+            }, status=400)
+        
+        # Mark token as used
+        verification_token.is_used = True
+        verification_token.used_at = timezone.now()
+        verification_token.save()
+        
+        # Mark user's email as verified
+        profile = user.profile
+        profile.is_email_verified = True
+        profile.email_verified_at = timezone.now()
+        profile.save()
+        
+        logger.info(f"Email verified for user: {user.email} using code")
+        
+        return JsonResponse({
+            'message': 'Email verified successfully! You can now log in.',
+            'verified': True,
+            'username': user.username
+        })
+        
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        logger.error(f"Email verification error: {str(e)}")
+        return JsonResponse({'error': 'An error occurred during verification'}, status=500)
+
 def api_resend_verification(request):
     """API endpoint to resend verification email."""
     if request.method != 'POST':
@@ -1077,22 +1160,19 @@ def api_resend_verification(request):
         # Create new verification token
         verification_token = EmailVerificationToken.create_token(user)
         
-        # Build verification URL
-        protocol = 'https' if not settings.DEBUG else 'http'
-        domain = request.get_host()
-        verification_url = f"{protocol}://{domain}/api/auth/verify-email/{verification_token.token}/"
-        
-        # Send verification email
+        # Send verification email with new 6-digit code
         try:
-            subject = 'Verify your PriceAdjustPro account'
+            subject = 'Your PriceAdjustPro Verification Code'
             message = f"""
 Hi {user.first_name or user.username},
 
-Here's your new verification link for PriceAdjustPro:
+Here's your new verification code for PriceAdjustPro:
 
-{verification_url}
+{verification_token.code}
 
-This link will expire in 24 hours.
+Enter this code in the app to verify your email address.
+
+This code will expire in 30 minutes.
 
 If you didn't request this, you can safely ignore this email.
 
@@ -1107,7 +1187,7 @@ The PriceAdjustPro Team
                 [user.email],
                 fail_silently=False,
             )
-            logger.info(f"Verification email resent to {user.email}")
+            logger.info(f"New verification code sent to {user.email}")
         except Exception as e:
             logger.error(f"Failed to send verification email: {str(e)}")
             return JsonResponse({'error': 'Failed to send verification email'}, status=500)
@@ -1130,24 +1210,21 @@ def register(request):
             # Create verification token
             verification_token = EmailVerificationToken.create_token(user)
             
-            # Build verification URL
-            protocol = 'https' if not settings.DEBUG else 'http'
-            domain = request.get_host()
-            verification_url = f"{protocol}://{domain}/api/auth/verify-email/{verification_token.token}/"
-            
-            # Send verification email
+            # Send verification email with 6-digit code
             try:
-                subject = 'Verify your PriceAdjustPro account'
+                subject = 'Your PriceAdjustPro Verification Code'
                 message = f"""
 Hi {user.username},
 
 Thank you for signing up for PriceAdjustPro!
 
-Please verify your email address by clicking the link below:
+Your verification code is:
 
-{verification_url}
+{verification_token.code}
 
-This link will expire in 24 hours.
+Enter this code on the website to verify your email address.
+
+This code will expire in 30 minutes.
 
 If you didn't create this account, you can safely ignore this email.
 
@@ -1162,8 +1239,8 @@ The PriceAdjustPro Team
                     [user.email],
                     fail_silently=False,
                 )
-                logger.info(f"Verification email sent to {user.email}")
-                messages.success(request, 'Account created successfully! Please check your email to verify your account.')
+                logger.info(f"Verification code sent to {user.email}")
+                messages.success(request, 'Account created successfully! Please check your email for your verification code.')
             except Exception as e:
                 logger.error(f"Failed to send verification email: {str(e)}")
                 messages.warning(request, 'Account created, but we could not send a verification email. Please contact support.')

@@ -56,9 +56,12 @@ const Register: React.FC = () => {
       
       // Check if verification is required
       if (response.data.verification_required) {
-        // Redirect to verification pending page with email
+        // Redirect to verification pending page with email and username
         navigate('/verification-pending', { 
-          state: { email: response.data.email } 
+          state: { 
+            email: response.data.email,
+            username: response.data.username || username
+          } 
         });
       } else {
         // Old behavior - shouldn't happen with new backend, but keep as fallback

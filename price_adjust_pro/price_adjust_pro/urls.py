@@ -244,24 +244,21 @@ def api_register(request):
             from receipt_parser.models import EmailVerificationToken
             verification_token = EmailVerificationToken.create_token(user)
             
-            # Build verification URL
-            protocol = 'https' if not settings.DEBUG else 'http'
-            domain = request.get_host()
-            verification_url = f"{protocol}://{domain}/api/auth/verify-email/{verification_token.token}/"
-            
-            # Send verification email
+            # Send verification email with 6-digit code
             try:
-                subject = 'Verify your PriceAdjustPro account'
+                subject = 'Your PriceAdjustPro Verification Code'
                 message = f"""
 Hi {user.first_name or user.username},
 
 Thank you for signing up for PriceAdjustPro!
 
-Please verify your email address by clicking the link below:
+Your verification code is:
 
-{verification_url}
+{verification_token.code}
 
-This link will expire in 24 hours.
+Enter this code in the app to verify your email address.
+
+This code will expire in 30 minutes.
 
 If you didn't create this account, you can safely ignore this email.
 
@@ -276,14 +273,15 @@ The PriceAdjustPro Team
                     [user.email],
                     fail_silently=False,
                 )
-                print(f"Verification email sent to {user.email}")
+                print(f"Verification code sent to {user.email}")
             except Exception as e:
                 print(f"Failed to send verification email: {str(e)}")
                 # Don't fail registration if email fails - user can request resend
             
             return JsonResponse({
-                'message': 'Account created successfully. Please check your email to verify your account.',
+                'message': 'Account created successfully. Please check your email for your verification code.',
                 'email': user.email,
+                'username': username,
                 'verification_required': True
             })
         except Exception as e:

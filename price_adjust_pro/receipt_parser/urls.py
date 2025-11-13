@@ -37,6 +37,7 @@ api_urlpatterns = [
     
     # Authentication API endpoints
     path('auth/verify-email/<str:token>/', views.api_verify_email, name='api_verify_email'),
+    path('auth/verify-code/', views.api_verify_code, name='api_verify_code'),
     path('auth/resend-verification/', views.api_resend_verification, name='api_resend_verification'),
     
     # Subscription API endpoints
