@@ -8,6 +8,11 @@ pip install -r requirements.txt
 # Build React frontend
 cd frontend
 export NODE_OPTIONS="--max-old-space-size=4096"
+
+# Clear old build and cache
+rm -rf build
+rm -rf node_modules/.cache
+
 npm install
 mkdir -p build/static  # Ensure build directory exists
 CI=false GENERATE_SOURCEMAP=false npm run build:production
