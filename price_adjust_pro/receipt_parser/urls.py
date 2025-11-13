@@ -36,8 +36,9 @@ api_urlpatterns = [
     path('on-sale/', views.api_on_sale, name='api_on_sale'),
     
     # Authentication API endpoints
-    path('auth/verify-email/<str:token>/', views.api_verify_email, name='api_verify_email'),
-    path('auth/verify-code/', views.api_verify_code, name='api_verify_code'),
+    path('auth/verify-email/<str:token>/', views.api_verify_email, name='api_verify_email'),  # Link-based (web)
+    path('auth/verify-email/', views.api_verify_code, name='api_verify_email_ios'),  # POST with code (iOS app)
+    path('auth/verify-code/', views.api_verify_code, name='api_verify_code'),  # Alias for web app
     path('auth/resend-verification/', views.api_resend_verification, name='api_resend_verification'),
     
     # Subscription API endpoints

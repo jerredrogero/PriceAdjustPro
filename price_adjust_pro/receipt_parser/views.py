@@ -1046,7 +1046,10 @@ def api_verify_email(request, token):
 
 @csrf_exempt
 def api_verify_code(request):
-    """API endpoint to verify user email with 6-digit code."""
+    """
+    API endpoint to verify user email with 6-digit code.
+    Supports both web app format (username/email + code) and iOS app format (code only).
+    """
     if request.method != 'POST':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
     
@@ -1062,34 +1065,8 @@ def api_verify_code(request):
         if len(code) != 6 or not code.isdigit():
             return JsonResponse({'error': 'Please enter a valid 6-digit code'}, status=400)
         
-        # Find user by username or email
-        user = None
-        if username:
-            try:
-                user = User.objects.get(username=username)
-            except User.DoesNotExist:
-                pass
-        
-        if not user and email:
-            try:
-                user = User.objects.get(email=email)
-            except User.DoesNotExist:
-                pass
-        
-        if not user:
-            return JsonResponse({'error': 'User not found'}, status=404)
-        
-        # Check if already verified
-        try:
-            profile = user.profile
-            if profile.is_email_verified:
-                return JsonResponse({'error': 'Email is already verified'}, status=400)
-        except:
-            pass
-        
-        # Find the verification token by code
+        # Find the verification token by code first (for iOS app - code only)
         verification_token = EmailVerificationToken.objects.filter(
-            user=user,
             code=code,
             is_used=False
         ).first()
@@ -1104,6 +1081,16 @@ def api_verify_code(request):
                 'error': 'This verification code has expired. Please request a new one.'
             }, status=400)
         
+        user = verification_token.user
+        
+        # Check if already verified
+        try:
+            profile = user.profile
+            if profile.is_email_verified:
+                return JsonResponse({'error': 'Email is already verified'}, status=400)
+        except:
+            pass
+        
         # Mark token as used
         verification_token.is_used = True
         verification_token.used_at = timezone.now()
@@ -1117,10 +1104,24 @@ def api_verify_code(request):
         
         logger.info(f"Email verified for user: {user.email} using code")
         
+        # Get account type for iOS app response
+        account_type = 'paid' if profile.is_paid_account else 'free'
+        
+        # Return format compatible with both web and iOS app
         return JsonResponse({
-            'message': 'Email verified successfully! You can now log in.',
+            'message': 'Email verified successfully',
             'verified': True,
-            'username': user.username
+            'user': {
+                'id': user.id,
+                'email': user.email,
+                'username': user.username,
+                'first_name': user.first_name,
+                'last_name': user.last_name,
+                'is_email_verified': True,
+                'account_type': account_type,
+                'receipt_count': user.receipts.count(),
+                'receipt_limit': 5 if account_type == 'free' else 999999,
+            }
         })
         
     except json.JSONDecodeError:
