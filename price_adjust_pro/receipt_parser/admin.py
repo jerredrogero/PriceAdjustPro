@@ -31,6 +31,7 @@ from django.utils.safestring import mark_safe
 from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import path, reverse
 from django.contrib.auth import login
+from django.core.mail import send_mail
 from django.contrib.sessions.models import Session
 import os
 import logging
@@ -46,6 +47,102 @@ def get_or_create_user_profile(user):
         return user.profile
     except UserProfile.DoesNotExist:
         return UserProfile.objects.create(user=user)
+
+
+def send_admin_verification_email(user, initiated_by=None):
+    """
+    Generate a fresh verification code for the user and email it.
+
+    Raises:
+        ValueError: If the user has no email address on file.
+        Exception: If sending the email fails.
+    """
+    if not user.email:
+        raise ValueError('User has no email address on file.')
+
+    # Invalidate any active codes before issuing a fresh one
+    EmailVerificationToken.objects.filter(user=user, is_used=False).update(is_used=True)
+
+    verification_token = EmailVerificationToken.create_token(user)
+    greeting_name = user.first_name or user.username or 'there'
+
+    intro_line = (
+        "A member of the PriceAdjustPro support team just sent you a new verification code "
+        "so you can finish securing your account."
+    )
+
+    message = f"""
+Hi {greeting_name},
+
+{intro_line}
+
+Your verification code is:
+
+{verification_token.code}
+
+Enter this code in the app or website to verify your email address.
+
+This code will expire in 30 minutes.
+
+If you didn't request this, you can safely ignore this email.
+
+Best regards,
+The PriceAdjustPro Team
+"""
+
+    send_mail(
+        'Your PriceAdjustPro Verification Code',
+        message,
+        settings.DEFAULT_FROM_EMAIL,
+        [user.email],
+        fail_silently=False,
+    )
+
+    logger.info(
+        "Admin-triggered verification code sent to %s by %s",
+        user.email,
+        initiated_by or 'system',
+    )
+    return verification_token
+
+
+def resend_codes_for_users(request, admin_obj, users):
+    """Common helper to resend verification codes for admin actions."""
+    sent = 0
+    for user in users:
+        profile = get_or_create_user_profile(user)
+        if profile.is_email_verified:
+            admin_obj.message_user(
+                request,
+                f'{user.username} is already verified; skipped.',
+                level=messages.INFO,
+            )
+            continue
+
+        try:
+            send_admin_verification_email(user, initiated_by=request.user.username)
+            sent += 1
+        except ValueError as exc:
+            admin_obj.message_user(
+                request,
+                f'{user.username}: {exc}',
+                level=messages.WARNING,
+            )
+        except Exception as exc:
+            logger.error("Failed to send verification email to %s: %s", user.email, exc)
+            admin_obj.message_user(
+                request,
+                f'{user.username}: Failed to send verification email.',
+                level=messages.ERROR,
+            )
+
+    if sent:
+        admin_obj.message_user(
+            request,
+            f'Sent verification emails to {sent} user(s).',
+            level=messages.SUCCESS,
+        )
+    return sent
 
 # Customize admin site
 admin.site.site_header = 'PriceAdjustPro Administration'
@@ -63,7 +160,7 @@ class CustomUserAdmin(HijackUserAdminMixin, UserAdmin):
     list_filter = ('is_active', 'is_staff', 'date_joined')
     readonly_fields = ('date_joined', 'last_login')
     ordering = ('-date_joined',)
-    actions = ['upgrade_to_paid', 'downgrade_to_free']
+    actions = ['upgrade_to_paid', 'downgrade_to_free', 'resend_two_factor_email']
     
     # Limit what fields can be changed
     fieldsets = (
@@ -173,6 +270,11 @@ class CustomUserAdmin(HijackUserAdminMixin, UserAdmin):
         
         messages.success(request, f'Successfully deleted {len(queryset)} user(s) and all related data.')
 
+    def resend_two_factor_email(self, request, queryset):
+        """Send a fresh verification code email to each selected user."""
+        resend_codes_for_users(request, self, queryset)
+    resend_two_factor_email.short_description = "🔐 Resend verification email"
+
 csrf_protect_m = method_decorator(csrf_protect)
 
 @admin.register(UserProfile)
@@ -183,7 +285,7 @@ class UserProfileAdmin(admin.ModelAdmin):
     readonly_fields = ('created_at', 'updated_at', 'email_verified_at')
     raw_id_fields = ('user',)
     ordering = ('-created_at',)
-    actions = ['upgrade_to_paid', 'downgrade_to_free']
+    actions = ['upgrade_to_paid', 'downgrade_to_free', 'resend_two_factor_email']
     
     def upgrade_to_paid(self, request, queryset):
         """Upgrade selected profiles to paid accounts."""
@@ -196,6 +298,12 @@ class UserProfileAdmin(admin.ModelAdmin):
         count = queryset.filter(account_type='paid').update(account_type='free', is_premium=False, subscription_type='free')
         self.message_user(request, f'{count} user(s) downgraded to free accounts.')
     downgrade_to_free.short_description = "🆓 Downgrade to Free Account"
+
+    def resend_two_factor_email(self, request, queryset):
+        """Send a fresh verification code email to profile owners."""
+        users = [profile.user for profile in queryset.select_related('user')]
+        resend_codes_for_users(request, self, users)
+    resend_two_factor_email.short_description = "🔐 Resend verification email"
 
 @admin.register(EmailVerificationToken)
 class EmailVerificationTokenAdmin(admin.ModelAdmin):
