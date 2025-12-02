@@ -24,6 +24,10 @@ services:
         value: https://priceadjustpro.onrender.com
       - key: GEMINI_API_KEY
         sync: false  # This will prompt you to enter the value during deployment
+      - key: EMAIL_HOST_USER
+        sync: false
+      - key: EMAIL_HOST_PASSWORD
+        sync: false
 
 databases:
   - name: priceadjustpro-db

@@ -14,9 +14,17 @@ from pathlib import Path
 import os
 from dotenv import load_dotenv
 import dj_database_url
+from django.core.exceptions import ImproperlyConfigured
 
 # Load environment variables from .env file
 load_dotenv()
+
+
+def env_to_bool(value: str | None, default: bool = False) -> bool:
+    """Normalize truthy environment variables."""
+    if value is None:
+        return default
+    return value.strip().lower() in {'1', 'true', 'yes', 'on'}
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -193,38 +201,36 @@ DATA_UPLOAD_MAX_NUMBER_FIELDS = 10000  # Default is 1000
 RECEIPT_KEEP_FILES = False  # Set to True for debugging
 RECEIPT_TEMP_DIR = '/tmp/receipt_processing'
 
-# Email configuration for password reset
-if DEBUG:
-    # In development, use console backend - prints emails to console
+# Email configuration
+EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.mail.me.com')
+EMAIL_PORT = int(os.getenv('EMAIL_PORT', 587))
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '').strip()
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '').strip()
+EMAIL_USE_TLS = env_to_bool(os.getenv('EMAIL_USE_TLS'), True)
+EMAIL_USE_SSL = env_to_bool(os.getenv('EMAIL_USE_SSL'), False)
+EMAIL_TIMEOUT = int(os.getenv('EMAIL_TIMEOUT', 30))
+
+DEFAULT_FROM_EMAIL = (
+    os.getenv('DEFAULT_FROM_EMAIL')
+    or EMAIL_HOST_USER
+    or 'noreply@priceadjustpro.com'
+)
+
+EMAIL_CREDENTIALS_CONFIGURED = bool(EMAIL_HOST_USER and EMAIL_HOST_PASSWORD)
+
+if EMAIL_CREDENTIALS_CONFIGURED:
+    EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+elif DEBUG:
+    # Fall back to console backend locally so development keeps working
     EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 else:
-    # In production, use SMTP
-    EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-    EMAIL_HOST = 'smtp.mail.me.com'
-    EMAIL_PORT = 587
-    EMAIL_USE_TLS = True
-    EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER')
-    EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')
+    raise ImproperlyConfigured(
+        'EMAIL_HOST_USER and EMAIL_HOST_PASSWORD must be set when DEBUG=False.'
+    )
 
-DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@priceadjustpro.com')
-EMAIL_TIMEOUT = 30
-
-# SSL settings for email
-if DEBUG:
-    # In development, use console backend if no email credentials are provided
-    if not os.getenv('EMAIL_HOST_PASSWORD'):
-        EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
-    else:
-        # For development with real email, disable SSL verification
-        import ssl
-        EMAIL_USE_SSL = False
-        EMAIL_USE_TLS = True
-        EMAIL_SSL_CERTFILE = None
-        EMAIL_SSL_KEYFILE = None
-else:
-    # Production settings - keep SSL verification enabled
-    EMAIL_USE_SSL = False
-    EMAIL_USE_TLS = True
+# TLS/SSL mutual exclusivity safeguards
+if EMAIL_USE_SSL:
+    EMAIL_USE_TLS = False
 
 # Password reset settings
 PASSWORD_RESET_TIMEOUT = 3600  # 1 hour in seconds

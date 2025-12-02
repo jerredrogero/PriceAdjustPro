@@ -71,6 +71,15 @@ npm start
 - Frontend development server runs on http://localhost:3000
 - API endpoints are proxied from the frontend to the backend
 
+## Email configuration
+
+Verification and password reset emails require SMTP credentials. Set the
+`EMAIL_HOST_USER` and `EMAIL_HOST_PASSWORD` environment variables (along with
+optional overrides such as `EMAIL_HOST`, `EMAIL_PORT`, and `DEFAULT_FROM_EMAIL`)
+before deploying to production. Without these values, the app falls back to the
+console email backend in development and refuses to start in production so you
+don't accidentally ship without working email.
+
 ## Contributing
 
 1. Fork the repository
