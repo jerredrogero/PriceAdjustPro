@@ -264,6 +264,12 @@ def api_register(request):
             verification_token = EmailVerificationToken.create_token(user)
             
             # Send verification email with 6-digit code
+            print(f"Attempting to send verification email to: {user.email}")
+            print(f"Email backend: {settings.EMAIL_BACKEND}")
+            print(f"Email host: {settings.EMAIL_HOST}")
+            print(f"Email credentials configured: {settings.EMAIL_CREDENTIALS_CONFIGURED}")
+            print(f"From email: {settings.DEFAULT_FROM_EMAIL}")
+            
             try:
                 subject = 'Your PriceAdjustPro Verification Code'
                 message = f"""
@@ -285,16 +291,19 @@ Best regards,
 The PriceAdjustPro Team
                 """
                 
-                send_mail(
+                result = send_mail(
                     subject,
                     message,
                     settings.DEFAULT_FROM_EMAIL,
                     [user.email],
                     fail_silently=False,
                 )
-                print(f"Verification code sent to {user.email}")
+                print(f"Verification email send result: {result} (1=success, 0=failure)")
+                print(f"Verification code {verification_token.code} sent to {user.email}")
             except Exception as e:
+                import traceback
                 print(f"Failed to send verification email: {str(e)}")
+                print(f"Full traceback: {traceback.format_exc()}")
                 # Don't fail registration if email fails - user can request resend
             
             return JsonResponse({
