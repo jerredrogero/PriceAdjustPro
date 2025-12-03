@@ -34,10 +34,10 @@ interface SaleItem {
   id: number;
   item_code: string;
   description: string;
-  regular_price: number | null;
-  sale_price: number | null;
-  instant_rebate: number | null;
-  savings: number | null;
+  regular_price: number | string | null;
+  sale_price: number | string | null;
+  instant_rebate: number | string | null;
+  savings: number | string | null;
   sale_type: string;
   promotion: {
     title: string;
@@ -237,8 +237,18 @@ const OnSale: React.FC = () => {
     setCategoryFilter(event.target.value);
   };
 
-  const formatPrice = (price: number | null): string => {
-    return price ? `$${price.toFixed(2)}` : 'N/A';
+  const toNumber = (value: number | string | null | undefined): number | null => {
+    if (value === null || value === undefined) return null;
+    if (typeof value === 'number') {
+      return Number.isFinite(value) ? value : null;
+    }
+    const parsed = parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+
+  const formatPrice = (price: number | string | null): string => {
+    const numericPrice = toNumber(price);
+    return numericPrice !== null ? `$${numericPrice.toFixed(2)}` : 'N/A';
   };
 
   const formatEndDate = (dateString: string): string => {
@@ -494,41 +504,53 @@ const OnSale: React.FC = () => {
 
                 {/* Pricing Information */}
                 <Box mb={2}>
-                  {(sale.sale_type === 'discount_only' || sale.sale_type === 'instant_rebate') && sale.instant_rebate && !sale.sale_price ? (
-                    <Box>
-                      <Typography variant="h5" color="success.main" fontWeight="bold">
-                        ${sale.instant_rebate?.toFixed(2)} OFF
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        Discount applied at checkout
-                      </Typography>
-                    </Box>
-                  ) : (
-                    <Box>
-                      <Box display="flex" alignItems="baseline" gap={1}>
-                        <Typography variant="h5" color="success.main" fontWeight="bold">
-                          {formatPrice(sale.sale_price)}
-                        </Typography>
-                        {sale.regular_price && (
-                          <Typography 
-                            variant="body1" 
-                            color="text.secondary"
-                            sx={{ textDecoration: 'line-through' }}
-                          >
-                            {formatPrice(sale.regular_price)}
+                  {(() => {
+                    const instantRebate = toNumber(sale.instant_rebate);
+                    const salePrice = toNumber(sale.sale_price);
+                    const regularPrice = toNumber(sale.regular_price);
+                    const savings = toNumber(sale.savings);
+
+                    if ((sale.sale_type === 'discount_only' || sale.sale_type === 'instant_rebate') && 
+                        instantRebate !== null && salePrice === null) {
+                      return (
+                        <Box>
+                          <Typography variant="h5" color="success.main" fontWeight="bold">
+                            ${instantRebate.toFixed(2)} OFF
                           </Typography>
-                        )}
-                      </Box>
-                      {sale.savings && (
-                        <Box display="flex" alignItems="center" mt={1}>
-                          <SavingsIcon sx={{ fontSize: 16, color: 'success.main', mr: 0.5 }} />
-                          <Typography variant="body2" color="success.main" fontWeight="bold">
-                            Save ${sale.savings.toFixed(2)}
+                          <Typography variant="body2" color="text.secondary">
+                            Discount applied at checkout
                           </Typography>
                         </Box>
-                      )}
-                    </Box>
-                  )}
+                      );
+                    }
+
+                    return (
+                      <Box>
+                        <Box display="flex" alignItems="baseline" gap={1}>
+                          <Typography variant="h5" color="success.main" fontWeight="bold">
+                            {formatPrice(salePrice)}
+                          </Typography>
+                          {regularPrice !== null && (
+                            <Typography 
+                              variant="body1" 
+                              color="text.secondary"
+                              sx={{ textDecoration: 'line-through' }}
+                            >
+                              {formatPrice(regularPrice)}
+                            </Typography>
+                          )}
+                        </Box>
+                        {savings !== null && (
+                          <Box display="flex" alignItems="center" mt={1}>
+                            <SavingsIcon sx={{ fontSize: 16, color: 'success.main', mr: 0.5 }} />
+                            <Typography variant="body2" color="success.main" fontWeight="bold">
+                              Save ${savings.toFixed(2)}
+                            </Typography>
+                          </Box>
+                        )}
+                      </Box>
+                    );
+                  })()}
                 </Box>
 
                 {/* Time Remaining */}
