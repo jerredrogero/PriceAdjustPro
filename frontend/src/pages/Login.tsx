@@ -10,6 +10,8 @@ import {
   Link,
   Box,
   Alert,
+  Checkbox,
+  FormControlLabel,
 } from '@mui/material';
 import { Login as LoginIcon } from '@mui/icons-material';
 import api from '../api/axios';
@@ -20,6 +22,19 @@ const Login: React.FC = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [rememberMe, setRememberMe] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return true;
+    const stored = window.localStorage.getItem('rememberMe');
+    return stored === null ? true : stored === 'true';
+  });
+
+  const persistRememberMe = (value: boolean) => {
+    try {
+      window.localStorage.setItem('rememberMe', value ? 'true' : 'false');
+    } catch (storageError) {
+      console.warn('Unable to persist rememberMe preference', storageError);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,6 +45,7 @@ const Login: React.FC = () => {
       await api.post('/api/auth/login/', {
         username,
         password,
+        remember_me: rememberMe,
       });
       
       // Give a small delay to ensure session cookies are properly set
@@ -103,6 +119,20 @@ const Login: React.FC = () => {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
+              sx={{ mb: 3 }}
+            />
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={rememberMe}
+                  onChange={(e) => {
+                    setRememberMe(e.target.checked);
+                    persistRememberMe(e.target.checked);
+                  }}
+                  color="primary"
+                />
+              }
+              label="Remember me on this device"
               sx={{ mb: 3 }}
             />
             <Button

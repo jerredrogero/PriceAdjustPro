@@ -51,8 +51,19 @@ def api_login(request):
         try:
             print("Login attempt received")
             data = json.loads(request.body)
+            
+            def parse_bool(value, default=False):
+                if isinstance(value, bool):
+                    return value
+                if isinstance(value, str):
+                    return value.strip().lower() in ['1', 'true', 'yes', 'on']
+                if isinstance(value, (int, float)):
+                    return value != 0
+                return default
+            
             username = data.get('username')
             password = data.get('password')
+            remember_me = parse_bool(data.get('remember_me'), default=False)
             
             if not username or not password:
                 print(f"Login error: Missing username or password")
@@ -88,8 +99,9 @@ def api_login(request):
                 # User is verified, proceed with login
                 login(request, user)
                 
-                # Set session cookie attributes
-                request.session.set_expiry(1209600)  # 2 weeks
+                # Set session cookie attributes based on remember_me preference
+                session_duration = settings.SESSION_COOKIE_AGE if remember_me else None
+                request.session.set_expiry(session_duration if session_duration else 0)
                 
                 # Ensure CSRF token is set
                 csrf_token = get_token(request)
@@ -106,6 +118,7 @@ def api_login(request):
                     'last_name': user.last_name,
                     'account_type': account_type,
                     'is_paid_account': is_paid_account,
+                    'remember_me': remember_me,
                 })
                 
                 # Set CSRF cookie explicitly
@@ -121,14 +134,19 @@ def api_login(request):
                 
                 # Also set session cookie explicitly if needed
                 if request.session.session_key:
+                    session_cookie_kwargs = {
+                        'secure': not settings.DEBUG,
+                        'httponly': settings.SESSION_COOKIE_HTTPONLY,
+                        'samesite': settings.SESSION_COOKIE_SAMESITE,
+                        'domain': settings.SESSION_COOKIE_DOMAIN if not settings.DEBUG else None,
+                    }
+                    if session_duration:
+                        session_cookie_kwargs['max_age'] = session_duration
+                    
                     response.set_cookie(
                         settings.SESSION_COOKIE_NAME,
                         request.session.session_key,
-                        max_age=settings.SESSION_COOKIE_AGE,
-                        secure=not settings.DEBUG,
-                        httponly=settings.SESSION_COOKIE_HTTPONLY,
-                        samesite=settings.SESSION_COOKIE_SAMESITE,
-                        domain=settings.SESSION_COOKIE_DOMAIN if not settings.DEBUG else None
+                        **session_cookie_kwargs
                     )
                 
                 print(f"Login response prepared for {username}")

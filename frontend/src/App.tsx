@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { Box, CircularProgress } from '@mui/material';
 import { ThemeContextProvider } from './contexts/ThemeContext';
@@ -43,6 +43,7 @@ const AppContent: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const location = useLocation();
+  const hasCheckedAuthRef = useRef(false);
 
   useEffect(() => {
     console.log('App.tsx: useEffect triggered for path:', location.pathname);
@@ -61,15 +62,15 @@ const AppContent: React.FC = () => {
     console.log('App.tsx: isPublicPage check:', isPublicPage, 'for path:', location.pathname);
     console.log('App.tsx: maybeFromHijack:', maybeFromHijack);
 
-    if (isPublicPage) {
-      console.log('App.tsx: On public page, skipping auth check:', location.pathname);
+    const shouldSkipAuthCheck = isPublicPage && hasCheckedAuthRef.current;
+    if (shouldSkipAuthCheck) {
+      console.log('App.tsx: Public page with prior auth state, skipping check.');
       setLoading(false);
       setAuthChecked(true);
-      setUser(null);
       return;
     }
 
-    console.log('App.tsx: On protected page, running auth check for:', location.pathname);
+    console.log('App.tsx: Running auth check for path:', location.pathname);
 
     const checkAuth = async () => {
       console.log('App.tsx: Checking authentication for path:', location.pathname);
@@ -96,6 +97,7 @@ const AppContent: React.FC = () => {
       setUser(null);
     }, 5000); // 5 second timeout
 
+    hasCheckedAuthRef.current = true;
     checkAuth().finally(() => {
       clearTimeout(timeoutId);
     });
