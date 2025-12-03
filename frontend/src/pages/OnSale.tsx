@@ -211,7 +211,7 @@ const OnSale: React.FC = () => {
 
   const fetchCurrentSales = async () => {
     try {
-      const response = await fetch('/api/current-sales/', {
+      const response = await fetch('/api/on-sale/', {
         credentials: 'include',
       });
 

@@ -209,6 +209,7 @@ def api_register(request):
                     email=email,
                     password=password1
                 )
+                print(f"User {username} created successfully")
             else:
                 # iOS app format - create username from first name and email
                 print(f"iOS registration attempt for: {first_name} {last_name}, email: {email}")
