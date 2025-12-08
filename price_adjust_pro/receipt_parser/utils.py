@@ -42,6 +42,44 @@ from .models import (
 
 logger = logging.getLogger(__name__)
 
+def call_gemini_with_retry(model, content, max_retries=3):
+    """
+    Call Gemini API with retry logic for rate limits.
+    
+    Args:
+        model: The Gemini GenerativeModel instance
+        content: The content to send (prompt or [prompt, image_data])
+        max_retries: Maximum number of retry attempts
+    
+    Returns:
+        The response from Gemini
+    
+    Raises:
+        Exception: If all retries fail
+    """
+    import time
+    
+    for attempt in range(max_retries):
+        try:
+            response = model.generate_content(content, stream=False)
+            return response
+        except Exception as api_error:
+            error_str = str(api_error)
+            # Check if it's a rate limit error (429)
+            if '429' in error_str or 'quota' in error_str.lower() or 'rate' in error_str.lower():
+                if attempt < max_retries - 1:
+                    # Use exponential backoff: 30s, 60s, 90s
+                    wait_time = (attempt + 1) * 30
+                    logger.warning(f"Gemini API rate limited, waiting {wait_time}s before retry {attempt + 2}/{max_retries}")
+                    print(f"Gemini API rate limited, waiting {wait_time}s before retry {attempt + 2}/{max_retries}")
+                    time.sleep(wait_time)
+                    continue
+            # Not a rate limit error, or we've exhausted retries
+            raise
+    
+    # Should not reach here, but just in case
+    raise Exception("Max retries exceeded for Gemini API call")
+
 def extract_text_from_pdf(pdf_path: str) -> str:
     """Extract text from a PDF file using Gemini Vision."""
     try:
@@ -81,19 +119,23 @@ TOTAL INSTANT SAVINGS 3.00
         prompt = """This is a Costco receipt. Please extract all the text from this receipt, preserving the exact format and numbers. Pay special attention to:
 
 1. Item lines starting with 'E' followed by an item code and description
-2. Discount lines that follow items, which:
-   - End with a minus sign (e.g. "3.00-")
-   - Contain a forward slash followed by the item code (e.g. "/1726362")
-   - Show the instant savings amount
+2. Discount/rebate lines that follow items, which:
+   - End with a minus sign and amount (e.g. "2.00-" or "3.00-")
+   - May contain the item code (with or without forward slash)
+   - May say "INSTANT REBATE", "INSTANT SAVINGS", "MFR COUPON"
+   - Show the instant savings amount for the PREVIOUS item
 3. Store location and number
 4. Transaction date and number
 5. Subtotal, tax, and total amounts
 6. Total instant savings amount
 
-Example format to look for:
+Example formats (all are valid discount lines):
 E 1347776 KS WD FL HNY 12.99 3
-346014 /1347776 3.00-
-E 1726362 POUCH 13.89 3
+346014 /1347776 3.00-           <- with forward slash
+E 1726362 POUCH 7.69 1
+1726362 2.00-                   <- without forward slash
+E 9876543 ITEM 5.99 1
+INSTANT REBATE 1.50-            <- labeled discount
 
 Output the text exactly as it appears, maintaining line breaks and spacing."""
         
@@ -103,11 +145,10 @@ Output the text exactly as it appears, maintaining line breaks and spacing."""
             "data": base64.b64encode(pdf_content).decode('utf-8')
         }
         
-        # Generate response
-        response = model.generate_content([prompt, image_data], stream=False)
-        
-        # Return the extracted text
+        # Generate response with retry logic for rate limits
+        response = call_gemini_with_retry(model, [prompt, image_data])
         return response.text
+        
     except Exception as e:
         print(f"Error extracting text from PDF: {str(e)}")
         raise
@@ -128,26 +169,41 @@ items: List each item with:
 - description: The item description
 - price: The final price shown
 - is_taxable: Y/N (look for Y after the price)
-- instant_savings: The amount from the discount line that follows (e.g. "346014 /1726362 3.00-"), null if no discount line
+- instant_savings: The amount from the discount line that follows, null if no discount line
 - original_price: Calculate by adding price + instant_savings, null if no instant savings
 
-IMPORTANT: Look for discount lines that follow item lines. These lines:
-1. End with a minus sign (e.g. "3.00-")
-2. Contain a forward slash followed by the item code (e.g. "/1726362")
-3. The amount is the instant savings for the previous item
+IMPORTANT: Look for discount/rebate lines that follow item lines. These lines can appear in several formats:
+1. End with a minus sign and amount (e.g. "2.00-" or "3.00-")
+2. May contain the item code with or without a forward slash (e.g. "/1726362" or just "1726362")
+3. May say "INSTANT REBATE", "INSTANT SAVINGS", "MFR COUPON", or similar
+4. The discount amount applies to the PREVIOUS item line
 
-CRITICAL: Only count discount lines that IMMEDIATELY follow an item line and contain a forward slash with an item code.
-DO NOT count lines like "TOTAL INSTANT SAVINGS" or summary lines as discount lines.
-DO NOT extract instant_savings from summary text at the bottom of the receipt.
+Common discount line formats:
+- "346014 /1347776 3.00-" (with forward slash)
+- "1347776 2.00-" (just item code and amount)
+- "INSTANT REBATE 1347776 2.00-"
+- "MFR COUPON 2.00-"
+
+CRITICAL: 
+- Only count discount lines that IMMEDIATELY follow an item line
+- DO NOT count "TOTAL INSTANT SAVINGS" or summary lines at the bottom
+- If a line ends with a number followed by a minus sign (like "2.00-"), it's likely a discount
 
 Example receipt text:
-E 1347776 KS WD FL HNY 12.99 3
+E 1347776 KS WD FL HNY 9.99 3
 346014 /1347776 3.00-
-E 1726362 POUCH 13.89 3
+E 1726362 POUCH 7.69 1
+1726362 2.00-
+E 9876543 MILK 4.99 1
+
+In this example:
+- Item 1347776 has instant_savings of 3.00 (original_price = 9.99 + 3.00 = 12.99)
+- Item 1726362 has instant_savings of 2.00 (original_price = 7.69 + 2.00 = 9.69)
+- Item 9876543 has no discount (instant_savings = null)
 
 For each item:
-1. Look for a discount line immediately following it
-2. If found, extract the amount before the minus sign as instant_savings
+1. Look at the line(s) immediately following the item
+2. If a line ends with a minus sign (e.g. "2.00-"), extract that amount as instant_savings
 3. Add instant_savings to the price to get original_price
 
 Format each item line as: "item_code, description, price, is_taxable, instant_savings, original_price"
@@ -185,8 +241,8 @@ Parse this receipt:
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel('gemini-2.0-flash')
 
-        # Generate response
-        response = model.generate_content(prompt.format(text=text), stream=False)
+        # Generate response with retry logic for rate limits
+        response = call_gemini_with_retry(model, prompt.format(text=text))
         
         # Print raw response for debugging
         print("Raw Gemini Response:", response.text)
@@ -651,10 +707,11 @@ def extract_text_from_image(image_path: str) -> str:
 
 1. **Crossed-out/strikethrough text**: Some lines may have strikethrough marks from checkout - still extract the text underneath
 2. **Item lines**: Lines starting with 'E' followed by item codes and descriptions
-3. **Discount lines**: Lines that follow items and:
-   - End with a minus sign (e.g. "3.00-")
-   - Contain a forward slash followed by the item code (e.g. "/1726362")
-   - Show instant savings amounts
+3. **Discount/rebate lines**: Lines that follow items showing instant savings:
+   - End with a minus sign and amount (e.g. "2.00-" or "3.00-")
+   - May contain the item code (with or without forward slash)
+   - May say "INSTANT REBATE", "INSTANT SAVINGS", "MFR COUPON"
+   - The amount with the minus sign is the discount for the PREVIOUS item
 4. **Store and transaction info**: Store location, number, date, and transaction number
 5. **Totals**: Subtotal, tax, total, and instant savings
 
@@ -664,10 +721,13 @@ def extract_text_from_image(image_path: str) -> str:
 - Look for watermarks or stamps that may overlay text
 - If numbers are partially obscured, make reasonable inferences based on context
 
-Example format to look for:
+Example formats for discount lines (all are valid):
 E 1347776 KS WD FL HNY 12.99 3
-346014 /1347776 3.00-
-E 1726362 POUCH 13.89 3
+346014 /1347776 3.00-           <- discount with forward slash
+E 1726362 POUCH 7.69 1
+1726362 2.00-                   <- discount without forward slash
+E 9876543 CHEESE 5.99 1
+INSTANT REBATE 1.50-            <- labeled discount
 
 Extract ALL visible text, maintaining line structure. If you're uncertain about a character, provide your best guess in [brackets]."""
         
@@ -679,8 +739,8 @@ Extract ALL visible text, maintaining line structure. If you're uncertain about 
         
         print(f"Sending image to Gemini with MIME type: {mime_type}")
         
-        # Generate response
-        response = model.generate_content([prompt, image_data], stream=False)
+        # Generate response with retry logic for rate limits
+        response = call_gemini_with_retry(model, [prompt, image_data])
         
         print(f"Successfully processed image: {image_path}")
         
@@ -835,8 +895,8 @@ Extract every visible sale item from this promotional page."""
             "data": base64.b64encode(image_content).decode('utf-8')
         }
         
-        # Generate response
-        response = model.generate_content([prompt, image_data], stream=False)
+        # Generate response with retry logic for rate limits
+        response = call_gemini_with_retry(model, [prompt, image_data])
         
         return response.text
         
