@@ -68,8 +68,8 @@ def call_gemini_with_retry(model, content, max_retries=3):
             # Check if it's a rate limit error (429)
             if '429' in error_str or 'quota' in error_str.lower() or 'rate' in error_str.lower():
                 if attempt < max_retries - 1:
-                    # Use exponential backoff: 30s, 60s, 90s
-                    wait_time = (attempt + 1) * 30
+                    # Use short backoff to stay under worker timeout: 5s, 10s, 20s
+                    wait_time = 5 * (2 ** attempt)  # 5, 10, 20
                     logger.warning(f"Gemini API rate limited, waiting {wait_time}s before retry {attempt + 2}/{max_retries}")
                     print(f"Gemini API rate limited, waiting {wait_time}s before retry {attempt + 2}/{max_retries}")
                     time.sleep(wait_time)
