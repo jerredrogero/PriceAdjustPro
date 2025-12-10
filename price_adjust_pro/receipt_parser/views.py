@@ -366,7 +366,12 @@ def api_receipt_list(request):
                         'id': item.id,
                         'item_code': item.item_code,
                         'description': item.description,
+                        # price is the final paid amount (after discounts)
                         'price': str(item.price),
+                        'final_price': str(item.price),
+                        'price_already_discounted': True if item.instant_savings else False,
+                        # original_price reflects price before discounts when known
+                        'display_original_price': str(item.original_price) if item.original_price else None,
                         'quantity': item.quantity,
                         'total_price': str(item.total_price),
                         'is_taxable': item.is_taxable,
@@ -519,12 +524,17 @@ def api_receipt_detail(request, transaction_number):
             logger.error(f"Error updating receipt via PATCH: {str(e)}")
             return JsonResponse({'error': str(e)}, status=500)
     
-    # Handle GET requests (existing functionality)
+    # Handle GET requests (existing functionality) - make discount state explicit for mobile
     items = [{
         'id': item.id,
         'item_code': item.item_code,
         'description': item.description,
+        # price is the final paid amount (after discounts)
         'price': str(item.price),
+        'final_price': str(item.price),
+        'price_already_discounted': True if item.instant_savings else False,
+        # original_price reflects price before discounts when known
+        'display_original_price': str(item.original_price) if item.original_price else None,
         'quantity': item.quantity,
         'total_price': str(item.total_price),
         'is_taxable': item.is_taxable,
@@ -1743,8 +1753,18 @@ def api_receipt_update(request, transaction_number):
             # Update receipt's instant_savings to match sum of line items (prevents double counting)
             if calculated_instant_savings > 0:
                 receipt.instant_savings = calculated_instant_savings
-                receipt.save()
+                receipt.save(update_fields=['instant_savings'])
                 logger.info(f"Updated receipt instant_savings to: {receipt.instant_savings}")
+
+            # Recalculate subtotal and total from line items to avoid stale totals from clients
+            calculated_subtotal = sum((item.price or Decimal('0.00')) * item.quantity for item in created_line_items)
+            # If the client sent tax, use it; otherwise keep the existing tax
+            tax_value = Decimal(str(data.get('tax', receipt.tax)))
+            receipt.subtotal = calculated_subtotal
+            receipt.tax = tax_value
+            receipt.total = calculated_subtotal + tax_value
+            receipt.save(update_fields=['subtotal', 'tax', 'total'])
+            logger.info(f"Recalculated totals: subtotal={receipt.subtotal}, tax={receipt.tax}, total={receipt.total}")
             
             # Only update price database and check adjustments if not accepting manual edits
             if not accept_manual_edits:

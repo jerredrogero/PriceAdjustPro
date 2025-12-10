@@ -67,6 +67,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'hijack',
     'hijack.contrib.admin',
+    'anymail',
 ]
 
 # Add middleware to bypass authentication checks for admin and registration
@@ -201,36 +202,27 @@ DATA_UPLOAD_MAX_NUMBER_FIELDS = 10000  # Default is 1000
 RECEIPT_KEEP_FILES = False  # Set to True for debugging
 RECEIPT_TEMP_DIR = '/tmp/receipt_processing'
 
-# Email configuration
-EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.mail.me.com')
-EMAIL_PORT = int(os.getenv('EMAIL_PORT', 587))
-EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '').strip()
-EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '').strip()
-EMAIL_USE_TLS = env_to_bool(os.getenv('EMAIL_USE_TLS'), True)
-EMAIL_USE_SSL = env_to_bool(os.getenv('EMAIL_USE_SSL'), False)
-EMAIL_TIMEOUT = int(os.getenv('EMAIL_TIMEOUT', 30))
+# Email configuration - Mailgun via Anymail
+MAILGUN_API_KEY = os.getenv('MAILGUN_API_KEY', '').strip()
 
-DEFAULT_FROM_EMAIL = (
-    os.getenv('DEFAULT_FROM_EMAIL')
-    or EMAIL_HOST_USER
-    or 'noreply@priceadjustpro.com'
-)
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'no-reply@mail.priceadjustpro.com')
+SERVER_EMAIL = DEFAULT_FROM_EMAIL
 
-EMAIL_CREDENTIALS_CONFIGURED = bool(EMAIL_HOST_USER and EMAIL_HOST_PASSWORD)
+# Anymail configuration for Mailgun
+ANYMAIL = {
+    "MAILGUN_API_KEY": MAILGUN_API_KEY,
+    "MAILGUN_SENDER_DOMAIN": "mail.priceadjustpro.com",
+}
 
-if EMAIL_CREDENTIALS_CONFIGURED:
-    EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+if MAILGUN_API_KEY:
+    EMAIL_BACKEND = "anymail.backends.mailgun.EmailBackend"
 elif DEBUG:
     # Fall back to console backend locally so development keeps working
     EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 else:
     raise ImproperlyConfigured(
-        'EMAIL_HOST_USER and EMAIL_HOST_PASSWORD must be set when DEBUG=False.'
+        'MAILGUN_API_KEY must be set when DEBUG=False.'
     )
-
-# TLS/SSL mutual exclusivity safeguards
-if EMAIL_USE_SSL:
-    EMAIL_USE_TLS = False
 
 # Password reset settings
 PASSWORD_RESET_TIMEOUT = 3600  # 1 hour in seconds
