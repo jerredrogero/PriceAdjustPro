@@ -266,8 +266,7 @@ def api_register(request):
             # Send verification email with 6-digit code
             print(f"Attempting to send verification email to: {user.email}")
             print(f"Email backend: {settings.EMAIL_BACKEND}")
-            print(f"Email host: {settings.EMAIL_HOST}")
-            print(f"Email credentials configured: {settings.EMAIL_CREDENTIALS_CONFIGURED}")
+            print(f"Mailgun configured: {bool(settings.MAILGUN_API_KEY)}")
             print(f"From email: {settings.DEFAULT_FROM_EMAIL}")
             
             try:
@@ -569,9 +568,8 @@ PriceAdjustPro Team
             
             try:
                 print(f"Attempting to send email from {settings.DEFAULT_FROM_EMAIL} to {email}")
-                print(f"SMTP settings: {settings.EMAIL_HOST}:{settings.EMAIL_PORT}")
-                print(f"Using TLS: {settings.EMAIL_USE_TLS}")
-                print(f"Email user: {settings.EMAIL_HOST_USER}")
+                print(f"Email backend: {settings.EMAIL_BACKEND}")
+                print(f"Mailgun configured: {bool(settings.MAILGUN_API_KEY)}")
                 
                 send_mail(
                     subject,
