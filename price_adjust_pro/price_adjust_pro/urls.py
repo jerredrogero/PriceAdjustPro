@@ -23,6 +23,7 @@ from django.contrib.auth.models import User
 from django.contrib.auth.tokens import default_token_generator
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes, force_str
+from django.utils import timezone
 from django.core.mail import send_mail
 from django.template.loader import render_to_string
 from django.contrib.sites.shortcuts import get_current_site
@@ -50,7 +51,11 @@ def api_login(request):
     if request.method == 'POST':
         try:
             print("Login attempt received")
-            data = json.loads(request.body)
+            # Decode request body if it's bytes
+            body = request.body
+            if isinstance(body, bytes):
+                body = body.decode('utf-8')
+            data = json.loads(body)
             
             def parse_bool(value, default=False):
                 if isinstance(value, bool):
@@ -65,11 +70,19 @@ def api_login(request):
             password = data.get('password')
             remember_me = parse_bool(data.get('remember_me'), default=False)
             
+            print(f"Login attempt - username: {username}, password provided: {bool(password)}")
+            
             if not username or not password:
                 print(f"Login error: Missing username or password")
                 return JsonResponse({'error': 'Username and password are required'}, status=400)
             
-            user = authenticate(request, username=username, password=password)
+            # Try authenticate without request first (some backends don't need it)
+            user = authenticate(username=username, password=password)
+            if user is None:
+                # Try with request parameter
+                user = authenticate(request, username=username, password=password)
+            
+            print(f"Authentication result: {user}")
             if user is not None:
                 print(f"User {username} authenticated successfully")
                 
@@ -98,6 +111,32 @@ def api_login(request):
                 
                 # User is verified, proceed with login
                 login(request, user)
+                
+                # Check for new price adjustments on login (runs in background-ish, non-blocking)
+                try:
+                    from receipt_parser.models import Receipt, LineItem
+                    from receipt_parser.utils import check_current_user_for_price_adjustments
+                    from datetime import timedelta
+                    
+                    # Only check receipts from last 30 days (Costco's PA window)
+                    thirty_days_ago = timezone.now() - timedelta(days=30)
+                    recent_receipts = Receipt.objects.filter(
+                        user=user,
+                        transaction_date__gte=thirty_days_ago
+                    ).prefetch_related('items')
+                    
+                    alerts_created = 0
+                    for receipt in recent_receipts:
+                        for item in receipt.items.all():
+                            # Skip items already on sale
+                            if item.on_sale or (item.instant_savings and item.instant_savings > 0):
+                                continue
+                            alerts_created += check_current_user_for_price_adjustments(item, receipt)
+                    
+                    if alerts_created > 0:
+                        print(f"Login PA check: Created {alerts_created} new price adjustment alerts for {username}")
+                except Exception as pa_error:
+                    print(f"Login PA check error (non-fatal): {str(pa_error)}")
                 
                 # Set session cookie attributes based on remember_me preference
                 session_duration = settings.SESSION_COOKIE_AGE if remember_me else None
@@ -160,8 +199,10 @@ def api_login(request):
             print("Login error: Invalid JSON")
             return JsonResponse({'error': 'Invalid JSON'}, status=400)
         except Exception as e:
+            import traceback
             print(f"Login error: {str(e)}")
-            return JsonResponse({'error': 'Login failed'}, status=500)
+            print(f"Traceback: {traceback.format_exc()}")
+            return JsonResponse({'error': 'Login failed', 'details': str(e)}, status=500)
     
     print("Login error: Method not allowed")
     return JsonResponse({'error': 'Method not allowed'}, status=405)

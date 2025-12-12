@@ -364,7 +364,7 @@ class LineItemInline(admin.TabularInline):
     model = LineItem
     extra = 0
     readonly_fields = ('total_price',)
-    fields = ('item_code', 'description', 'price', 'quantity', 'discount', 'is_taxable', 'instant_savings', 'total_price')
+    fields = ('item_code', 'description', 'price', 'quantity', 'discount', 'is_taxable', 'instant_savings', 'total_price', 'created_at')
     show_change_link = True
     raw_id_fields = ('receipt',)
     max_num = 100  # Limit number of inline items for performance
@@ -729,7 +729,7 @@ class LineItemAdmin(BaseModelAdmin):
         'updated_at'
     )
     search_fields = ('item_code', 'description', 'receipt__transaction_number', 'receipt__user__username')
-    readonly_fields = ('total_price', 'created_at', 'updated_at')
+    readonly_fields = ('total_price', 'updated_at')  # created_at is now editable
     raw_id_fields = ('receipt',)
     list_per_page = 100
     show_full_result_count = False

@@ -39,8 +39,7 @@ from .models import (
 )
 from .utils import (
     process_receipt_pdf, extract_text_from_pdf, parse_receipt,
-    update_price_database, check_for_price_adjustments,
-    process_receipt_image, process_receipt_file
+    update_price_database, process_receipt_image, process_receipt_file
 )
 from .serializers import ReceiptSerializer
 
@@ -1360,8 +1359,9 @@ def api_check_price_adjustments(request):
 
                 for promotion_item in current_promotions:
                     # Calculate what the user could pay with the promotion
-                    if promotion_item.sale_type == 'discount_only':
-                        # This is a "$X OFF" promotion
+                    # Handle discount-only promotions OR promotions with only instant_rebate (no sale_price)
+                    if promotion_item.sale_type == 'discount_only' or (promotion_item.instant_rebate and not promotion_item.sale_price):
+                        # This is a "$X OFF" promotion or a promotion with only rebate info
                         if promotion_item.instant_rebate and item.price > promotion_item.instant_rebate:
                             final_price = item.price - promotion_item.instant_rebate
                         else:
@@ -1370,7 +1370,7 @@ def api_check_price_adjustments(request):
                         # Standard promotion with sale price
                         final_price = promotion_item.sale_price
                     else:
-                        # User already paid the same or less
+                        # User already paid the same or less, or no valid promotion data
                         continue
                     
                     price_difference = item.price - final_price
@@ -1517,7 +1517,7 @@ def api_price_adjustments(request):
 @csrf_exempt
 @login_required
 def api_dismiss_price_adjustment(request, item_code):
-    """Dismiss all price adjustment alerts for a specific item code."""
+    """Dismiss price adjustment alerts for a specific item code (prevents them from reappearing)."""
     if request.method != 'POST':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
     
@@ -1537,13 +1537,13 @@ def api_dismiss_price_adjustment(request, item_code):
         if not alerts.exists():
             return JsonResponse({'error': 'No active alerts found for this item'}, status=404)
         
-        # Dismiss all alerts for this item
+        # Mark alerts as dismissed (this prevents them from reappearing on login)
         dismissed_count = alerts.update(is_dismissed=True)
         
         logger.info(f"Dismissed {dismissed_count} price adjustment alerts for item {item_code} for user {request.user.username}")
         
         return JsonResponse({
-            'message': f'Successfully dismissed {dismissed_count} alert(s)',
+            'message': f'Successfully removed {dismissed_count} alert(s)',
             'dismissed_count': dismissed_count
         })
     except Exception as e:

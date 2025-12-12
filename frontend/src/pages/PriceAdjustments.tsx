@@ -16,6 +16,11 @@ import {
   Tooltip,
   Snackbar,
   Link,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions,
 } from '@mui/material';
 import {
   LocationOn as LocationIcon,
@@ -82,6 +87,8 @@ const PriceAdjustments: React.FC = () => {
   const [dismissing, setDismissing] = useState<string | null>(null);
   const [snackbarOpen, setSnackbarOpen] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState('');
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<PriceAdjustment | null>(null);
 
   useEffect(() => {
     fetchAdjustments();
@@ -99,12 +106,22 @@ const PriceAdjustments: React.FC = () => {
     }
   };
 
-  const handleDismissAdjustment = async (itemCode: string) => {
+  const handleDismissClick = (adjustment: PriceAdjustment) => {
+    setItemToDelete(adjustment);
+    setConfirmDialogOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!itemToDelete) return;
+    
+    const itemCode = itemToDelete.item_code;
+    setConfirmDialogOpen(false);
     setDismissing(itemCode);
+    
     try {
       await api.post(`/api/price-adjustments/dismiss/${itemCode}/`);
       
-      // Remove the dismissed adjustment from the list
+      // Remove the deleted adjustment from the list
       setAdjustments(prev => {
         const updated = prev.filter(adj => adj.item_code !== itemCode);
         // Recalculate total savings
@@ -113,15 +130,21 @@ const PriceAdjustments: React.FC = () => {
         return updated;
       });
       
-      setSnackbarMessage('Price adjustment alert dismissed successfully');
+      setSnackbarMessage('Price adjustment alert permanently deleted');
       setSnackbarOpen(true);
     } catch (err) {
-      console.error('Error dismissing price adjustment:', err);
-      setSnackbarMessage('Failed to dismiss price adjustment alert');
+      console.error('Error deleting price adjustment:', err);
+      setSnackbarMessage('Failed to delete price adjustment alert');
       setSnackbarOpen(true);
     } finally {
       setDismissing(null);
+      setItemToDelete(null);
     }
+  };
+
+  const handleCancelDelete = () => {
+    setConfirmDialogOpen(false);
+    setItemToDelete(null);
   };
 
   const renderSourceDescriptionWithLinks = (adjustment: PriceAdjustment) => {
@@ -375,9 +398,9 @@ const PriceAdjustments: React.FC = () => {
                   </Box>
 
                   <Box sx={{ textAlign: 'right', ml: 2 }}>
-                    <Tooltip title="Dismiss this price adjustment alert">
+                    <Tooltip title="Delete this price adjustment alert">
                       <IconButton
-                        onClick={() => handleDismissAdjustment(adjustment.item_code)}
+                        onClick={() => handleDismissClick(adjustment)}
                         disabled={dismissing === adjustment.item_code}
                         color="default"
                         size="small"
@@ -399,6 +422,34 @@ const PriceAdjustments: React.FC = () => {
           </Grid>
         ))}
       </Grid>
+
+      {/* Confirmation Dialog */}
+      <Dialog
+        open={confirmDialogOpen}
+        onClose={handleCancelDelete}
+        aria-labelledby="delete-alert-dialog-title"
+        aria-describedby="delete-alert-dialog-description"
+      >
+        <DialogTitle id="delete-alert-dialog-title">
+          Delete Price Adjustment Alert?
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText id="delete-alert-dialog-description">
+            Are you sure you want to remove this price adjustment alert for{' '}
+            <strong>{itemToDelete?.description}</strong>?
+            <br /><br />
+            You will not see this price adjustment alert again.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCancelDelete} color="primary">
+            Cancel
+          </Button>
+          <Button onClick={handleConfirmDelete} color="error" variant="contained" autoFocus>
+            Remove
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Snackbar
         open={snackbarOpen}

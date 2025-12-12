@@ -167,10 +167,10 @@ transaction_number: The 13-digit number after the date/time (e.g. 1621206176706)
 items: List each item with:
 - item_code: The first number on the line
 - description: The item description
-- price: The final price shown
+- price: The price shown on the item line (this is the ORIGINAL price before any discount)
 - is_taxable: Y/N (look for Y after the price)
 - instant_savings: The amount from the discount line that follows, null if no discount line
-- original_price: Calculate by adding price + instant_savings, null if no instant savings
+- final_price: Calculate by SUBTRACTING instant_savings from price (price - instant_savings), null if no instant savings
 
 IMPORTANT: Look for discount/rebate lines that follow item lines. These lines can appear in several formats:
 1. End with a minus sign and amount (e.g. "2.00-" or "3.00-")
@@ -188,6 +188,8 @@ CRITICAL:
 - Only count discount lines that IMMEDIATELY follow an item line
 - DO NOT count "TOTAL INSTANT SAVINGS" or summary lines at the bottom
 - If a line ends with a number followed by a minus sign (like "2.00-"), it's likely a discount
+- The price on the item line is ALWAYS the original/regular price
+- The discount line SUBTRACTS from that price to give the final price paid
 
 Example receipt text:
 E 1347776 KS WD FL HNY 9.99 3
@@ -197,16 +199,16 @@ E 1726362 POUCH 7.69 1
 E 9876543 MILK 4.99 1
 
 In this example:
-- Item 1347776 has instant_savings of 3.00 (original_price = 9.99 + 3.00 = 12.99)
-- Item 1726362 has instant_savings of 2.00 (original_price = 7.69 + 2.00 = 9.69)
-- Item 9876543 has no discount (instant_savings = null)
+- Item 1347776: original price = 9.99, instant_savings = 3.00, final_price = 9.99 - 3.00 = 6.99
+- Item 1726362: original price = 7.69, instant_savings = 2.00, final_price = 7.69 - 2.00 = 5.69
+- Item 9876543: original price = 4.99, no discount (instant_savings = null, final_price = null)
 
 For each item:
 1. Look at the line(s) immediately following the item
 2. If a line ends with a minus sign (e.g. "2.00-"), extract that amount as instant_savings
-3. Add instant_savings to the price to get original_price
+3. SUBTRACT instant_savings from the price to get final_price (the price actually paid)
 
-Format each item line as: "item_code, description, price, is_taxable, instant_savings, original_price"
+Format each item line as: "item_code, description, price, is_taxable, instant_savings, final_price"
 
 subtotal: Total before tax
 tax: Tax amount
@@ -220,12 +222,13 @@ store_number: 1621
 transaction_date: 12/27/2024 16:54
 transaction_number: 1621206176706
 items:
-- 1347776, KS WD FL HNY, 12.99, N, 3.00, 15.99
-- 1726362, POUCH, 13.89, N, null, null
+- 1347776, KS WD FL HNY, 9.99, N, 3.00, 6.99
+- 1726362, POUCH, 7.69, N, 2.00, 5.69
+- 9876543, MILK, 4.99, N, null, null
 subtotal: 59.15
 tax: 1.28
 total: 60.43
-instant_savings: 3.00
+instant_savings: 5.00
 total_items_sold: 8
 
 IMPORTANT: If there are NO discount lines with forward slashes (e.g. "/item_code"), then instant_savings should be 0.00 or null, even if the receipt mentions "instant savings" in text somewhere. Only actual discount lines count.
@@ -280,29 +283,34 @@ Parse this receipt:
                     item_parts = line.replace('-', '').strip().split(',')
                     if len(item_parts) >= 6:
                         try:
+                            # line_price is the price shown on the receipt - this is the ORIGINAL price before discount
                             line_price = Decimal(item_parts[2].strip())
                             instant_savings_str = item_parts[4].strip()
-                            # The 6th field from the parser is expected to be original price, but we will compute it to be safe
+                            # The 6th field from the parser is the final price after discount
                             
                             has_instant_savings = instant_savings_str != 'null' and instant_savings_str != ''
                             instant_savings_val = None
                             if has_instant_savings:
                                 instant_savings_val = Decimal(instant_savings_str)
                             
-                            original_price_val = None
+                            # The price on the receipt line IS the original price
+                            original_price_val = line_price
+                            
+                            # The final price paid is original price MINUS the instant savings
+                            final_price = line_price
                             if instant_savings_val is not None:
-                                original_price_val = line_price + instant_savings_val
+                                final_price = line_price - instant_savings_val
                             
                             # Each line is one item
                             item = {
                                 'item_code': item_parts[0].strip(),
                                 'description': item_parts[1].strip(),
-                                'original_price': original_price_val,  # Original price before instant savings
+                                'original_price': original_price_val,  # Original price shown on receipt (before instant savings)
                                 'quantity': 1,  # Each line represents one item
                                 'is_taxable': item_parts[3].strip().upper() == 'Y',
                                 'instant_savings': instant_savings_val,
-                                'price': line_price,  # Final price shown on receipt after discount
-                                'total_price': str(line_price)
+                                'price': final_price,  # Final price paid after discount is subtracted
+                                'total_price': str(final_price)
                             }
                             parsed_data['items'].append(item)
                         except (ValueError, IndexError, InvalidOperation) as e:
@@ -488,8 +496,9 @@ def check_for_price_adjustments(item: LineItem, receipt: Receipt, is_user_edited
         
         for promotion_item in current_promotions:
             # Calculate what the user could pay with the promotion
-            if promotion_item.sale_type == 'discount_only':
-                # This is a "$X OFF" promotion
+            # Handle discount-only promotions OR promotions with only instant_rebate (no sale_price)
+            if promotion_item.sale_type == 'discount_only' or (promotion_item.instant_rebate and not promotion_item.sale_price):
+                # This is a "$X OFF" promotion or a promotion with only rebate info
                 if promotion_item.instant_rebate and item.price > promotion_item.instant_rebate:
                     final_price = item.price - promotion_item.instant_rebate
                     savings = promotion_item.instant_rebate
@@ -500,13 +509,25 @@ def check_for_price_adjustments(item: LineItem, receipt: Receipt, is_user_edited
                 final_price = promotion_item.sale_price
                 savings = item.price - promotion_item.sale_price
             else:
-                # User already paid the same or less
+                # User already paid the same or less, or no valid promotion data
                 logger.info(f"Skipping promotion for {item.description} - user paid ${item.price}, sale price is ${promotion_item.sale_price}")
                 continue
             
             # Only create alert if savings is significant ($0.50+)
             if savings >= Decimal('0.50'):
-                # Check if user already has an alert for this item
+                # First check if user has dismissed an alert for this item/purchase - don't recreate if so
+                dismissed_alert = PriceAdjustmentAlert.objects.filter(
+                    user=receipt.user,
+                    item_code=item.item_code,
+                    is_dismissed=True,
+                    purchase_date=receipt.transaction_date
+                ).exists()
+                
+                if dismissed_alert:
+                    logger.info(f"Skipping alert for {item.description} - user previously dismissed this alert")
+                    continue
+                
+                # Check if user already has an active alert for this item
                 existing_alert = PriceAdjustmentAlert.objects.filter(
                     user=receipt.user,
                     item_code=item.item_code,
@@ -523,7 +544,6 @@ def check_for_price_adjustments(item: LineItem, receipt: Receipt, is_user_edited
                         existing_alert.official_sale_item = promotion_item
                         existing_alert.cheaper_store_city = 'All Costco Locations'
                         existing_alert.cheaper_store_number = 'ALL'
-                        existing_alert.is_dismissed = False
                         existing_alert.save()
                         logger.info(f"Updated official promotion alert for {receipt.user.username} on {item.description}")
                 else:
@@ -1194,7 +1214,19 @@ def create_official_price_alerts(official_sale_item) -> int:
                 logger.info(f"Skipping {purchase.description} - item was already marked as on sale")
                 continue
             
-            # Check if user already has an alert for this item
+            # Check if user has dismissed an alert for this item - don't recreate if so
+            dismissed_alert = PriceAdjustmentAlert.objects.filter(
+                user=purchase.receipt.user,
+                item_code=official_sale_item.item_code,
+                is_dismissed=True,
+                purchase_date=purchase.receipt.transaction_date
+            ).exists()
+            
+            if dismissed_alert:
+                logger.info(f"Skipping {purchase.description} - user previously dismissed this alert")
+                continue
+            
+            # Check if user already has an active alert for this item
             existing_alert = PriceAdjustmentAlert.objects.filter(
                 user=purchase.receipt.user,
                 item_code=official_sale_item.item_code,
@@ -1203,7 +1235,8 @@ def create_official_price_alerts(official_sale_item) -> int:
             ).first()
             
             # Calculate potential savings
-            if official_sale_item.sale_type == 'discount_only':
+            # Handle discount-only promotions OR promotions with only instant_rebate (no sale_price)
+            if official_sale_item.sale_type == 'discount_only' or (official_sale_item.instant_rebate and not official_sale_item.sale_price):
                 # This is a "$X OFF" promotion - calculate savings as the discount amount
                 savings = official_sale_item.instant_rebate  # Use instant_rebate for discount amount
                 final_price = purchase.price - savings  # What they could pay after discount
@@ -1236,7 +1269,6 @@ def create_official_price_alerts(official_sale_item) -> int:
                         existing_alert.lower_price = final_price
                         existing_alert.data_source = 'official_promo'
                         existing_alert.official_sale_item = official_sale_item
-                        existing_alert.is_dismissed = False  # Re-activate
                         existing_alert.save()
                         alerts_created += 1
                         logger.info(f"Updated price alert for {purchase.receipt.user.username} on {official_sale_item.description}")
@@ -1273,7 +1305,7 @@ def create_official_price_alerts(official_sale_item) -> int:
 def check_current_user_for_price_adjustments(item: LineItem, receipt: Receipt) -> int:
     """
     Check if the current user can benefit from official Costco promotions only.
-    This is called when a user edits their receipt to see if they overpaid.
+    This is called when a user uploads/edits their receipt to see if they overpaid.
     
     Returns the number of new alerts created for the current user.
     """
@@ -1286,6 +1318,12 @@ def check_current_user_for_price_adjustments(item: LineItem, receipt: Receipt) -
         # Skip if this item was bought on sale - user already got the discount
         if item.on_sale or (item.instant_savings and item.instant_savings > 0):
             logger.info(f"Skipping price adjustment check for {item.description} - item was bought on sale")
+            return 0
+
+        # Skip if purchase is older than 30 days - Costco won't honor price adjustments
+        thirty_days_ago = timezone.now() - timedelta(days=30)
+        if receipt.transaction_date < thirty_days_ago:
+            logger.info(f"Skipping price adjustment check for {item.description} - purchase is older than 30 days")
             return 0
 
         # Check official promotions only (highest trust)
@@ -1304,8 +1342,9 @@ def check_current_user_for_price_adjustments(item: LineItem, receipt: Receipt) -
         
         for promotion_item in current_promotions:
             # Calculate what the user could pay with the promotion
-            if promotion_item.sale_type == 'discount_only':
-                # This is a "$X OFF" promotion
+            # Handle discount-only promotions OR promotions with only instant_rebate (no sale_price)
+            if promotion_item.sale_type == 'discount_only' or (promotion_item.instant_rebate and not promotion_item.sale_price):
+                # This is a "$X OFF" promotion or a promotion with only rebate info
                 if promotion_item.instant_rebate and item.price > promotion_item.instant_rebate:
                     final_price = item.price - promotion_item.instant_rebate
                     savings = promotion_item.instant_rebate
@@ -1316,13 +1355,25 @@ def check_current_user_for_price_adjustments(item: LineItem, receipt: Receipt) -
                 final_price = promotion_item.sale_price
                 savings = item.price - promotion_item.sale_price
             else:
-                # User already paid the same or less
+                # User already paid the same or less, or no valid promotion data
                 logger.info(f"Skipping promotion for {item.description} - user paid ${item.price}, sale price is ${promotion_item.sale_price}")
                 continue
             
             # Only create alert if savings is significant ($0.50+)
             if savings >= Decimal('0.50'):
-                # Check if user already has an alert for this item
+                # First check if user has dismissed an alert for this item/purchase - don't recreate if so
+                dismissed_alert = PriceAdjustmentAlert.objects.filter(
+                    user=receipt.user,
+                    item_code=item.item_code,
+                    is_dismissed=True,
+                    purchase_date=receipt.transaction_date
+                ).exists()
+                
+                if dismissed_alert:
+                    logger.info(f"Skipping alert for {item.description} - user previously dismissed this alert")
+                    continue
+                
+                # Check if user already has an active alert for this item
                 existing_alert = PriceAdjustmentAlert.objects.filter(
                     user=receipt.user,
                     item_code=item.item_code,
@@ -1339,7 +1390,6 @@ def check_current_user_for_price_adjustments(item: LineItem, receipt: Receipt) -
                         existing_alert.official_sale_item = promotion_item
                         existing_alert.cheaper_store_city = 'All Costco Locations'
                         existing_alert.cheaper_store_number = 'ALL'
-                        existing_alert.is_dismissed = False
                         existing_alert.save()
                         alerts_created += 1
                         logger.info(f"Updated official promotion alert for {receipt.user.username} on {item.description}")
