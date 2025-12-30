@@ -585,6 +585,7 @@ def api_receipt_upload(request):
         return JsonResponse({'error': 'Please upload a PDF or image file (JPG, PNG, WebP, AVIF, etc.)'}, status=400)
         
     try:
+        push_window_start = timezone.now()
         # Save the uploaded file
         timestamp = timezone.now().strftime("%Y%m%d%H%M%S")
         file_path = default_storage.save(
@@ -630,7 +631,7 @@ def api_receipt_upload(request):
             # Create new line items
             price_adjustments_created = 0  # Initialize counter for tracking price adjustment alerts
             for item_data in parsed_data['items']:
-                LineItem.objects.create(
+                line_item = LineItem.objects.create(
                     receipt=existing_receipt,
                     item_code=item_data['item_code'],
                     description=item_data['description'],
@@ -642,7 +643,41 @@ def api_receipt_upload(request):
                     original_price=Decimal(str(item_data['original_price'])) if item_data.get('original_price') else None
                 )
 
+                # Re-run matching for late uploads/updates and count newly-created alerts
+                try:
+                    from .utils import check_current_user_for_price_adjustments
+                    price_adjustments_created += check_current_user_for_price_adjustments(line_item, existing_receipt)
+                except Exception as e:
+                    logger.error(f"Error checking price adjustments for {line_item.description}: {str(e)}")
+
             receipt = existing_receipt
+
+            # Push summary if new alerts were created
+            if price_adjustments_created > 0:
+                try:
+                    from receipt_parser.models import PriceAdjustmentAlert
+                    from receipt_parser.notifications.push import send_price_adjustment_summary_to_user
+                    from decimal import Decimal as D
+
+                    new_alerts = PriceAdjustmentAlert.objects.filter(
+                        user=request.user,
+                        created_at__gte=push_window_start,
+                    ).order_by("-id")
+                    total_savings = D("0.00")
+                    for a in new_alerts:
+                        total_savings += (a.original_price - a.lower_price)
+
+                    latest = new_alerts.first()
+                    if latest:
+                        send_price_adjustment_summary_to_user(
+                            user_id=request.user.id,
+                            latest_alert_id=latest.id,
+                            count=new_alerts.count(),
+                            total_savings=total_savings,
+                        )
+                except Exception as e:
+                    logger.error(f"Failed to send push summary for receipt update: {str(e)}")
+
             return JsonResponse({
                 'transaction_number': receipt.transaction_number,
                 'message': 'Receipt updated successfully',
@@ -709,7 +744,7 @@ def api_receipt_upload(request):
                     created_line_items.append(line_item)
                     # Check if current user can benefit from existing promotions
                     from .utils import check_current_user_for_price_adjustments
-                    check_current_user_for_price_adjustments(line_item, receipt)
+                    price_adjustments_created += check_current_user_for_price_adjustments(line_item, receipt)
                 except Exception as e:
                     logger.error(f"Error creating line item: {str(e)}")
                     continue
@@ -720,6 +755,32 @@ def api_receipt_upload(request):
             receipt.instant_savings = calculated_instant_savings
             receipt.save()
             logger.info(f"Updated API receipt instant_savings to: {receipt.instant_savings}")
+
+        # Push summary if new alerts were created during receipt processing
+        if price_adjustments_created > 0:
+            try:
+                from receipt_parser.models import PriceAdjustmentAlert
+                from receipt_parser.notifications.push import send_price_adjustment_summary_to_user
+                from decimal import Decimal as D
+
+                new_alerts = PriceAdjustmentAlert.objects.filter(
+                    user=request.user,
+                    created_at__gte=push_window_start,
+                ).order_by("-id")
+                total_savings = D("0.00")
+                for a in new_alerts:
+                    total_savings += (a.original_price - a.lower_price)
+
+                latest = new_alerts.first()
+                if latest:
+                    send_price_adjustment_summary_to_user(
+                        user_id=request.user.id,
+                        latest_alert_id=latest.id,
+                        count=new_alerts.count(),
+                        total_savings=total_savings,
+                    )
+            except Exception as e:
+                logger.error(f"Failed to send push summary for receipt upload: {str(e)}")
         
         return JsonResponse({
             'transaction_number': receipt.transaction_number,

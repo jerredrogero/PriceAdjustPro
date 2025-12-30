@@ -2,6 +2,7 @@ from django.urls import path
 from django.contrib.auth import views as auth_views
 from . import views
 from .views import ReceiptUpdateAPIView
+from .notifications.views import api_upsert_push_device
 
 # Split URL patterns into web and API
 web_urlpatterns = [
@@ -34,6 +35,7 @@ api_urlpatterns = [
     path('analytics/', views.api_user_analytics, name='api_user_analytics'),
     path('analytics/enhanced/', views.api_enhanced_analytics, name='api_enhanced_analytics'),
     path('on-sale/', views.api_on_sale, name='api_on_sale'),
+    path('notifications/devices/', api_upsert_push_device, name='api_notifications_devices_upsert'),
     
     # Authentication API endpoints
     path('auth/verify-email/<str:token>/', views.api_verify_email, name='api_verify_email'),  # Link-based (web)

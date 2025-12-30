@@ -1113,6 +1113,14 @@ def process_official_promotion(promotion_id: int, max_pages: int = None) -> dict
                             official_item.alerts_created = alerts_created
                             official_item.save()
                             page_alerts_created += alerts_created
+
+                            # Push summaries immediately for newly created alerts (server-driven)
+                            if alerts_created > 0:
+                                try:
+                                    from receipt_parser.notifications.services import push_summaries_for_official_sale_item
+                                    push_summaries_for_official_sale_item(official_sale_item_id=official_item.id)
+                                except Exception as e:
+                                    logger.error(f"Push fanout failed for sale item {official_item.id}: {str(e)}")
                         else:
                             # Update existing record if fields have changed, and (re)create alerts
                             updated = False
@@ -1139,6 +1147,14 @@ def process_official_promotion(promotion_id: int, max_pages: int = None) -> dict
                             alerts_created = create_official_price_alerts(official_item)
                             # Do not overwrite cumulative count; track for page summary
                             page_alerts_created += alerts_created
+
+                            # Push summaries immediately for newly created alerts (server-driven)
+                            if alerts_created > 0:
+                                try:
+                                    from receipt_parser.notifications.services import push_summaries_for_official_sale_item
+                                    push_summaries_for_official_sale_item(official_sale_item_id=official_item.id)
+                                except Exception as e:
+                                    logger.error(f"Push fanout failed for sale item {official_item.id}: {str(e)}")
                             
                     except Exception as e:
                         logger.error(f"Error creating item {item_data.get('item_code', 'unknown')}: {str(e)}")
@@ -1263,34 +1279,49 @@ def create_official_price_alerts(official_sale_item) -> int:
             
             # Only create alert if savings is significant ($0.50+)
             if savings >= Decimal('0.50'):
+                # Build stable key so repeated promo processing doesn't spam duplicates
+                dedupe_key = PriceAdjustmentAlert.build_dedupe_key(
+                    user_id=purchase.receipt.user_id,
+                    item_code=official_sale_item.item_code,
+                    purchase_date=purchase.receipt.transaction_date,
+                    original_store_number=purchase.receipt.store_number,
+                    data_source='official_promo',
+                    official_sale_item_id=official_sale_item.id,
+                )
+
                 if existing_alert:
                     # Update existing alert if this is a better deal
                     if final_price < existing_alert.lower_price:
                         existing_alert.lower_price = final_price
                         existing_alert.data_source = 'official_promo'
                         existing_alert.official_sale_item = official_sale_item
+                        existing_alert.dedupe_key = existing_alert.dedupe_key or dedupe_key
                         existing_alert.save()
                         alerts_created += 1
                         logger.info(f"Updated price alert for {purchase.receipt.user.username} on {official_sale_item.description}")
                 else:
-                    # Create new alert
-                    PriceAdjustmentAlert.objects.create(
+                    # Create new alert (deduped)
+                    _alert, created = PriceAdjustmentAlert.objects.get_or_create(
                         user=purchase.receipt.user,
-                        item_code=official_sale_item.item_code,
-                        item_description=official_sale_item.description,
-                        original_price=purchase.price,
-                        lower_price=final_price,  # Use calculated final price
-                        original_store_city=purchase.receipt.store_city,
-                        original_store_number=purchase.receipt.store_number,
-                        cheaper_store_city='All Costco Locations',  # Official promos apply everywhere
-                        cheaper_store_number='ALL',
-                        purchase_date=purchase.receipt.transaction_date,
-                        data_source='official_promo',
-                        official_sale_item=official_sale_item,
-                        is_active=True,
-                        is_dismissed=False
+                        dedupe_key=dedupe_key,
+                        defaults={
+                            "item_code": official_sale_item.item_code,
+                            "item_description": official_sale_item.description,
+                            "original_price": purchase.price,
+                            "lower_price": final_price,
+                            "original_store_city": purchase.receipt.store_city,
+                            "original_store_number": purchase.receipt.store_number,
+                            "cheaper_store_city": "All Costco Locations",
+                            "cheaper_store_number": "ALL",
+                            "purchase_date": purchase.receipt.transaction_date,
+                            "data_source": "official_promo",
+                            "official_sale_item": official_sale_item,
+                            "is_active": True,
+                            "is_dismissed": False,
+                        },
                     )
-                    alerts_created += 1
+                    if created:
+                        alerts_created += 1
                     
                     logger.info(
                         f"Official price alert created for user {purchase.receipt.user.username} "
@@ -1382,6 +1413,15 @@ def check_current_user_for_price_adjustments(item: LineItem, receipt: Receipt) -
                     purchase_date=receipt.transaction_date
                 ).first()
                 
+                dedupe_key = PriceAdjustmentAlert.build_dedupe_key(
+                    user_id=receipt.user_id,
+                    item_code=item.item_code,
+                    purchase_date=receipt.transaction_date,
+                    original_store_number=receipt.store_number,
+                    data_source='official_promo',
+                    official_sale_item_id=promotion_item.id,
+                )
+
                 if existing_alert:
                     # Update existing alert if this is a better deal
                     if final_price < existing_alert.lower_price:
@@ -1390,28 +1430,33 @@ def check_current_user_for_price_adjustments(item: LineItem, receipt: Receipt) -
                         existing_alert.official_sale_item = promotion_item
                         existing_alert.cheaper_store_city = 'All Costco Locations'
                         existing_alert.cheaper_store_number = 'ALL'
+                        existing_alert.dedupe_key = existing_alert.dedupe_key or dedupe_key
                         existing_alert.save()
                         alerts_created += 1
                         logger.info(f"Updated official promotion alert for {receipt.user.username} on {item.description}")
                 else:
-                    # Create new alert
-                    PriceAdjustmentAlert.objects.create(
+                    # Create new alert (deduped)
+                    _alert, created = PriceAdjustmentAlert.objects.get_or_create(
                         user=receipt.user,
-                        item_code=item.item_code,
-                        item_description=promotion_item.description,
-                        original_price=item.price,
-                        lower_price=final_price,
-                        original_store_city=receipt.store_city,
-                        original_store_number=receipt.store_number,
-                        cheaper_store_city='All Costco Locations',
-                        cheaper_store_number='ALL',
-                        purchase_date=receipt.transaction_date,
-                        data_source='official_promo',
-                        official_sale_item=promotion_item,
-                        is_active=True,
-                        is_dismissed=False
+                        dedupe_key=dedupe_key,
+                        defaults={
+                            "item_code": item.item_code,
+                            "item_description": promotion_item.description,
+                            "original_price": item.price,
+                            "lower_price": final_price,
+                            "original_store_city": receipt.store_city,
+                            "original_store_number": receipt.store_number,
+                            "cheaper_store_city": "All Costco Locations",
+                            "cheaper_store_number": "ALL",
+                            "purchase_date": receipt.transaction_date,
+                            "data_source": "official_promo",
+                            "official_sale_item": promotion_item,
+                            "is_active": True,
+                            "is_dismissed": False,
+                        },
                     )
-                    alerts_created += 1
+                    if created:
+                        alerts_created += 1
                     
                     logger.info(
                         f"Official promotion alert created for current user {receipt.user.username} "

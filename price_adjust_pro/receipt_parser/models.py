@@ -4,9 +4,11 @@ from django.utils import timezone
 from decimal import Decimal
 from django.core.validators import RegexValidator
 from django.db.models import Q
+from django.db.models import UniqueConstraint
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 import secrets
+import hashlib
 
 # Create your models here.
 
@@ -493,6 +495,13 @@ class PriceAdjustmentAlert(models.Model):
         related_name='generated_alerts',
         help_text="Official sale item that generated this alert"
     )
+    dedupe_key = models.CharField(
+        max_length=128,
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="Stable key to dedupe alerts across repeated matching runs"
+    )
 
     class Meta:
         ordering = ['-created_at']
@@ -500,6 +509,13 @@ class PriceAdjustmentAlert(models.Model):
             models.Index(fields=['user', 'item_code']),
             models.Index(fields=['purchase_date']),
             models.Index(fields=['is_active', 'is_dismissed']),
+        ]
+        constraints = [
+            UniqueConstraint(
+                fields=['user', 'dedupe_key'],
+                condition=Q(dedupe_key__isnull=False),
+                name='uniq_price_adjustment_alert_user_dedupe_key',
+            )
         ]
         verbose_name = 'Price Adjustment Alert'
         verbose_name_plural = 'Price Adjustment Alerts'
@@ -677,6 +693,17 @@ class PriceAdjustmentAlert(models.Model):
         return self.days_remaining == 0
 
     def save(self, *args, **kwargs):
+        # Set dedupe key on creation if missing
+        if self.pk is None and not self.dedupe_key:
+            self.dedupe_key = self.build_dedupe_key(
+                user_id=self.user_id,
+                item_code=self.item_code,
+                purchase_date=self.purchase_date,
+                original_store_number=self.original_store_number,
+                data_source=self.data_source,
+                official_sale_item_id=self.official_sale_item_id,
+            )
+
         # Don't check expiration on initial creation since created_at won't be set yet
         is_new_record = self.pk is None
         
@@ -688,6 +715,88 @@ class PriceAdjustmentAlert(models.Model):
             self.is_active = False
             # Save again to update the is_active field, but avoid recursion
             super().save(update_fields=['is_active'])
+
+    @staticmethod
+    def build_dedupe_key(
+        *,
+        user_id: int,
+        item_code: str,
+        purchase_date,
+        original_store_number: str | None,
+        data_source: str,
+        official_sale_item_id: int | None,
+    ) -> str:
+        """
+        Create a stable dedupe key for an alert identity.
+
+        Intentionally excludes price fields so we can update lower_price without
+        creating a brand new alert identity.
+        """
+        purchase_iso = purchase_date.isoformat() if purchase_date else ''
+        raw = f"u={user_id}|item={item_code}|p={purchase_iso}|store={original_store_number or ''}|src={data_source}|osi={official_sale_item_id or ''}"
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:128]
+
+
+class PushDevice(models.Model):
+    """Stores per-device APNs tokens and per-device notification preferences."""
+
+    PLATFORM_IOS = 'ios'
+    PLATFORM_CHOICES = [
+        (PLATFORM_IOS, 'iOS'),
+    ]
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='push_devices')
+    device_id = models.CharField(max_length=128, help_text="Client-generated stable device identifier")
+    apns_token = models.CharField(max_length=256, help_text="APNs device token (hex string)")
+    platform = models.CharField(max_length=16, choices=PLATFORM_CHOICES, default=PLATFORM_IOS)
+    app_version = models.CharField(max_length=32, null=True, blank=True)
+    is_enabled = models.BooleanField(default=True)
+
+    price_adjustment_alerts_enabled = models.BooleanField(default=True)
+    sale_alerts_enabled = models.BooleanField(default=True)
+    receipt_processing_alerts_enabled = models.BooleanField(default=True)
+    price_drop_alerts_enabled = models.BooleanField(default=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['user', 'device_id']),
+            models.Index(fields=['user', 'is_enabled']),
+            models.Index(fields=['platform']),
+            models.Index(fields=['last_seen_at']),
+        ]
+        constraints = [
+            UniqueConstraint(fields=['user', 'device_id'], name='uniq_push_device_user_device_id')
+        ]
+        verbose_name = 'Push Device'
+        verbose_name_plural = 'Push Devices'
+
+    def __str__(self):
+        return f"{self.user.username} - {self.platform} ({self.device_id})"
+
+
+class PushDelivery(models.Model):
+    """Dedupes and audits push deliveries to avoid spamming users/devices."""
+
+    device = models.ForeignKey(PushDevice, on_delete=models.CASCADE, related_name='deliveries')
+    kind = models.CharField(max_length=64)
+    dedupe_key = models.CharField(max_length=255, db_index=True)
+    payload_snapshot = models.JSONField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['kind', 'created_at']),
+            models.Index(fields=['device', 'kind', 'created_at']),
+        ]
+        constraints = [
+            UniqueConstraint(fields=['device', 'kind', 'dedupe_key'], name='uniq_push_delivery_device_kind_key')
+        ]
+        verbose_name = 'Push Delivery'
+        verbose_name_plural = 'Push Deliveries'
 
     @classmethod
     def get_active_alerts(cls, user):

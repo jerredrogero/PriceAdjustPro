@@ -1,6 +1,14 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
-from .models import Receipt, LineItem, UserProfile, OfficialSaleItem, CostcoPromotion, AppleSubscription
+from .models import (
+    Receipt,
+    LineItem,
+    UserProfile,
+    OfficialSaleItem,
+    CostcoPromotion,
+    AppleSubscription,
+    PushDevice,
+)
 from decimal import Decimal
 import logging
 from django.utils import timezone
@@ -216,3 +224,49 @@ class ApplePurchaseRequestSerializer(serializers.Serializer):
     original_transaction_id = serializers.CharField(max_length=255, required=True)
     purchase_date = serializers.DateTimeField(required=True)
     expiration_date = serializers.DateTimeField(required=False, allow_null=True)
+
+
+class PushDevicePreferencesSerializer(serializers.Serializer):
+    price_adjustment_alerts_enabled = serializers.BooleanField(required=True)
+    sale_alerts_enabled = serializers.BooleanField(required=True)
+    receipt_processing_alerts_enabled = serializers.BooleanField(required=True)
+    price_drop_alerts_enabled = serializers.BooleanField(required=True)
+
+
+class PushDeviceUpsertSerializer(serializers.Serializer):
+    device_id = serializers.CharField(max_length=128, required=True)
+    apns_token = serializers.RegexField(
+        regex=r"^[0-9a-fA-F]{32,256}$",
+        required=True,
+        help_text="APNs token hex string (32-256 chars)",
+    )
+    platform = serializers.ChoiceField(choices=[PushDevice.PLATFORM_IOS], required=True)
+    app_version = serializers.CharField(max_length=32, required=False, allow_blank=True, allow_null=True)
+    preferences = PushDevicePreferencesSerializer(required=True)
+
+
+class PushDeviceSerializer(serializers.ModelSerializer):
+    preferences = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PushDevice
+        fields = [
+            "id",
+            "device_id",
+            "apns_token",
+            "platform",
+            "app_version",
+            "is_enabled",
+            "preferences",
+            "created_at",
+            "updated_at",
+            "last_seen_at",
+        ]
+
+    def get_preferences(self, obj: PushDevice):
+        return {
+            "price_adjustment_alerts_enabled": obj.price_adjustment_alerts_enabled,
+            "sale_alerts_enabled": obj.sale_alerts_enabled,
+            "receipt_processing_alerts_enabled": obj.receipt_processing_alerts_enabled,
+            "price_drop_alerts_enabled": obj.price_drop_alerts_enabled,
+        }
