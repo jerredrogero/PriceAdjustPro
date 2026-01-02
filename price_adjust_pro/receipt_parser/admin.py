@@ -652,44 +652,6 @@ class PriceAdjustmentAlertAdmin(BaseModelAdmin):
         updated = queryset.update(is_active=False, is_expired=True)
         self.message_user(request, f'{updated} alerts marked as expired.')
     mark_as_expired.short_description = "Mark selected alerts as expired"
-
-
-@admin.register(PushDevice)
-class PushDeviceAdmin(BaseModelAdmin):
-    list_display = (
-        "user",
-        "platform",
-        "device_id",
-        "is_enabled",
-        "price_adjustment_alerts_enabled",
-        "sale_alerts_enabled",
-        "receipt_processing_alerts_enabled",
-        "price_drop_alerts_enabled",
-        "last_seen_at",
-        "updated_at",
-    )
-    list_filter = (
-        "platform",
-        "is_enabled",
-        "price_adjustment_alerts_enabled",
-        "sale_alerts_enabled",
-        "receipt_processing_alerts_enabled",
-        "price_drop_alerts_enabled",
-    )
-    search_fields = ("user__username", "user__email", "device_id", "apns_token")
-    readonly_fields = ("created_at", "updated_at", "last_seen_at")
-    raw_id_fields = ("user",)
-    ordering = ("-updated_at",)
-
-
-@admin.register(PushDelivery)
-class PushDeliveryAdmin(BaseModelAdmin):
-    list_display = ("device", "kind", "dedupe_key", "created_at")
-    list_filter = ("kind", "created_at")
-    search_fields = ("device__user__username", "device__device_id", "dedupe_key")
-    readonly_fields = ("created_at",)
-    raw_id_fields = ("device",)
-    ordering = ("-created_at",)
     
     def mark_as_dismissed(self, request, queryset):
         updated = queryset.update(is_dismissed=True)
@@ -834,6 +796,44 @@ class PushDeliveryAdmin(BaseModelAdmin):
         json.dump(data, response, indent=2)
         return response
     export_as_json.short_description = "Export selected alerts as JSON"
+
+
+@admin.register(PushDevice)
+class PushDeviceAdmin(BaseModelAdmin):
+    list_display = (
+        "user",
+        "platform",
+        "device_id",
+        "is_enabled",
+        "price_adjustment_alerts_enabled",
+        "sale_alerts_enabled",
+        "receipt_processing_alerts_enabled",
+        "price_drop_alerts_enabled",
+        "last_seen_at",
+        "updated_at",
+    )
+    list_filter = (
+        "platform",
+        "is_enabled",
+        "price_adjustment_alerts_enabled",
+        "sale_alerts_enabled",
+        "receipt_processing_alerts_enabled",
+        "price_drop_alerts_enabled",
+    )
+    search_fields = ("user__username", "user__email", "device_id", "apns_token")
+    readonly_fields = ("created_at", "updated_at", "last_seen_at")
+    raw_id_fields = ("user",)
+    ordering = ("-updated_at",)
+
+
+@admin.register(PushDelivery)
+class PushDeliveryAdmin(BaseModelAdmin):
+    list_display = ("device", "kind", "dedupe_key", "created_at")
+    list_filter = ("kind", "created_at")
+    search_fields = ("device__user__username", "device__device_id", "dedupe_key")
+    readonly_fields = ("created_at",)
+    raw_id_fields = ("device",)
+    ordering = ("-created_at",)
 
 @admin.register(LineItem)
 class LineItemAdmin(BaseModelAdmin):
