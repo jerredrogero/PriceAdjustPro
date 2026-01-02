@@ -21,7 +21,8 @@ from .models import (
     ItemPriceHistory, PriceAdjustmentAlert,
     CostcoPromotion, CostcoPromotionPage, OfficialSaleItem,
     SubscriptionProduct, UserSubscription, SubscriptionEvent,
-    UserProfile, AppleSubscription, EmailVerificationToken
+    UserProfile, AppleSubscription, EmailVerificationToken,
+    PushDevice, PushDelivery,
 )
 from django.conf import settings
 from django.utils import timezone
@@ -549,7 +550,7 @@ class PriceAdjustmentAlertAdmin(BaseModelAdmin):
     date_hierarchy = 'purchase_date'
     list_per_page = 50
     raw_id_fields = ('user',)
-    actions = ['mark_as_expired', 'mark_as_dismissed', 'export_as_csv', 'export_as_json']
+    actions = ['mark_as_expired', 'mark_as_dismissed', 'send_push_summary_now', 'export_as_csv', 'export_as_json']
     
     fieldsets = (
         ('Basic Information', {
@@ -570,10 +571,125 @@ class PriceAdjustmentAlertAdmin(BaseModelAdmin):
         }),
     )
 
+    def save_model(self, request, obj, form, change):
+        """
+        When an admin manually creates an alert, trigger a push immediately.
+
+        Note: Normal app flows trigger pushes elsewhere (receipt upload / promo processing),
+        so we keep this scoped to admin-created objects to make manual testing reliable.
+        """
+        super().save_model(request, obj, form, change)
+
+        if change:
+            return
+
+        try:
+            from receipt_parser.notifications.push import send_price_adjustment_summary_to_user
+
+            total_savings = (obj.original_price - obj.lower_price) if (obj.original_price is not None and obj.lower_price is not None) else Decimal("0.00")
+            sent = send_price_adjustment_summary_to_user(
+                user_id=obj.user_id,
+                latest_alert_id=obj.id,
+                count=1,
+                total_savings=total_savings,
+                throttle_minutes=0,  # admin create should be immediate for testing
+            )
+            if sent:
+                self.message_user(request, f"Push sent to {sent} device(s).", level=messages.SUCCESS)
+            else:
+                self.message_user(
+                    request,
+                    "No push sent (no enabled devices registered for this user, or notifications disabled on device).",
+                    level=messages.WARNING,
+                )
+        except Exception as e:
+            logger.error("Failed to send admin-triggered push for PriceAdjustmentAlert %s: %s", getattr(obj, "id", None), e)
+            self.message_user(request, f"Failed to send push: {e}", level=messages.ERROR)
+
+    def send_push_summary_now(self, request, queryset):
+        """
+        Admin action: send a push summary for selected alerts immediately.
+        """
+        try:
+            from receipt_parser.notifications.push import send_price_adjustment_summary_to_user, summarize_new_alerts_for_user
+        except Exception as e:
+            self.message_user(request, f"Failed to import push sender: {e}", level=messages.ERROR)
+            return
+
+        sent_total = 0
+        # Group by user so selecting multiple alerts doesn't spam multiple pushes.
+        by_user = {}
+        for alert in queryset:
+            by_user.setdefault(alert.user_id, []).append(alert.id)
+
+        for user_id, alert_ids in by_user.items():
+            try:
+                summary = summarize_new_alerts_for_user(user_id=user_id, alert_ids=alert_ids)
+                latest_alert_id = max(alert_ids)
+                sent = send_price_adjustment_summary_to_user(
+                    user_id=user_id,
+                    latest_alert_id=latest_alert_id,
+                    count=summary["count"],
+                    total_savings=summary["total_savings"],
+                    throttle_minutes=0,
+                )
+                sent_total += sent
+            except Exception as e:
+                logger.error("Failed to send manual push summary for user %s: %s", user_id, e)
+                self.message_user(request, f"Failed to send push for user_id={user_id}: {e}", level=messages.ERROR)
+
+        if sent_total:
+            self.message_user(request, f"Push sent to {sent_total} device(s).", level=messages.SUCCESS)
+        else:
+            self.message_user(
+                request,
+                "No pushes sent (no enabled devices registered / notifications disabled / APNs not configured).",
+                level=messages.WARNING,
+            )
+    send_push_summary_now.short_description = "Send push summary now (selected alerts)"
+
     def mark_as_expired(self, request, queryset):
         updated = queryset.update(is_active=False, is_expired=True)
         self.message_user(request, f'{updated} alerts marked as expired.')
     mark_as_expired.short_description = "Mark selected alerts as expired"
+
+
+@admin.register(PushDevice)
+class PushDeviceAdmin(BaseModelAdmin):
+    list_display = (
+        "user",
+        "platform",
+        "device_id",
+        "is_enabled",
+        "price_adjustment_alerts_enabled",
+        "sale_alerts_enabled",
+        "receipt_processing_alerts_enabled",
+        "price_drop_alerts_enabled",
+        "last_seen_at",
+        "updated_at",
+    )
+    list_filter = (
+        "platform",
+        "is_enabled",
+        "price_adjustment_alerts_enabled",
+        "sale_alerts_enabled",
+        "receipt_processing_alerts_enabled",
+        "price_drop_alerts_enabled",
+    )
+    search_fields = ("user__username", "user__email", "device_id", "apns_token")
+    readonly_fields = ("created_at", "updated_at", "last_seen_at")
+    raw_id_fields = ("user",)
+    ordering = ("-updated_at",)
+
+
+@admin.register(PushDelivery)
+class PushDeliveryAdmin(BaseModelAdmin):
+    list_display = ("device", "kind", "dedupe_key", "created_at")
+    list_filter = ("kind", "created_at")
+    search_fields = ("device__user__username", "device__device_id", "dedupe_key")
+    readonly_fields = ("created_at",)
+    raw_id_fields = ("device",)
+    ordering = ("-created_at",)
     
     def mark_as_dismissed(self, request, queryset):
         updated = queryset.update(is_dismissed=True)

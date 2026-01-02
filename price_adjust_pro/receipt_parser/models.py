@@ -470,10 +470,12 @@ class PriceAdjustmentAlert(models.Model):
     item_description = models.CharField(max_length=255)
     original_price = models.DecimalField(max_digits=10, decimal_places=2)
     lower_price = models.DecimalField(max_digits=10, decimal_places=2)
-    original_store_city = models.CharField(max_length=100)
-    original_store_number = models.CharField(max_length=50)
-    cheaper_store_city = models.CharField(max_length=100)
-    cheaper_store_number = models.CharField(max_length=50)
+    # Store/location fields are optional because official promotions are nationwide.
+    # (They may still be populated for user comparisons / legacy data.)
+    original_store_city = models.CharField(max_length=100, null=True, blank=True)
+    original_store_number = models.CharField(max_length=50, null=True, blank=True)
+    cheaper_store_city = models.CharField(max_length=100, null=True, blank=True)
+    cheaper_store_number = models.CharField(max_length=50, null=True, blank=True)
     purchase_date = models.DateTimeField()
     created_at = models.DateTimeField(auto_now_add=True)
     is_active = models.BooleanField(default=True)
@@ -548,13 +550,16 @@ class PriceAdjustmentAlert(models.Model):
             start_date = self.purchase_date.date() - timedelta(days=1)
             end_date = self.purchase_date.date() + timedelta(days=1)
             
-            receipt = Receipt.objects.filter(
+            filters = dict(
                 user=self.user,
                 transaction_date__date__gte=start_date,
                 transaction_date__date__lte=end_date,
-                store_number=self.original_store_number,
                 items__item_code=self.item_code
-            ).first()
+            )
+            if self.original_store_number:
+                filters["store_number"] = self.original_store_number
+
+            receipt = Receipt.objects.filter(**filters).first()
             
             return receipt.transaction_number if receipt else None
         except Exception:
@@ -565,16 +570,25 @@ class PriceAdjustmentAlert(models.Model):
         try:
             if self.data_source == 'user_edit':
                 # For user_edit, look for another receipt from the same user with the lower price
-                receipt = Receipt.objects.filter(
+                filters = dict(
                     user=self.user,
-                    store_number=self.cheaper_store_number,
                     items__item_code=self.item_code,
                     items__price=self.lower_price
-                ).exclude(
-                    # Exclude the original purchase receipt
-                    transaction_date__date=self.purchase_date.date(),
-                    store_number=self.original_store_number
-                ).first()
+                )
+                if self.cheaper_store_number:
+                    filters["store_number"] = self.cheaper_store_number
+
+                exclude_filters = {}
+                if self.purchase_date:
+                    exclude_filters["transaction_date__date"] = self.purchase_date.date()
+                if self.original_store_number:
+                    exclude_filters["store_number"] = self.original_store_number
+
+                qs = Receipt.objects.filter(**filters)
+                if exclude_filters:
+                    qs = qs.exclude(**exclude_filters)
+
+                receipt = qs.first()
                 
                 return receipt.transaction_number if receipt else None
             else:
@@ -619,8 +633,14 @@ class PriceAdjustmentAlert(models.Model):
                     'type': 'cheaper'
                 })
             
+            original_city = self.original_store_city or "your Costco"
+            cheaper_city = self.cheaper_store_city or "another Costco"
             return {
-                'text': f"You purchased this item at {self.original_store_city} for ${self.original_price}. You later found it for ${self.lower_price} at {self.cheaper_store_city}. You may be eligible for a price adjustment.",
+                'text': (
+                    f"You purchased this item at {original_city} for ${self.original_price}. "
+                    f"You later found it for ${self.lower_price} at {cheaper_city}. "
+                    "You may be eligible for a price adjustment."
+                ),
                 'links': links
             }
         
