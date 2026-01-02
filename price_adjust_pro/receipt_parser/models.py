@@ -726,20 +726,35 @@ class PriceAdjustmentAlert(models.Model):
         return None
 
     @property
+    def claim_days_remaining(self):
+        """
+        Days remaining to claim a price adjustment.
+
+        This is the earliest deadline between:
+        - the user's personal 30-day PA window, and
+        - (official promos) the nationwide promotion end date.
+        """
+        pa_days = self.pa_days_remaining
+        if pa_days is None:
+            return None
+
+        sale_days = self.sale_days_remaining
+        if sale_days is None:
+            return pa_days
+
+        return min(pa_days, sale_days)
+
+    @property
     def days_remaining(self):
         """
         Backwards-compatible "days_remaining".
 
-        Historically:
-        - official promos: days until promotion ends
-        - everything else: days left in the user's 30-day PA window
+        We now define this as "days remaining to claim a price adjustment"
+        (the earliest deadline between promo end and the user's 30-day window).
 
-        New clients should prefer `sale_days_remaining` and `pa_days_remaining`.
+        New clients may use `claim_days_remaining` explicitly.
         """
-        sale_days = self.sale_days_remaining
-        if sale_days is not None:
-            return sale_days
-        return self.pa_days_remaining
+        return self.claim_days_remaining
 
     @property
     def is_expired(self):

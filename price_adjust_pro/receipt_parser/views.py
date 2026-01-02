@@ -1555,9 +1555,10 @@ def api_price_adjustments(request):
                     'store_location': f"Costco {alert.cheaper_store_city or 'All Costco Locations'}",
                     'store_number': alert.cheaper_store_number or 'ALL',
                     'purchase_date': alert.purchase_date.isoformat(),
-                    # Backwards compatible field (historically "sale days" for official promos)
+                    # Single window: earliest of sale end vs user's 30-day PA window
                     'days_remaining': safe_get_property(alert, 'days_remaining', 0),
-                    # New fields: distinguish promo time left vs user's 30-day PA window
+                    'claim_days_remaining': safe_get_property(alert, 'claim_days_remaining', None),
+                    # Keep detailed fields available for debugging / future UI if needed
                     'sale_days_remaining': safe_get_property(alert, 'sale_days_remaining', None),
                     'pa_days_remaining': safe_get_property(alert, 'pa_days_remaining', None),
                     'original_store': f"Costco {alert.original_store_city or 'Unknown'}",

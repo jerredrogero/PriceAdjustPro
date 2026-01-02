@@ -31,8 +31,7 @@ interface PriceAdjustmentInfo {
   store_number: string;
   purchase_date: string;
   days_remaining: number;
-  sale_days_remaining?: number | null;
-  pa_days_remaining?: number | null;
+  claim_days_remaining?: number | null;
   original_store: string;
   original_store_number: string;
   data_source: string;
@@ -190,26 +189,14 @@ const PriceAdjustmentAlert: React.FC<Props> = ({ adjustments, onDismiss }) => {
                       Available at: {adjustment.store_location} {adjustment.store_number && adjustment.store_number.toLowerCase() !== 'null' ? `#${adjustment.store_number}` : ''}
                     </Typography>
                   </Box>
-                  {adjustment.is_official && (
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <TimeIcon sx={{ color: (adjustment.sale_days_remaining ?? adjustment.days_remaining) <= 7 ? 'error.main' : 'warning.main', fontSize: 18 }} />
-                      <Typography
-                        variant="body2"
-                        color={(adjustment.sale_days_remaining ?? adjustment.days_remaining) <= 7 ? "error.main" : "warning.main"}
-                        sx={{ fontWeight: 'medium' }}
-                      >
-                        Sale: {formatDaysRemaining(adjustment.sale_days_remaining ?? adjustment.days_remaining)}
-                      </Typography>
-                    </Box>
-                  )}
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <TimeIcon sx={{ color: (adjustment.pa_days_remaining ?? adjustment.days_remaining) <= 7 ? 'error.main' : 'warning.main', fontSize: 18 }} />
+                    <TimeIcon sx={{ color: (adjustment.claim_days_remaining ?? adjustment.days_remaining) <= 7 ? 'error.main' : 'warning.main', fontSize: 18 }} />
                     <Typography
                       variant="body2"
-                      color={(adjustment.pa_days_remaining ?? adjustment.days_remaining) <= 7 ? "error.main" : "warning.main"}
+                      color={(adjustment.claim_days_remaining ?? adjustment.days_remaining) <= 7 ? "error.main" : "warning.main"}
                       sx={{ fontWeight: 'medium' }}
                     >
-                      PA window: {formatDaysRemaining(adjustment.pa_days_remaining ?? adjustment.days_remaining)}
+                      You have {formatDaysRemaining(adjustment.claim_days_remaining ?? adjustment.days_remaining)} to claim your Price Adjustment
                     </Typography>
                   </Box>
                   <Box sx={{ mt: 1 }}>

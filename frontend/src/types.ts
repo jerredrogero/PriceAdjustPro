@@ -49,8 +49,7 @@ export interface PriceAdjustment {
   store_number: string;
   purchase_date: string;
   days_remaining: number;
-  sale_days_remaining?: number | null;
-  pa_days_remaining?: number | null;
+  claim_days_remaining?: number | null;
   original_store: string;
   original_store_number: string;
 }
