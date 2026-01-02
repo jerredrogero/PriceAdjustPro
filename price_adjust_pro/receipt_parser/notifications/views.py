@@ -17,13 +17,13 @@ logger = logging.getLogger(__name__)
 @csrf_exempt
 def api_upsert_push_device(request):
     """
-    POST /api/notifications/devices/
+    GET/POST /api/notifications/devices/
 
     Auth:
     - Cookie session (request.user.is_authenticated)
     - OR Authorization: Bearer <django_session_key>
     """
-    if request.method != "POST":
+    if request.method not in ("GET", "POST"):
         return JsonResponse({"error": "Method not allowed"}, status=405)
 
     user = request.user if getattr(request, "user", None) and request.user.is_authenticated else None
@@ -31,16 +31,27 @@ def api_upsert_push_device(request):
         user = get_request_user_via_bearer_session(request)
 
     if user is None:
+        # WARNING level so this shows up in production logs without extra config.
+        logger.warning(
+            "Push device upsert: auth required (ua=%s, has_auth=%s, cookies=%s)",
+            request.META.get("HTTP_USER_AGENT", "")[:120],
+            bool(request.META.get("HTTP_AUTHORIZATION")),
+            ",".join(sorted(list(request.COOKIES.keys())))[:200],
+        )
         return JsonResponse({"error": "Authentication required"}, status=401)
+
+    if request.method == "GET":
+        devices = PushDevice.objects.filter(user=user).order_by("-updated_at")[:20]
+        return JsonResponse({"devices": PushDeviceSerializer(devices, many=True).data}, status=200)
 
     try:
         body = request.body.decode("utf-8") if isinstance(request.body, (bytes, bytearray)) else (request.body or "")
         data = json.loads(body) if body else {}
     except json.JSONDecodeError:
-        logger.info("Push device upsert: invalid JSON (user_id=%s)", getattr(user, "id", None))
+        logger.warning("Push device upsert: invalid JSON (user_id=%s)", getattr(user, "id", None))
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
-    logger.info(
+    logger.warning(
         "Push device upsert: received (user_id=%s, keys=%s)",
         getattr(user, "id", None),
         sorted(list(data.keys())) if isinstance(data, dict) else "non-dict",
@@ -48,7 +59,7 @@ def api_upsert_push_device(request):
 
     serializer = PushDeviceUpsertSerializer(data=data)
     if not serializer.is_valid():
-        logger.info(
+        logger.warning(
             "Push device upsert: validation failed (user_id=%s) errors=%s",
             getattr(user, "id", None),
             serializer.errors,
@@ -74,7 +85,7 @@ def api_upsert_push_device(request):
         },
     )
 
-    logger.info(
+    logger.warning(
         "Push device upsert: success (user_id=%s device_id=%s platform=%s)",
         getattr(user, "id", None),
         device.device_id,
