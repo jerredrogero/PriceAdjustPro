@@ -691,6 +691,9 @@ class PriceAdjustmentAlert(models.Model):
         
         # For all other price adjustments (user_edit, ocr_parsed), use 30-day window from purchase
         # Costco's price adjustment policy is 30 days from the original purchase date
+        if self.purchase_date is None:
+            # In Django admin "add" forms, purchase_date can be unset (None) pre-save.
+            return None
         days_since_purchase = (timezone.now() - self.purchase_date).days
         return max(0, 30 - days_since_purchase)
 
@@ -701,6 +704,8 @@ class PriceAdjustmentAlert(models.Model):
             return timezone.now().date() > self.official_sale_item.promotion.sale_end_date
         
         # For all other price adjustments (user_edit, ocr_parsed), check if 30 days have passed since purchase
+        if self.purchase_date is None:
+            return False
         return self.days_remaining == 0
 
     def save(self, *args, **kwargs):
