@@ -597,11 +597,44 @@ class PriceAdjustmentAlertAdmin(BaseModelAdmin):
             if sent:
                 self.message_user(request, f"Push sent to {sent} device(s).", level=messages.SUCCESS)
             else:
-                self.message_user(
-                    request,
-                    "No push sent (no enabled devices registered for this user, or notifications disabled on device).",
-                    level=messages.WARNING,
+                total_devices = PushDevice.objects.filter(user_id=obj.user_id).count()
+                enabled_devices = PushDevice.objects.filter(
+                    user_id=obj.user_id,
+                    is_enabled=True,
+                    price_adjustment_alerts_enabled=True,
+                ).count()
+                apns_configured = bool(
+                    getattr(settings, "APNS_TEAM_ID", "").strip()
+                    and getattr(settings, "APNS_KEY_ID", "").strip()
+                    and getattr(settings, "APNS_BUNDLE_ID", "").strip()
+                    and (
+                        (getattr(settings, "APNS_PRIVATE_KEY_P8", "") or "").strip()
+                        or getattr(settings, "APNS_PRIVATE_KEY_P8_PATH", "").strip()
+                    )
                 )
+
+                if enabled_devices == 0:
+                    self.message_user(
+                        request,
+                        f"No push sent: backend has 0 enabled push devices for this user (total devices: {total_devices}). "
+                        "Being logged in is not enough—iOS must register an APNs token via /api/notifications/devices/ "
+                        "and price adjustment notifications must be enabled.",
+                        level=messages.WARNING,
+                    )
+                elif not apns_configured:
+                    self.message_user(
+                        request,
+                        f"No push sent: {enabled_devices} enabled device(s) found, but APNs is not configured on the server "
+                        "(missing APNS_* settings). Check Render env vars and logs.",
+                        level=messages.WARNING,
+                    )
+                else:
+                    self.message_user(
+                        request,
+                        f"No push sent: {enabled_devices} enabled device(s) found, but APNs delivery likely failed "
+                        "(invalid/unregistered token, sandbox/prod mismatch, or APNs error). Check Render logs and Push Deliveries.",
+                        level=messages.WARNING,
+                    )
         except Exception as e:
             logger.error("Failed to send admin-triggered push for PriceAdjustmentAlert %s: %s", getattr(obj, "id", None), e)
             self.message_user(request, f"Failed to send push: {e}", level=messages.ERROR)
@@ -641,11 +674,7 @@ class PriceAdjustmentAlertAdmin(BaseModelAdmin):
         if sent_total:
             self.message_user(request, f"Push sent to {sent_total} device(s).", level=messages.SUCCESS)
         else:
-            self.message_user(
-                request,
-                "No pushes sent (no enabled devices registered / notifications disabled / APNs not configured).",
-                level=messages.WARNING,
-            )
+            self.message_user(request, "No pushes sent. Check Push Devices (enabled + prefs), APNS_* env vars, and logs.", level=messages.WARNING)
     send_push_summary_now.short_description = "Send push summary now (selected alerts)"
 
     def mark_as_expired(self, request, queryset):
