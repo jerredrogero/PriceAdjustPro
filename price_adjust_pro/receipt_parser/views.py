@@ -1506,6 +1506,19 @@ def api_price_adjustments(request):
             is_dismissed=False
         ).select_related('user')  # Add select_related to optimize queries
 
+        # Only show alerts where the user is still within the 30-day PA window
+        # (Users can only request a PA within 30 days of their purchase, even if the sale lasts longer.)
+        from datetime import timedelta
+        pa_cutoff = timezone.now() - timedelta(days=30)
+        alerts = alerts.filter(purchase_date__gte=pa_cutoff)
+
+        # For official promotions, also hide alerts after the promotion ends
+        today = timezone.now().date()
+        alerts = alerts.exclude(
+            data_source="official_promo",
+            official_sale_item__promotion__sale_end_date__lt=today,
+        )
+
         logger.info(f"Found {alerts.count()} active alerts for user {request.user.username}")
 
         # Convert to list and sort by price difference
@@ -1542,7 +1555,11 @@ def api_price_adjustments(request):
                     'store_location': f"Costco {alert.cheaper_store_city or 'All Costco Locations'}",
                     'store_number': alert.cheaper_store_number or 'ALL',
                     'purchase_date': alert.purchase_date.isoformat(),
+                    # Backwards compatible field (historically "sale days" for official promos)
                     'days_remaining': safe_get_property(alert, 'days_remaining', 0),
+                    # New fields: distinguish promo time left vs user's 30-day PA window
+                    'sale_days_remaining': safe_get_property(alert, 'sale_days_remaining', None),
+                    'pa_days_remaining': safe_get_property(alert, 'pa_days_remaining', None),
                     'original_store': f"Costco {alert.original_store_city or 'Unknown'}",
                     'original_store_number': alert.original_store_number or '',
                     'data_source': alert.data_source,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 
 from django.http import JsonResponse
 from django.utils import timezone
@@ -9,6 +10,8 @@ from django.views.decorators.csrf import csrf_exempt
 from receipt_parser.models import PushDevice
 from receipt_parser.notifications.auth import get_request_user_via_bearer_session
 from receipt_parser.serializers import PushDeviceSerializer, PushDeviceUpsertSerializer
+
+logger = logging.getLogger(__name__)
 
 
 @csrf_exempt
@@ -34,10 +37,22 @@ def api_upsert_push_device(request):
         body = request.body.decode("utf-8") if isinstance(request.body, (bytes, bytearray)) else (request.body or "")
         data = json.loads(body) if body else {}
     except json.JSONDecodeError:
+        logger.info("Push device upsert: invalid JSON (user_id=%s)", getattr(user, "id", None))
         return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    logger.info(
+        "Push device upsert: received (user_id=%s, keys=%s)",
+        getattr(user, "id", None),
+        sorted(list(data.keys())) if isinstance(data, dict) else "non-dict",
+    )
 
     serializer = PushDeviceUpsertSerializer(data=data)
     if not serializer.is_valid():
+        logger.info(
+            "Push device upsert: validation failed (user_id=%s) errors=%s",
+            getattr(user, "id", None),
+            serializer.errors,
+        )
         return JsonResponse({"error": "Validation failed", "details": serializer.errors}, status=400)
 
     vd = serializer.validated_data
@@ -59,6 +74,12 @@ def api_upsert_push_device(request):
         },
     )
 
+    logger.info(
+        "Push device upsert: success (user_id=%s device_id=%s platform=%s)",
+        getattr(user, "id", None),
+        device.device_id,
+        device.platform,
+    )
     return JsonResponse(PushDeviceSerializer(device).data, status=200)
 
 

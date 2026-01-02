@@ -53,6 +53,8 @@ interface PriceAdjustment {
   store_number: string;
   purchase_date: string;
   days_remaining: number;
+  sale_days_remaining?: number | null;
+  pa_days_remaining?: number | null;
   original_store: string;
   original_store_number: string;
   data_source: string;
@@ -366,9 +368,21 @@ const PriceAdjustments: React.FC = () => {
                       <Grid item xs={12} sm={6}>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                           <TimerIcon color="warning" fontSize="small" />
-                          <Typography variant="body2" color="warning.main">
-                            {adjustment.days_remaining} days remaining
-                          </Typography>
+                          <Box>
+                            {adjustment.is_official && (
+                              <Typography variant="body2" color="warning.main">
+                                Sale ends: {adjustment.sale_days_remaining ?? adjustment.days_remaining} day(s)
+                              </Typography>
+                            )}
+                            <Typography
+                              variant="body2"
+                              color={(adjustment.pa_days_remaining ?? adjustment.days_remaining) <= 0 ? "error.main" : "warning.main"}
+                            >
+                              PA window: {(adjustment.pa_days_remaining ?? adjustment.days_remaining) <= 0
+                                ? "Expired"
+                                : `${adjustment.pa_days_remaining ?? adjustment.days_remaining} day(s)`}
+                            </Typography>
+                          </Box>
                         </Box>
                       </Grid>
                     </Grid>

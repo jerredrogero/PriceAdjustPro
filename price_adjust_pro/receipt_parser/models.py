@@ -703,14 +703,12 @@ class PriceAdjustmentAlert(models.Model):
             }
 
     @property
-    def days_remaining(self):
-        # For official promotions, calculate days until promotion ends
-        if self.data_source == 'official_promo' and self.official_sale_item:
-            days_until_promo_ends = (self.official_sale_item.promotion.sale_end_date - timezone.now().date()).days
-            return max(0, days_until_promo_ends)
-        
-        # For all other price adjustments (user_edit, ocr_parsed), use 30-day window from purchase
-        # Costco's price adjustment policy is 30 days from the original purchase date
+    def pa_days_remaining(self):
+        """
+        Days remaining in the user's personal price adjustment (PA) window.
+
+        Costco's price adjustment policy is 30 days from the user's purchase date.
+        """
         if self.purchase_date is None:
             # In Django admin "add" forms, purchase_date can be unset (None) pre-save.
             return None
@@ -718,15 +716,47 @@ class PriceAdjustmentAlert(models.Model):
         return max(0, 30 - days_since_purchase)
 
     @property
-    def is_expired(self):
-        # For official promotions, check if promotion has ended
+    def sale_days_remaining(self):
+        """
+        Days remaining until the nationwide promotion ends (official promos only).
+        """
         if self.data_source == 'official_promo' and self.official_sale_item:
-            return timezone.now().date() > self.official_sale_item.promotion.sale_end_date
-        
-        # For all other price adjustments (user_edit, ocr_parsed), check if 30 days have passed since purchase
-        if self.purchase_date is None:
-            return False
-        return self.days_remaining == 0
+            days_until_promo_ends = (self.official_sale_item.promotion.sale_end_date - timezone.now().date()).days
+            return max(0, days_until_promo_ends)
+        return None
+
+    @property
+    def days_remaining(self):
+        """
+        Backwards-compatible "days_remaining".
+
+        Historically:
+        - official promos: days until promotion ends
+        - everything else: days left in the user's 30-day PA window
+
+        New clients should prefer `sale_days_remaining` and `pa_days_remaining`.
+        """
+        sale_days = self.sale_days_remaining
+        if sale_days is not None:
+            return sale_days
+        return self.pa_days_remaining
+
+    @property
+    def is_expired(self):
+        """
+        Expired means the user can no longer claim a price adjustment:
+        - the 30-day PA window has ended, OR
+        - (official promos) the nationwide promotion has ended.
+        """
+        pa_days = self.pa_days_remaining
+        if pa_days is not None and pa_days == 0:
+            return True
+
+        sale_days = self.sale_days_remaining
+        if sale_days is not None and sale_days == 0:
+            return True
+
+        return False
 
     def save(self, *args, **kwargs):
         # Set dedupe key on creation if missing
