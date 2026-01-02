@@ -624,8 +624,12 @@ class PriceAdjustmentAlertAdmin(BaseModelAdmin):
     trigger_reference.allow_tags = True
 
     def price_difference_display(self, obj):
-        return format_html('<span style="color: green">${}</span>', 
-            '{:.2f}'.format(float(obj.price_difference)))
+        if obj.price_difference is None:
+            return format_html('<span style="color: grey">-</span>')
+        return format_html(
+            '<span style="color: green">${}</span>',
+            '{:.2f}'.format(float(obj.price_difference)),
+        )
     price_difference_display.short_description = "Potential Savings"
 
     def status_display(self, obj):
@@ -690,7 +694,7 @@ class PriceAdjustmentAlertAdmin(BaseModelAdmin):
                 'item_description': alert.item_description,
                 'original_price': str(alert.original_price),
                 'lower_price': str(alert.lower_price),
-                'price_difference': str(alert.price_difference),
+                'price_difference': str(alert.price_difference) if alert.price_difference is not None else None,
                 'original_store_city': alert.original_store_city,
                 'cheaper_store_city': alert.cheaper_store_city,
                 'purchase_date': alert.purchase_date.strftime('%Y-%m-%d %H:%M:%S'),

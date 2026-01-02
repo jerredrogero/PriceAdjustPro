@@ -521,10 +521,21 @@ class PriceAdjustmentAlert(models.Model):
         verbose_name_plural = 'Price Adjustment Alerts'
 
     def __str__(self):
-        return f"Price Alert: {self.item_description} - Save ${self.price_difference}"
+        diff = self.price_difference
+        if diff is None:
+            return f"Price Alert: {self.item_description}"
+        return f"Price Alert: {self.item_description} - Save ${diff}"
 
     @property
     def price_difference(self):
+        """
+        Potential savings for this alert.
+
+        Note: In Django admin "add" forms, model instances can exist with unset
+        attributes (None) before validation/saving, so this must be null-safe.
+        """
+        if self.original_price is None or self.lower_price is None:
+            return None
         return self.original_price - self.lower_price
 
     def get_original_transaction_number(self):
