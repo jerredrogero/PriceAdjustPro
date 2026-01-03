@@ -3,6 +3,8 @@ from __future__ import annotations
 import functools
 import logging
 import time
+import base64
+import binascii
 
 from django.conf import settings
 
@@ -18,6 +20,10 @@ class ApnsSendResult:
 
 def _load_p8_key() -> str | None:
     raw = (getattr(settings, "APNS_PRIVATE_KEY_P8", "") or "").strip()
+    raw_b64 = (getattr(settings, "APNS_PRIVATE_KEY_P8_BASE64", "") or "").strip()
+    if raw_b64 and not raw:
+        raw = raw_b64
+
     if raw:
         # Render env vars are sometimes pasted with wrapping quotes or escaped newlines.
         if (raw.startswith('"') and raw.endswith('"')) or (raw.startswith("'") and raw.endswith("'")):
@@ -28,6 +34,18 @@ def _load_p8_key() -> str | None:
 
         # Normalize Windows newlines
         raw = raw.replace("\r\n", "\n")
+
+        # Some platforms prefer storing the .p8 as base64.
+        # If it doesn't look like PEM yet, try base64 decode.
+        if "BEGIN PRIVATE KEY" not in raw and "BEGIN EC PRIVATE KEY" not in raw:
+            try:
+                decoded = base64.b64decode(raw.encode("utf-8"), validate=True)
+                decoded_text = decoded.decode("utf-8", errors="strict").strip()
+                if "BEGIN PRIVATE KEY" in decoded_text or "BEGIN EC PRIVATE KEY" in decoded_text:
+                    return decoded_text.replace("\r\n", "\n")
+            except (binascii.Error, UnicodeDecodeError):
+                pass
+
         return raw
 
     path = (getattr(settings, "APNS_PRIVATE_KEY_P8_PATH", "") or "").strip()

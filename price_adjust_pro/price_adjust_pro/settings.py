@@ -229,6 +229,7 @@ APNS_TEAM_ID = os.getenv("APNS_TEAM_ID", "").strip()
 APNS_KEY_ID = os.getenv("APNS_KEY_ID", "").strip()
 APNS_BUNDLE_ID = os.getenv("APNS_BUNDLE_ID", "").strip()
 APNS_PRIVATE_KEY_P8 = os.getenv("APNS_PRIVATE_KEY_P8", "")
+APNS_PRIVATE_KEY_P8_BASE64 = os.getenv("APNS_PRIVATE_KEY_P8_BASE64", "").strip()
 APNS_PRIVATE_KEY_P8_PATH = os.getenv("APNS_PRIVATE_KEY_P8_PATH", "").strip()
 APNS_USE_SANDBOX = env_to_bool(os.getenv("APNS_USE_SANDBOX"), default=DEBUG)
 
