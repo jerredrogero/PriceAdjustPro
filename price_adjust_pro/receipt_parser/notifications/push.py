@@ -67,9 +67,10 @@ def send_price_adjustment_summary_to_user(
         if recently_sent:
             continue
 
+        delivery = None
         try:
             with transaction.atomic():
-                PushDelivery.objects.create(
+                delivery = PushDelivery.objects.create(
                     device=device,
                     kind=kind,
                     dedupe_key=dedupe_key,
@@ -80,12 +81,40 @@ def send_price_adjustment_summary_to_user(
             continue
 
         res = send_apns(token=device.apns_token, payload=payload)
+        # Persist the APNs result for debugging (no schema changes needed).
+        try:
+            if delivery is not None:
+                delivery.payload_snapshot = {
+                    **(delivery.payload_snapshot or {}),
+                    "apns_result": {
+                        "success": bool(res.success),
+                        "status_code": res.status_code,
+                        "reason": res.reason,
+                    },
+                }
+                delivery.save(update_fields=["payload_snapshot"])
+        except Exception:
+            logger.exception("Failed to record APNs result on PushDelivery (device_id=%s)", device.id)
+
         if not res.success:
             # If APNs says token invalid/unregistered, disable device
             reason = (res.reason or "").lower()
-            if "unregistered" in reason or "baddevice" in reason or "bad device token" in reason:
+            if (
+                "unregistered" in reason
+                or "baddevice" in reason
+                or "bad device token" in reason
+                or "baddevicetoken" in reason
+                or "device token not for topic" in reason
+            ):
                 device.is_enabled = False
                 device.save(update_fields=["is_enabled", "updated_at"])
+            logger.warning(
+                "APNs send failed (user_id=%s device_id=%s status=%s reason=%s)",
+                user_id,
+                device.id,
+                res.status_code,
+                res.reason,
+            )
         else:
             sent += 1
 

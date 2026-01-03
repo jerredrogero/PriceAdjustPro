@@ -629,10 +629,34 @@ class PriceAdjustmentAlertAdmin(BaseModelAdmin):
                         level=messages.WARNING,
                     )
                 else:
+                    # Try to surface the exact APNs failure reason from the latest PushDelivery payload snapshots.
+                    reasons = []
+                    try:
+                        dedupe_key = f"latest_alert:{obj.id}"
+                        recent = (
+                            PushDelivery.objects.filter(
+                                device__user_id=obj.user_id,
+                                kind="price_adjustment_summary",
+                                dedupe_key=dedupe_key,
+                            )
+                            .select_related("device")
+                            .order_by("-created_at")[:10]
+                        )
+                        for d in recent:
+                            snap = d.payload_snapshot or {}
+                            ar = snap.get("apns_result") if isinstance(snap, dict) else None
+                            if isinstance(ar, dict) and ar.get("reason"):
+                                reasons.append(f"{ar.get('reason')} (status {ar.get('status_code')})")
+                    except Exception:
+                        pass
+
                     self.message_user(
                         request,
-                        f"No push sent: {enabled_devices} enabled device(s) found, but APNs delivery likely failed "
-                        "(invalid/unregistered token, sandbox/prod mismatch, or APNs error). Check Render logs and Push Deliveries.",
+                        (
+                            f"No push sent: {enabled_devices} enabled device(s) found, but APNs delivery failed. "
+                            + (f"Last APNs reason(s): {', '.join(reasons[:3])}. " if reasons else "")
+                            + "Check Render logs and Push Deliveries."
+                        ),
                         level=messages.WARNING,
                     )
         except Exception as e:
