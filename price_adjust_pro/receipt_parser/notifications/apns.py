@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import functools
 import logging
-import os
+import time
 
 from django.conf import settings
 
@@ -34,28 +34,86 @@ def _load_p8_key() -> str | None:
 
 
 @functools.lru_cache(maxsize=1)
-def _get_apns_client():
+def _get_signing_key():
     """
-    Lazily build an APNs client.
-
-    Uses provider token auth (.p8). We import `apns2` at runtime so tests can run
-    without the dependency installed.
+    Lazily load the APNs provider token signing key (.p8).
     """
     p8 = _load_p8_key()
     if not p8:
         return None
+    try:
+        from cryptography.hazmat.primitives import serialization  # type: ignore
+    except Exception as e:
+        logger.exception("cryptography is required for APNs provider token auth: %s", e)
+        return None
+    try:
+        return serialization.load_pem_private_key(p8.encode("utf-8"), password=None)
+    except Exception as e:
+        logger.exception("Failed to parse APNS_PRIVATE_KEY_P8: %s", e)
+        return None
 
-    team_id = getattr(settings, "APNS_TEAM_ID", "") or ""
-    key_id = getattr(settings, "APNS_KEY_ID", "") or ""
+
+def _apns_host() -> str:
+    use_sandbox = bool(getattr(settings, "APNS_USE_SANDBOX", False))
+    return "https://api.sandbox.push.apple.com" if use_sandbox else "https://api.push.apple.com"
+
+
+@functools.lru_cache(maxsize=1)
+def _get_http_client():
+    try:
+        import httpx  # type: ignore
+    except Exception as e:
+        logger.exception("httpx is required for APNs HTTP/2: %s", e)
+        return None
+    # HTTP/2 is required by APNs
+    return httpx.Client(http2=True, timeout=10.0)
+
+
+@functools.lru_cache(maxsize=1)
+def _provider_token_cache():
+    # store {"token": str, "iat": int}
+    return {"token": None, "iat": 0}
+
+
+def _get_provider_token() -> str | None:
+    """
+    Build (and cache) APNs provider token JWT.
+
+    APNs recommends rotating at least every 60 minutes; we refresh every 50.
+    """
+    team_id = (getattr(settings, "APNS_TEAM_ID", "") or "").strip()
+    key_id = (getattr(settings, "APNS_KEY_ID", "") or "").strip()
     if not team_id or not key_id:
         return None
 
-    use_sandbox = bool(getattr(settings, "APNS_USE_SANDBOX", False))
+    cache = _provider_token_cache()
+    now = int(time.time())
+    if cache.get("token") and (now - int(cache.get("iat") or 0) < 50 * 60):
+        return cache["token"]
 
-    from apns2.client import APNsClient  # type: ignore
+    signing_key = _get_signing_key()
+    if signing_key is None:
+        return None
 
-    # apns2 supports passing the private key bytes/str directly
-    return APNsClient(credentials=p8, use_sandbox=use_sandbox, use_alternative_port=False, team_id=team_id, key_id=key_id)
+    try:
+        import jwt  # type: ignore
+    except Exception as e:
+        logger.exception("PyJWT is required for APNs provider token auth: %s", e)
+        return None
+
+    try:
+        token = jwt.encode(
+            {"iss": team_id, "iat": now},
+            signing_key,
+            algorithm="ES256",
+            headers={"kid": key_id},
+        )
+        cache["token"] = token
+        cache["iat"] = now
+        return token
+    except Exception as e:
+        logger.exception("Failed to create APNs provider token JWT: %s", e)
+        return None
 
 
 def send_apns(*, token: str, payload: dict, topic: str | None = None) -> ApnsSendResult:
@@ -64,8 +122,12 @@ def send_apns(*, token: str, payload: dict, topic: str | None = None) -> ApnsSen
 
     If APNs is not configured, returns a non-success result (and logs).
     """
-    client = _get_apns_client()
-    if client is None:
+    http_client = _get_http_client()
+    if http_client is None:
+        return ApnsSendResult(success=False, reason="http2_client_missing")
+
+    provider_token = _get_provider_token()
+    if not provider_token:
         logger.info("APNs not configured; skipping send")
         return ApnsSendResult(success=False, reason="apns_not_configured")
 
@@ -75,36 +137,31 @@ def send_apns(*, token: str, payload: dict, topic: str | None = None) -> ApnsSen
         return ApnsSendResult(success=False, reason="missing_topic")
 
     try:
-        from apns2.payload import Payload  # type: ignore
+        import json as _json
 
         aps = payload.get("aps") or {}
-        alert = aps.get("alert")
-        sound = aps.get("sound")
-        badge = aps.get("badge")
-        content_available = 1 if aps.get("content-available") else 0
+        has_alert = bool(aps.get("alert"))
+        push_type = "alert" if has_alert else "background"
 
-        # Anything outside "aps" is custom data
-        custom = {k: v for k, v in payload.items() if k != "aps"}
+        url = f"{_apns_host()}/3/device/{token}"
+        headers = {
+            "authorization": f"bearer {provider_token}",
+            "apns-topic": bundle_id,
+            "apns-push-type": push_type,
+        }
 
-        apns_payload = Payload(
-            alert=alert,
-            sound=sound,
-            badge=badge,
-            content_available=bool(content_available),
-            custom=custom or None,
-        )
+        res = http_client.post(url, headers=headers, content=_json.dumps(payload).encode("utf-8"))
+        if 200 <= res.status_code < 300:
+            return ApnsSendResult(success=True, status_code=res.status_code)
 
-        # Priority defaults: use apns2 default behavior
-        res = client.send_notification(token, apns_payload, topic=bundle_id)
+        reason = None
+        try:
+            body = res.json()
+            reason = body.get("reason") if isinstance(body, dict) else None
+        except Exception:
+            reason = (res.text or "").strip() or None
 
-        # apns2 returns NotificationResponse
-        if getattr(res, "is_successful", False):
-            return ApnsSendResult(success=True, status_code=200)
-        return ApnsSendResult(
-            success=False,
-            status_code=getattr(res, "status", None),
-            reason=getattr(res, "description", None) or getattr(res, "reason", None),
-        )
+        return ApnsSendResult(success=False, status_code=res.status_code, reason=reason)
     except Exception as e:
         logger.exception("APNs send failed: %s", e)
         return ApnsSendResult(success=False, reason="exception")
