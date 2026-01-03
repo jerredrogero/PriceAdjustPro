@@ -1,0 +1,17 @@
+/* Minimal admin tweaks for PriceAdjustPro.
+   This file is referenced by BaseModelAdmin.Media in receipt_parser/admin.py.
+*/
+
+/* Slightly tighten headers */
+#header {
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.06);
+}
+
+/* Improve readability of readonly fields */
+.readonly {
+  background: rgba(0, 0, 0, 0.02);
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+
+

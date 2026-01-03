@@ -19,8 +19,16 @@ class ApnsSendResult:
 def _load_p8_key() -> str | None:
     raw = (getattr(settings, "APNS_PRIVATE_KEY_P8", "") or "").strip()
     if raw:
+        # Render env vars are sometimes pasted with wrapping quotes or escaped newlines.
+        if (raw.startswith('"') and raw.endswith('"')) or (raw.startswith("'") and raw.endswith("'")):
+            raw = raw[1:-1].strip()
+
         # Allow env var with '\n' escapes
-        return raw.replace("\\n", "\n")
+        raw = raw.replace("\\r\\n", "\n").replace("\\n", "\n")
+
+        # Normalize Windows newlines
+        raw = raw.replace("\r\n", "\n")
+        return raw
 
     path = (getattr(settings, "APNS_PRIVATE_KEY_P8_PATH", "") or "").strip()
     if path:
