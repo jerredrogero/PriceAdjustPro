@@ -97,23 +97,22 @@ def send_price_adjustment_summary_to_user(
             logger.exception("Failed to record APNs result on PushDelivery (device_id=%s)", device.id)
 
         if not res.success:
-            # If APNs says token invalid/unregistered, disable device
-            reason = (res.reason or "").lower()
-            if (
-                "unregistered" in reason
-                or "baddevice" in reason
-                or "bad device token" in reason
-                or "baddevicetoken" in reason
-                or "device token not for topic" in reason
-            ):
+            # Only disable on definitive "token is no longer valid" responses.
+            # Do NOT disable on recoverable errors like sandbox/prod mismatch or topic mismatch,
+            # otherwise the device will keep flipping back to disabled during setup.
+            reason_l = (res.reason or "").lower()
+            should_disable = (res.status_code == 410) or ("unregistered" in reason_l)
+            if should_disable:
                 device.is_enabled = False
                 device.save(update_fields=["is_enabled", "updated_at"])
+
             logger.warning(
-                "APNs send failed (user_id=%s device_id=%s status=%s reason=%s)",
+                "APNs send failed (user_id=%s device_id=%s status=%s reason=%s disabled=%s)",
                 user_id,
                 device.id,
                 res.status_code,
                 res.reason,
+                should_disable,
             )
         else:
             sent += 1

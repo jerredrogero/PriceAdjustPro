@@ -603,6 +603,7 @@ class PriceAdjustmentAlertAdmin(BaseModelAdmin):
                     is_enabled=True,
                     price_adjustment_alerts_enabled=True,
                 ).count()
+                disabled_devices = PushDevice.objects.filter(user_id=obj.user_id, is_enabled=False).count()
                 apns_configured = bool(
                     getattr(settings, "APNS_TEAM_ID", "").strip()
                     and getattr(settings, "APNS_KEY_ID", "").strip()
@@ -610,15 +611,37 @@ class PriceAdjustmentAlertAdmin(BaseModelAdmin):
                     and (
                         (getattr(settings, "APNS_PRIVATE_KEY_P8", "") or "").strip()
                         or getattr(settings, "APNS_PRIVATE_KEY_P8_PATH", "").strip()
+                        or getattr(settings, "APNS_PRIVATE_KEY_P8_BASE64", "").strip()
                     )
                 )
 
                 if enabled_devices == 0:
+                    # Try to surface why the device is disabled (if applicable)
+                    last_reason = None
+                    try:
+                        last_delivery = (
+                            PushDelivery.objects.filter(device__user_id=obj.user_id, kind="price_adjustment_summary")
+                            .order_by("-created_at")
+                            .first()
+                        )
+                        snap = (last_delivery.payload_snapshot or {}) if last_delivery else {}
+                        ar = snap.get("apns_result") if isinstance(snap, dict) else None
+                        if isinstance(ar, dict):
+                            r = ar.get("reason")
+                            sc = ar.get("status_code")
+                            if r or sc:
+                                last_reason = f"{r} (status {sc})"
+                    except Exception:
+                        pass
+
                     self.message_user(
                         request,
-                        f"No push sent: backend has 0 enabled push devices for this user (total devices: {total_devices}). "
-                        "Being logged in is not enough—iOS must register an APNs token via /api/notifications/devices/ "
-                        "and price adjustment notifications must be enabled.",
+                        (
+                            f"No push sent: backend has 0 enabled push devices for this user (total devices: {total_devices}, disabled: {disabled_devices}). "
+                            + (f"Last APNs result: {last_reason}. " if last_reason else "")
+                            + "Being logged in is not enough—iOS must register an APNs token via /api/notifications/devices/ "
+                            "and price adjustment notifications must be enabled."
+                        ),
                         level=messages.WARNING,
                     )
                 elif not apns_configured:
