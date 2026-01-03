@@ -191,8 +191,8 @@ const PriceAdjustmentAlert: React.FC<Props> = ({ adjustments, onDismiss }) => {
                   </Box>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                     <TimeIcon sx={{ color: (adjustment.claim_days_remaining ?? adjustment.days_remaining) <= 7 ? 'error.main' : 'warning.main', fontSize: 18 }} />
-                    <Typography
-                      variant="body2"
+                    <Typography 
+                      variant="body2" 
                       color={(adjustment.claim_days_remaining ?? adjustment.days_remaining) <= 7 ? "error.main" : "warning.main"}
                       sx={{ fontWeight: 'medium' }}
                     >

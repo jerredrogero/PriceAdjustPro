@@ -375,7 +375,7 @@ const PriceAdjustments: React.FC = () => {
                               {(adjustment.claim_days_remaining ?? adjustment.days_remaining) <= 0
                                 ? "Price Adjustment window expired"
                                 : `You have ${adjustment.claim_days_remaining ?? adjustment.days_remaining} day(s) left to claim your Price Adjustment`}
-                            </Typography>
+                          </Typography>
                           </Box>
                         </Box>
                       </Grid>
