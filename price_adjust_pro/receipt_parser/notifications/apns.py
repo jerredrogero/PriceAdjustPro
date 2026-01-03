@@ -169,7 +169,8 @@ def send_apns(*, token: str, payload: dict, topic: str | None = None) -> ApnsSen
         has_alert = bool(aps.get("alert"))
         push_type = "alert" if has_alert else "background"
 
-        url = f"{_apns_host()}/3/device/{token}"
+        host = _apns_host()
+        url = f"{host}/3/device/{token}"
         headers = {
             "authorization": f"bearer {provider_token}",
             "apns-topic": bundle_id,
@@ -187,6 +188,15 @@ def send_apns(*, token: str, payload: dict, topic: str | None = None) -> ApnsSen
         except Exception:
             reason = (res.text or "").strip() or None
 
+        # High-signal debug line so we can confirm sandbox vs prod in Render logs.
+        logger.warning(
+            "APNs request failed (host=%s sandbox=%s topic=%s status=%s reason=%s)",
+            host,
+            bool(getattr(settings, "APNS_USE_SANDBOX", False)),
+            bundle_id,
+            res.status_code,
+            reason,
+        )
         return ApnsSendResult(success=False, status_code=res.status_code, reason=reason)
     except Exception as e:
         logger.exception("APNs send failed: %s", e)
