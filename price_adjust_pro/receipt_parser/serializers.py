@@ -227,10 +227,10 @@ class ApplePurchaseRequestSerializer(serializers.Serializer):
 
 
 class PushDevicePreferencesSerializer(serializers.Serializer):
-    price_adjustment_alerts_enabled = serializers.BooleanField(required=True)
-    sale_alerts_enabled = serializers.BooleanField(required=True)
-    receipt_processing_alerts_enabled = serializers.BooleanField(required=True)
-    price_drop_alerts_enabled = serializers.BooleanField(required=True)
+    price_adjustment_alerts_enabled = serializers.BooleanField(required=False, default=True)
+    sale_alerts_enabled = serializers.BooleanField(required=False, default=True)
+    receipt_processing_alerts_enabled = serializers.BooleanField(required=False, default=True)
+    price_drop_alerts_enabled = serializers.BooleanField(required=False, default=True)
 
 
 class PushDeviceUpsertSerializer(serializers.Serializer):
