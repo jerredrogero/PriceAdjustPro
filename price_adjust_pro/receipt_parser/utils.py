@@ -336,14 +336,21 @@ Parse this receipt:
                         else:
                             parsed_data[key] = None
                 elif key == 'transaction_date':
-                    try:
-                        parsed_data[key] = timezone.make_aware(
-                            datetime.strptime(value, "%m/%d/%Y %H:%M")
-                        )
-                    except ValueError as e:
-                        print(f"Date parsing error: {str(e)}")
-                        parsed_data['parse_error'] = "Failed to parse transaction date"
-                        parsed_data['parsed_successfully'] = False
+                    # Gemini sometimes returns the literal string "null" for missing fields.
+                    # Treat that as "missing" so we can fall back to regex extraction below.
+                    normalized_value = (value or '').strip()
+                    if not normalized_value or normalized_value.lower() in ['null', 'none', 'n/a']:
+                        parsed_data[key] = None
+                    else:
+                        try:
+                            parsed_data[key] = timezone.make_aware(
+                                datetime.strptime(normalized_value, "%m/%d/%Y %H:%M")
+                            )
+                        except ValueError as e:
+                            print(f"Date parsing error: {str(e)}")
+                            parsed_data[key] = None
+                            parsed_data['parse_error'] = "Failed to parse transaction date"
+                            parsed_data['parsed_successfully'] = False
                 elif key == 'total_items_sold':
                     try:
                         parsed_data[key] = int(value)
