@@ -2,6 +2,27 @@ from django.shortcuts import redirect
 from django.conf import settings
 import re
 
+class BearerCsrfExemptMiddleware:
+    """
+    Allow API clients (mobile) to authenticate with `Authorization: Bearer <sessionid>`
+    without needing CSRF, while keeping normal cookie-session CSRF protection intact.
+    """
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        try:
+            auth = request.META.get("HTTP_AUTHORIZATION", "") or ""
+            if request.path.startswith("/api/") and auth.lower().startswith("bearer "):
+                # Must be set before CsrfViewMiddleware runs.
+                request._dont_enforce_csrf_checks = True
+        except Exception:
+            # If anything odd happens, fail closed (keep CSRF enforcement).
+            pass
+
+        return self.get_response(request)
+
 class AuthenticationMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
