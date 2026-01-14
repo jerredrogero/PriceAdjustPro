@@ -42,8 +42,30 @@ from .utils import (
     update_price_database, process_receipt_image, process_receipt_file
 )
 from .serializers import ReceiptSerializer
+from receipt_parser.notifications.auth import get_request_user_via_bearer_session
 
 logger = logging.getLogger(__name__)
+
+def _api_user_or_401(request):
+    """
+    API auth bridge:
+    - Cookie session (request.user.is_authenticated)
+    - OR Authorization: Bearer <django_session_key> (sessionid)
+    """
+    user = request.user if getattr(request, "user", None) and request.user.is_authenticated else None
+    if user is None:
+        user = get_request_user_via_bearer_session(request)
+    if user is None:
+        # WARNING level so this shows up in production logs without extra config.
+        logger.warning(
+            "API auth required: path=%s ua=%s has_auth=%s cookies=%s",
+            getattr(request, "path", ""),
+            (request.META.get("HTTP_USER_AGENT", "") or "")[:120],
+            bool(request.META.get("HTTP_AUTHORIZATION")),
+            ",".join(sorted(list(request.COOKIES.keys())))[:200],
+        )
+        return None, JsonResponse({"error": "Authentication required"}, status=401)
+    return user, None
 
 def user_has_paid_account(user):
     """Check if user has a paid account using the simple account type system."""
@@ -330,19 +352,21 @@ def receipt_detail(request, transaction_number):
     })
 
 # API Views
-@login_required
 def api_receipt_list(request):
+    user, err = _api_user_or_401(request)
+    if err is not None:
+        return err
     if request.method == 'GET':
         try:
             # Get all receipts for the user, ordered by date
-            receipts = Receipt.objects.filter(user=request.user).order_by('-transaction_date').prefetch_related('items')
+            receipts = Receipt.objects.filter(user=user).order_by('-transaction_date').prefetch_related('items')
             
             # Debug logging
-            logger.info(f"Found {receipts.count()} receipts for user {request.user.username}")
+            logger.info(f"Found {receipts.count()} receipts for user {user.username}")
             
             # Get active price adjustments count
             adjustments_count = PriceAdjustmentAlert.objects.filter(
-                user=request.user,
+                user=user,
                 is_active=True,
                 is_dismissed=False
             ).count()
@@ -394,10 +418,11 @@ def api_receipt_list(request):
             
     return JsonResponse({'error': 'Method not allowed'}, status=405)
 
-@csrf_exempt
-@login_required
 def api_receipt_detail(request, transaction_number):
-    receipt = get_object_or_404(Receipt, transaction_number=transaction_number, user=request.user)
+    user, err = _api_user_or_401(request)
+    if err is not None:
+        return err
+    receipt = get_object_or_404(Receipt, transaction_number=transaction_number, user=user)
     
     # Handle DELETE requests (fix for iOS app bug)
     if request.method == 'DELETE':
@@ -414,7 +439,7 @@ def api_receipt_detail(request, transaction_number):
             purchase_date_end = (receipt.transaction_date + timedelta(hours=12)).date()
             
             alerts_to_delete = PriceAdjustmentAlert.objects.filter(
-                user=request.user,
+                user=user,
                 item_code__in=item_codes,
                 purchase_date__date__gte=purchase_date_start,
                 purchase_date__date__lte=purchase_date_end
@@ -559,9 +584,10 @@ def api_receipt_detail(request, transaction_number):
         'file': receipt.file.url if receipt.file else None,
     })
 
-@csrf_exempt
-@login_required
 def api_receipt_upload(request):
+    user, err = _api_user_or_401(request)
+    if err is not None:
+        return err
     if request.method != 'POST':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
         
@@ -589,7 +615,7 @@ def api_receipt_upload(request):
         # Save the uploaded file
         timestamp = timezone.now().strftime("%Y%m%d%H%M%S")
         file_path = default_storage.save(
-            f'receipts/{request.user.id}/{timestamp}_{receipt_file.name}',
+            f'receipts/{user.id}/{timestamp}_{receipt_file.name}',
             ContentFile(receipt_file.read())
         )
         
@@ -597,12 +623,12 @@ def api_receipt_upload(request):
         full_path = default_storage.path(file_path)
         
         # Process the receipt using the unified function
-        parsed_data = process_receipt_file(full_path, user=request.user)
+        parsed_data = process_receipt_file(full_path, user=user)
 
         # Check for existing receipt
         existing_receipt = Receipt.objects.filter(
             transaction_number=parsed_data['transaction_number'],
-            user=request.user  # Add user filter
+            user=user  # Add user filter
         ).first()
 
         if existing_receipt:
@@ -622,7 +648,7 @@ def api_receipt_upload(request):
             existing_receipt.instant_savings = Decimal(str(parsed_data['instant_savings'])) if parsed_data.get('instant_savings') else None
             existing_receipt.parsed_successfully = parsed_data['parsed_successfully']
             existing_receipt.parse_error = parsed_data.get('parse_error')
-            existing_receipt.user = request.user  # Ensure user is set
+            existing_receipt.user = user  # Ensure user is set
             existing_receipt.save()
 
             # Delete existing line items
@@ -660,7 +686,7 @@ def api_receipt_upload(request):
                     from decimal import Decimal as D
 
                     new_alerts = PriceAdjustmentAlert.objects.filter(
-                        user=request.user,
+                        user=user,
                         created_at__gte=push_window_start,
                     ).order_by("-id")
                     total_savings = D("0.00")
@@ -670,7 +696,7 @@ def api_receipt_upload(request):
                     latest = new_alerts.first()
                     if latest:
                         send_price_adjustment_summary_to_user(
-                            user_id=request.user.id,
+                            user_id=user.id,
                             latest_alert_id=latest.id,
                             count=new_alerts.count(),
                             total_savings=total_savings,
@@ -707,7 +733,7 @@ def api_receipt_upload(request):
         
         # Create Receipt object with default values if parsing failed
         receipt = Receipt.objects.create(
-            user=request.user,
+            user=user,
             file=None,  # No file storage - data only
             transaction_number=parsed_data.get('transaction_number'),
             store_location=parsed_data.get('store_location', 'Costco Warehouse'),
@@ -764,7 +790,7 @@ def api_receipt_upload(request):
                 from decimal import Decimal as D
 
                 new_alerts = PriceAdjustmentAlert.objects.filter(
-                    user=request.user,
+                    user=user,
                     created_at__gte=push_window_start,
                 ).order_by("-id")
                 total_savings = D("0.00")
@@ -774,7 +800,7 @@ def api_receipt_upload(request):
                 latest = new_alerts.first()
                 if latest:
                     send_price_adjustment_summary_to_user(
-                        user_id=request.user.id,
+                        user_id=user.id,
                         latest_alert_id=latest.id,
                         count=new_alerts.count(),
                         total_savings=total_savings,
@@ -810,9 +836,10 @@ def api_receipt_upload(request):
             'is_duplicate': 'UNIQUE constraint failed' in str(e)
         }, status=200)  # Return 200 even for duplicates
 
-@csrf_exempt
-@login_required
 def api_receipt_delete(request, transaction_number):
+    user, err = _api_user_or_401(request)
+    if err is not None:
+        return err
     if request.method != 'DELETE':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
     
@@ -821,7 +848,7 @@ def api_receipt_delete(request, transaction_number):
         return JsonResponse({'error': 'Invalid transaction number'}, status=400)
     
     try:
-        receipt = Receipt.objects.get(transaction_number=transaction_number, user=request.user)
+        receipt = Receipt.objects.get(transaction_number=transaction_number, user=user)
     except Receipt.DoesNotExist:
         return JsonResponse({'error': 'Receipt not found'}, status=404)
     
@@ -843,7 +870,7 @@ def api_receipt_delete(request, transaction_number):
         purchase_date_end = (receipt.transaction_date + timedelta(hours=12)).date()
         
         alerts_to_delete = PriceAdjustmentAlert.objects.filter(
-            user=request.user,
+            user=user,
             item_code__in=item_codes,
             purchase_date__date__gte=purchase_date_start,
             purchase_date__date__lte=purchase_date_end
@@ -1748,14 +1775,16 @@ def api_user_analytics(request):
         return JsonResponse({'error': str(e)}, status=500)
 
 @csrf_exempt
-@login_required
 def api_receipt_update(request, transaction_number):
     """Update a receipt after review."""
+    user, err = _api_user_or_401(request)
+    if err is not None:
+        return err
     if request.method not in ['POST', 'PATCH']:
         return JsonResponse({'error': 'Method not allowed'}, status=405)
         
     try:
-        receipt = get_object_or_404(Receipt, transaction_number=transaction_number, user=request.user)
+        receipt = get_object_or_404(Receipt, transaction_number=transaction_number, user=user)
         data = json.loads(request.body)
         
         # Check if user wants to accept manual edits without recalculation

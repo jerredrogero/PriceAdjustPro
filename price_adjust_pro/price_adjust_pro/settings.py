@@ -67,8 +67,18 @@ INSTALLED_APPS = [
     'rest_framework',
     'hijack',
     'hijack.contrib.admin',
-    'anymail',
 ]
+
+# `anymail` is used for Mailgun in production, but we allow local environments
+# (or partial tooling environments) to run without it installed.
+try:
+    import anymail  # type: ignore  # noqa: F401
+    _ANYMAIL_AVAILABLE = True
+except Exception:
+    _ANYMAIL_AVAILABLE = False
+
+if _ANYMAIL_AVAILABLE:
+    INSTALLED_APPS.append('anymail')
 
 # Add middleware to bypass authentication checks for admin and registration
 
@@ -214,15 +224,17 @@ ANYMAIL = {
     "MAILGUN_SENDER_DOMAIN": "mail.priceadjustpro.com",
 }
 
-if MAILGUN_API_KEY:
+# Email backend selection:
+# - Production: Mailgun via Anymail (requires MAILGUN_API_KEY + anymail installed)
+# - Local/dev: console backend so developers can run without external email deps
+if MAILGUN_API_KEY and _ANYMAIL_AVAILABLE:
     EMAIL_BACKEND = "anymail.backends.mailgun.EmailBackend"
 elif DEBUG:
-    # Fall back to console backend locally so development keeps working
-    EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+    EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+elif MAILGUN_API_KEY and not _ANYMAIL_AVAILABLE:
+    raise ImproperlyConfigured("anymail must be installed when MAILGUN_API_KEY is set and DEBUG=False.")
 else:
-    raise ImproperlyConfigured(
-        'MAILGUN_API_KEY must be set when DEBUG=False.'
-    )
+    raise ImproperlyConfigured("MAILGUN_API_KEY must be set when DEBUG=False.")
 
 # Push Notifications (APNs)
 APNS_TEAM_ID = os.getenv("APNS_TEAM_ID", "").strip()
