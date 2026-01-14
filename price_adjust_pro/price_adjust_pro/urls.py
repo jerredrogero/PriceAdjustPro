@@ -27,6 +27,7 @@ from django.utils import timezone
 from django.core.mail import send_mail
 from django.template.loader import render_to_string
 from django.contrib.sites.shortcuts import get_current_site
+from receipt_parser.notifications.auth import get_request_user_via_bearer_session
 
 from receipt_parser.urls import urls_api as receipt_api_urls
 
@@ -158,6 +159,9 @@ def api_login(request):
                     'account_type': account_type,
                     'is_paid_account': is_paid_account,
                     'remember_me': remember_me,
+                    # Mobile clients can store this and use:
+                    # Authorization: Bearer <sessionid>
+                    'sessionid': request.session.session_key,
                 })
                 
                 # Set CSRF cookie explicitly
@@ -505,25 +509,29 @@ def api_user(request):
     print(f"Session key: {request.session.session_key}")
     print(f"Cookies received: {list(request.COOKIES.keys())}")
     print(f"Session data: {dict(request.session)}")
-    if request.user.is_authenticated:
+    user = request.user if request.user.is_authenticated else None
+    if user is None:
+        user = get_request_user_via_bearer_session(request)
+
+    if user is not None:
         # Get account type from user profile
         try:
             from receipt_parser.models import UserProfile
-            profile = UserProfile.objects.get(user=request.user)
+            profile = UserProfile.objects.get(user=user)
             account_type = 'paid' if profile.is_paid_account else 'free'
             is_paid_account = profile.is_paid_account
         except UserProfile.DoesNotExist:
             # Create profile if it doesn't exist
-            UserProfile.objects.create(user=request.user, account_type='free')
+            UserProfile.objects.create(user=user, account_type='free')
             account_type = 'free'
             is_paid_account = False
         
         user_data = {
-            'id': request.user.id,
-            'username': request.user.username,
-            'email': request.user.email,
-            'first_name': request.user.first_name,
-            'last_name': request.user.last_name,
+            'id': user.id,
+            'username': user.username,
+            'email': user.email,
+            'first_name': user.first_name,
+            'last_name': user.last_name,
             'account_type': account_type,
             'is_paid_account': is_paid_account,
         }
