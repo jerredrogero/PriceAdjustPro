@@ -584,6 +584,7 @@ def api_receipt_detail(request, transaction_number):
         'file': receipt.file.url if receipt.file else None,
     })
 
+@csrf_exempt
 def api_receipt_upload(request):
     user, err = _api_user_or_401(request)
     if err is not None:
@@ -836,6 +837,7 @@ def api_receipt_upload(request):
             'is_duplicate': 'UNIQUE constraint failed' in str(e)
         }, status=200)  # Return 200 even for duplicates
 
+@csrf_exempt
 def api_receipt_delete(request, transaction_number):
     user, err = _api_user_or_401(request)
     if err is not None:
@@ -1034,17 +1036,15 @@ def api_register(request):
             if User.objects.filter(email=email).exists():
                 return JsonResponse({'error': 'Email already registered'}, status=400)
             
-            # Create username from first name and email domain
-            base_username = first_name.lower()
-            username = base_username
-            counter = 1
+            # Use provided username or derive from first name
+            username = data.get('username') or first_name.lower()
             
-            # Ensure username is unique
-            while User.objects.filter(username=username).exists():
-                username = f"{base_username}{counter}"
-                counter += 1
+            # Ensure username is unique instead of auto-incrementing
+            if User.objects.filter(username=username).exists():
+                logger.info(f"Registration error: Username {username} already exists")
+                return JsonResponse({'error': 'This username is already taken. Please choose another.'}, status=400)
             
-            logger.info(f"Generated username: {username}")
+            logger.info(f"Using username: {username}")
             
             # Create user
             user = User.objects.create_user(
@@ -1227,6 +1227,7 @@ def api_verify_code(request):
         logger.error(f"Email verification error: {str(e)}")
         return JsonResponse({'error': 'An error occurred during verification'}, status=500)
 
+@csrf_exempt
 def api_resend_verification(request):
     """API endpoint to resend verification email."""
     if request.method != 'POST':

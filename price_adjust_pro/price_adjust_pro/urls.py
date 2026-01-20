@@ -281,17 +281,20 @@ def api_register(request):
                     print("Registration error: Missing required fields (first_name, email, password)")
                     return JsonResponse({'error': 'All fields are required'}, status=400)
                 
-                # Create username from first name and email domain
-                base_username = first_name.lower()
-                username = base_username
-                counter = 1
+                # Check if email already exists
+                if User.objects.filter(email=email).exists():
+                    print(f"Registration error: Email {email} already registered")
+                    return JsonResponse({'error': 'Email already registered'}, status=400)
+
+                # Use provided username or derive from first name
+                username = data.get('username') or first_name.lower()
                 
-                # Ensure username is unique
-                while User.objects.filter(username=username).exists():
-                    username = f"{base_username}{counter}"
-                    counter += 1
+                # Ensure username is unique instead of auto-incrementing
+                if User.objects.filter(username=username).exists():
+                    print(f"Registration error: Username {username} already exists")
+                    return JsonResponse({'error': 'This username is already taken. Please choose another.'}, status=400)
                 
-                print(f"Generated username: {username}")
+                print(f"Using username: {username}")
                 
                 # Create user
                 user = User.objects.create_user(
