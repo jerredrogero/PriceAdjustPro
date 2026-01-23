@@ -13,6 +13,7 @@ import {
 } from '@mui/material';
 import { PersonAdd as RegisterIcon } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
+import api from '../api/axios';
 import axios from 'axios';
 
 const Register: React.FC = () => {
@@ -39,17 +40,12 @@ const Register: React.FC = () => {
     try {
       console.log('Registration: Sending registration request');
       
-      // Use axios instead of fetch to ensure cookies are handled properly
-      const response = await axios.post('/api/auth/register/', {
+      // Use api instance to ensure CSRF and cookies are handled properly
+      const response = await api.post('/api/auth/register/', {
         username,
         email,
         password1: password,
         password2: confirmPassword,
-      }, { 
-        withCredentials: true,
-        headers: {
-          'Content-Type': 'application/json',
-        }
       });
       
       console.log('Registration successful:', response.data);
