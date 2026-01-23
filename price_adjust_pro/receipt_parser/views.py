@@ -1055,48 +1055,29 @@ def api_register(request):
                 last_name=last_name
             )
 
-        # Create verification token
-        verification_token = EmailVerificationToken.create_token(user)
-        
-        # Send verification email with 6-digit code
+        # Auto-verify user and create profile
         try:
-            subject = 'Your PriceAdjustPro Verification Code'
-            message = f"""
-Hi {user.first_name or user.username},
-
-Thank you for signing up for PriceAdjustPro!
-
-Your verification code is:
-
-{verification_token.code}
-
-Enter this code in the app to verify your email address.
-
-This code will expire in 30 minutes.
-
-If you didn't create this account, you can safely ignore this email.
-
-Best regards,
-The PriceAdjustPro Team
-            """
-            
-            send_mail(
-                subject,
-                message,
-                settings.DEFAULT_FROM_EMAIL,
-                [user.email],
-                fail_silently=False,
+            from receipt_parser.models import UserProfile
+            UserProfile.objects.get_or_create(
+                user=user,
+                defaults={'account_type': 'free', 'is_email_verified': True}
             )
-            logger.info(f"Verification code sent to {user.email}")
         except Exception as e:
-            logger.error(f"Failed to send verification email: {str(e)}")
-            # Don't fail registration if email fails - user can request resend
+            logger.error(f"Error creating user profile: {str(e)}")
+        
+        # Email verification temporarily disabled
+        # Still creating token in case we want to re-enable it later
+        try:
+            from receipt_parser.models import EmailVerificationToken
+            EmailVerificationToken.create_token(user)
+        except Exception:
+            pass
         
         return JsonResponse({
-            'message': 'Account created successfully. Please check your email for your verification code.',
+            'message': 'Account created successfully.',
             'email': user.email,
             'username': user.username,
-            'verification_required': True
+            'verification_required': False
         })
 
     except Exception as e:

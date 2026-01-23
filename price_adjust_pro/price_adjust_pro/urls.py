@@ -102,30 +102,25 @@ def api_login(request):
             if user is not None:
                 print(f"User {user.username} authenticated successfully")
                 
-                # Check if email is verified
+                # Get account type and ensure profile exists
                 try:
                     from receipt_parser.models import UserProfile
-                    profile = UserProfile.objects.get(user=user)
+                    profile, created = UserProfile.objects.get_or_create(
+                        user=user, 
+                        defaults={'account_type': 'free', 'is_email_verified': True}
+                    )
+                    # Force verification to be true if it was false (temporarily disabled email 2FA)
                     if not profile.is_email_verified:
-                        print(f"User {username} attempted login without verifying email")
-                        return JsonResponse({
-                            'error': 'Email not verified',
-                            'message': 'Please verify your email address before logging in. Check your email for the verification link.',
-                            'email': user.email,
-                            'verification_required': True
-                        }, status=403)
-                except UserProfile.DoesNotExist:
-                    # Create profile if it doesn't exist
-                    profile = UserProfile.objects.create(user=user, account_type='free', is_email_verified=False)
-                    print(f"Created profile for {username}, email verification required")
-                    return JsonResponse({
-                        'error': 'Email not verified',
-                        'message': 'Please verify your email address before logging in.',
-                        'email': user.email,
-                        'verification_required': True
-                    }, status=403)
+                        profile.is_email_verified = True
+                        profile.save()
+                except Exception as profile_error:
+                    print(f"Error handling profile for {user.username}: {profile_error}")
+                    # Fallback if profile creation fails
+                    class DummyProfile:
+                        is_paid_account = False
+                    profile = DummyProfile()
                 
-                # User is verified, proceed with login
+                # User is verified (2FA disabled), proceed with login
                 login(request, user)
                 
                 # Check for new price adjustments on login (runs in background-ish, non-blocking)
@@ -322,57 +317,29 @@ def api_register(request):
             
             print(f"User {username} created successfully")
             
-            # Create verification token
-            from receipt_parser.models import EmailVerificationToken
-            verification_token = EmailVerificationToken.create_token(user)
-            
-            # Send verification email with 6-digit code
-            print(f"Attempting to send verification email to: {user.email}")
-            print(f"Email backend: {settings.EMAIL_BACKEND}")
-            print(f"Mailgun configured: {bool(settings.MAILGUN_API_KEY)}")
-            print(f"From email: {settings.DEFAULT_FROM_EMAIL}")
-            
+            # Auto-verify user and create profile
             try:
-                subject = 'Your PriceAdjustPro Verification Code'
-                message = f"""
-Hi {user.first_name or user.username},
-
-Thank you for signing up for PriceAdjustPro!
-
-Your verification code is:
-
-{verification_token.code}
-
-Enter this code in the app to verify your email address.
-
-This code will expire in 30 minutes.
-
-If you didn't create this account, you can safely ignore this email.
-
-Best regards,
-The PriceAdjustPro Team
-                """
-                
-                result = send_mail(
-                    subject,
-                    message,
-                    settings.DEFAULT_FROM_EMAIL,
-                    [user.email],
-                    fail_silently=False,
+                from receipt_parser.models import UserProfile
+                UserProfile.objects.get_or_create(
+                    user=user,
+                    defaults={'account_type': 'free', 'is_email_verified': True}
                 )
-                print(f"Verification email send result: {result} (1=success, 0=failure)")
-                print(f"Verification code {verification_token.code} sent to {user.email}")
             except Exception as e:
-                import traceback
-                print(f"Failed to send verification email: {str(e)}")
-                print(f"Full traceback: {traceback.format_exc()}")
-                # Don't fail registration if email fails - user can request resend
+                print(f"Error creating user profile: {str(e)}")
+            
+            # Email verification temporarily disabled
+            # Still creating token in case we want to re-enable it later
+            try:
+                from receipt_parser.models import EmailVerificationToken
+                EmailVerificationToken.create_token(user)
+            except Exception:
+                pass
             
             return JsonResponse({
-                'message': 'Account created successfully. Please check your email for your verification code.',
+                'message': 'Account created successfully.',
                 'email': user.email,
                 'username': username,
-                'verification_required': True
+                'verification_required': False
             })
         except Exception as e:
             print(f"Registration error: {str(e)}")

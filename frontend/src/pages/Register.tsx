@@ -54,18 +54,17 @@ const Register: React.FC = () => {
       
       console.log('Registration successful:', response.data);
       
-      // Check if verification is required
-      if (response.data.verification_required) {
-        // Redirect to verification pending page with email and username
-        navigate('/verification-pending', { 
-          state: { 
-            email: response.data.email,
-            username: response.data.username || username
-          } 
+      // Auto-login after successful registration
+      try {
+        await api.post('/api/auth/login/', {
+          username,
+          password,
+          remember_me: true,
         });
-      } else {
-        // Old behavior - shouldn't happen with new backend, but keep as fallback
-        navigate('/login');
+        window.location.href = '/dashboard';
+      } catch (loginErr) {
+        console.error('Auto-login failed:', loginErr);
+        navigate('/login', { state: { message: 'Account created! Please sign in.' } });
       }
     } catch (err) {
       console.error('Registration error:', err);
