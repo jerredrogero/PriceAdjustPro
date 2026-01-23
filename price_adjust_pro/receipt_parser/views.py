@@ -1058,12 +1058,19 @@ def api_register(request):
         # Auto-verify user and create profile
         try:
             from receipt_parser.models import UserProfile
-            UserProfile.objects.get_or_create(
+            profile, created = UserProfile.objects.get_or_create(
                 user=user,
                 defaults={'account_type': 'free', 'is_email_verified': True}
             )
         except Exception as e:
             logger.error(f"Error creating user profile: {str(e)}")
+            class DummyProfile:
+                is_paid_account = False
+            profile = DummyProfile()
+        
+        # Log the user in since verification is disabled
+        from django.contrib.auth import login
+        login(request, user)
         
         # Email verification temporarily disabled
         # Still creating token in case we want to re-enable it later
@@ -1073,11 +1080,26 @@ def api_register(request):
         except Exception:
             pass
         
+        account_type = 'paid' if getattr(profile, 'is_paid_account', False) else 'free'
+        
         return JsonResponse({
             'message': 'Account created successfully.',
             'email': user.email,
             'username': user.username,
-            'verification_required': False
+            'verification_required': False,
+            'verified': True,
+            'sessionid': request.session.session_key,
+            'user': {
+                'id': user.id,
+                'email': user.email,
+                'username': user.username,
+                'first_name': user.first_name,
+                'last_name': user.last_name,
+                'is_email_verified': True,
+                'account_type': account_type,
+                'receipt_count': 0,
+                'receipt_limit': 5 if account_type == 'free' else 999999,
+            }
         })
 
     except Exception as e:
