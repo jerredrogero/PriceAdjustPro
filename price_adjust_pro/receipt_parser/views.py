@@ -1013,11 +1013,11 @@ def api_register(request):
 
             # Check if username exists
             if User.objects.filter(username=username).exists():
-                return JsonResponse({'error': 'Username already exists'}, status=400)
+                return JsonResponse({'error': 'Username already exists. Note: Usernames are case sensitive.'}, status=400)
             
             # Check if email already exists
             if User.objects.filter(email=email).exists():
-                return JsonResponse({'error': 'Email already registered'}, status=400)
+                return JsonResponse({'error': 'Email already registered. Note: Emails are case sensitive.'}, status=400)
 
             # Create user
             user = User.objects.create_user(

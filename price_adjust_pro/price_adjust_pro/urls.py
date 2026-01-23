@@ -67,25 +67,40 @@ def api_login(request):
                     return value != 0
                 return default
             
-            username = data.get('username')
+            username_or_email = data.get('username')
             password = data.get('password')
             remember_me = parse_bool(data.get('remember_me'), default=False)
             
-            print(f"Login attempt - username: {username}, password provided: {bool(password)}")
+            print(f"Login attempt - username/email: {username_or_email}, password provided: {bool(password)}")
             
-            if not username or not password:
-                print(f"Login error: Missing username or password")
-                return JsonResponse({'error': 'Username and password are required'}, status=400)
+            if not username_or_email or not password:
+                print(f"Login error: Missing username/email or password")
+                return JsonResponse({'error': 'Username/email and password are required'}, status=400)
+            
+            # Try to find the user by username or email
+            # We check both to allow interchangeable login
+            user_obj = None
+            try:
+                if '@' in username_or_email:
+                    user_obj = User.objects.filter(email=username_or_email).first()
+                
+                if not user_obj:
+                    user_obj = User.objects.filter(username=username_or_email).first()
+            except Exception as e:
+                print(f"Error finding user: {str(e)}")
+
+            # Use the actual username for authentication if found
+            auth_username = user_obj.username if user_obj else username_or_email
             
             # Try authenticate without request first (some backends don't need it)
-            user = authenticate(username=username, password=password)
+            user = authenticate(username=auth_username, password=password)
             if user is None:
                 # Try with request parameter
-                user = authenticate(request, username=username, password=password)
+                user = authenticate(request, username=auth_username, password=password)
             
             print(f"Authentication result: {user}")
             if user is not None:
-                print(f"User {username} authenticated successfully")
+                print(f"User {user.username} authenticated successfully")
                 
                 # Check if email is verified
                 try:
@@ -264,7 +279,7 @@ def api_register(request):
                 
                 if User.objects.filter(username=username).exists():
                     print(f"Registration error: Username {username} already exists")
-                    return JsonResponse({'error': 'Username already exists'}, status=400)
+                    return JsonResponse({'error': 'Username already exists. Note: Usernames are case sensitive.'}, status=400)
                 
                 # Create user
                 user = User.objects.create_user(
@@ -284,7 +299,7 @@ def api_register(request):
                 # Check if email already exists
                 if User.objects.filter(email=email).exists():
                     print(f"Registration error: Email {email} already registered")
-                    return JsonResponse({'error': 'Email already registered'}, status=400)
+                    return JsonResponse({'error': 'Email already registered. Note: Emails are case sensitive.'}, status=400)
 
                 # Use provided username or derive from first name
                 username = data.get('username') or first_name.lower()

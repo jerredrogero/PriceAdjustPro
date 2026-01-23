@@ -109,6 +109,7 @@ const Register: React.FC = () => {
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               required
+              helperText="Usernames are case sensitive"
               sx={{ mb: 2 }}
             />
             <TextField
@@ -118,6 +119,7 @@ const Register: React.FC = () => {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
+              helperText="Emails are case sensitive"
               sx={{ mb: 2 }}
             />
             <TextField

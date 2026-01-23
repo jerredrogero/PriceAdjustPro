@@ -106,10 +106,11 @@ const Login: React.FC = () => {
           <form onSubmit={handleSubmit}>
             <TextField
               fullWidth
-              label="Username"
+              label="Username or Email"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               required
+              helperText="Note: Usernames and emails are case sensitive"
               sx={{ mb: 2 }}
             />
             <TextField
