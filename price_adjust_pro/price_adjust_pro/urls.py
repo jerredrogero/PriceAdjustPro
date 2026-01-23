@@ -145,7 +145,7 @@ def api_login(request):
                             alerts_created += check_current_user_for_price_adjustments(item, receipt)
                     
                     if alerts_created > 0:
-                        print(f"Login PA check: Created {alerts_created} new price adjustment alerts for {username}")
+                        print(f"Login PA check: Created {alerts_created} new price adjustment alerts for {user.username}")
                 except Exception as pa_error:
                     print(f"Login PA check error (non-fatal): {str(pa_error)}")
                 
@@ -202,12 +202,12 @@ def api_login(request):
                         **session_cookie_kwargs
                     )
                 
-                print(f"Login response prepared for {username}")
+                print(f"Login response prepared for {user.username}")
                 print(f"Session key after login: {request.session.session_key}")
                 print(f"Session data after login: {dict(request.session)}")
                 return response
                 
-            print(f"Login failed: Invalid credentials for {username}")
+            print(f"Login failed: Invalid credentials for {username_or_email}")
             return JsonResponse({'error': 'Invalid credentials'}, status=401)
         except json.JSONDecodeError:
             print("Login error: Invalid JSON")
