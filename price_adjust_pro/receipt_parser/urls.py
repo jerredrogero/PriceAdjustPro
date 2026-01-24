@@ -14,7 +14,6 @@ web_urlpatterns = [
     path('login/', auth_views.LoginView.as_view(template_name='receipt_parser/login.html'), name='login'),
     path('logout/', auth_views.LogoutView.as_view(), name='logout'),
     path('register/', views.register, name='register'),
-    path('verify-email/<str:uidb64>/<str:token>/', views.verify_email, name='verify_email'),
     
     # Account Management URLs - handled by React frontend
 ]
@@ -39,7 +38,10 @@ api_urlpatterns = [
     path('notifications/devices/', api_upsert_push_device, name='api_notifications_devices_upsert'),
     
     # Authentication API endpoints
+    path('auth/login-web/', auth_views.LoginView.as_view(template_name='receipt_parser/login.html'), name='login'),
+    path('auth/register-web/', views.register, name='register'),
     path('auth/verify-email/<str:token>/', views.api_verify_email, name='api_verify_email'),  # Link-based (web)
+    path('auth/verify-email-web/<str:uidb64>/<str:token>/', views.verify_email, name='verify_email'),
     path('auth/verify-email/', views.api_verify_code, name='api_verify_email_ios'),  # POST with code (iOS app)
     path('auth/verify-code/', views.api_verify_code, name='api_verify_code'),  # Alias for web app
     path('auth/resend-verification/', views.api_resend_verification, name='api_resend_verification'),

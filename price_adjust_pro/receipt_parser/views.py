@@ -1268,19 +1268,30 @@ def api_resend_verification(request):
         # Create new verification token
         verification_token = EmailVerificationToken.create_token(user)
         
-        # Send verification email with new 6-digit code
+        # Send verification email with new 6-digit code and link
         try:
-            subject = 'Your PriceAdjustPro Verification Code'
+            from django.utils.http import urlsafe_base64_encode
+            from django.utils.encoding import force_bytes
+            from django.urls import reverse
+            from django.contrib.sites.shortcuts import get_current_site
+            
+            current_site = get_current_site(request)
+            uid = urlsafe_base64_encode(force_bytes(user.pk))
+            verification_link = f"{request.scheme}://{current_site.domain}{reverse('verify_email', kwargs={'uidb64': uid, 'token': verification_token.token})}"
+            
+            subject = 'Verify your PriceAdjustPro account'
             message = f"""
 Hi {user.first_name or user.username},
 
 Here's your new verification code for PriceAdjustPro:
 
+Your verification code is:
 {verification_token.code}
 
-Enter this code in the app to verify your email address.
+Alternatively, you can click the link below to verify your account:
+{verification_link}
 
-This code will expire in 30 minutes.
+Enter the code in the app or click the link to verify your account. This code and link will expire in 30 minutes.
 
 If you didn't request this, you can safely ignore this email.
 
