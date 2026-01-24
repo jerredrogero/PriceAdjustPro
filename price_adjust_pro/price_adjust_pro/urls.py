@@ -1156,6 +1156,9 @@ django_urlpatterns = [
     
     # API URLs
     path('api/', include(api_urlpatterns)),
+    
+    # Legacy Web URLs (for templates)
+    path('web/', include('receipt_parser.urls')),
 ]
 
 # Define static files and React-specific files
