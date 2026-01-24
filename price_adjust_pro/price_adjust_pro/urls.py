@@ -98,6 +98,65 @@ def api_login(request):
                 # Try with request parameter
                 user = authenticate(request, username=auth_username, password=password)
             
+            # If authentication failed, check if it's because the user is inactive (unverified)
+            if user is None and user_obj and not user_obj.is_active:
+                if user_obj.check_password(password):
+                    print(f"User {user_obj.username} is inactive (unverified). Sending code.")
+                    
+                    # Invalidate old tokens and create a new one
+                    from receipt_parser.models import EmailVerificationToken
+                    EmailVerificationToken.objects.filter(user=user_obj, is_used=False).update(is_used=True)
+                    verification_token = EmailVerificationToken.create_token(user_obj)
+                    
+                    # Send verification email with 6-digit code and link
+                    try:
+                        from django.utils.http import urlsafe_base64_encode
+                        from django.utils.encoding import force_bytes
+                        from django.urls import reverse
+                        from django.contrib.sites.shortcuts import get_current_site
+                        
+                        current_site = get_current_site(request)
+                        uid = urlsafe_base64_encode(force_bytes(user_obj.pk))
+                        verification_link = f"{request.scheme}://{current_site.domain}{reverse('verify_email', kwargs={'uidb64': uid, 'token': verification_token.token})}"
+                        
+                        subject = 'Verify your PriceAdjustPro account'
+                        message = f"""
+Hi {user_obj.first_name or user_obj.username},
+
+Please verify your email address to log in to PriceAdjustPro.
+
+Your verification code is:
+{verification_token.code}
+
+Alternatively, you can click the link below to verify your account:
+{verification_link}
+
+Enter the code in the app or click the link to verify your account. This code and link will expire in 30 minutes.
+
+If you didn't request this, you can safely ignore this email.
+
+Best regards,
+The PriceAdjustPro Team
+                        """
+                        
+                        send_mail(
+                            subject,
+                            message,
+                            settings.DEFAULT_FROM_EMAIL,
+                            [user_obj.email],
+                            fail_silently=False,
+                        )
+                        print(f"Verification code sent to {user_obj.email}")
+                    except Exception as email_error:
+                        print(f"Failed to send verification email: {str(email_error)}")
+                    
+                    return JsonResponse({
+                        'message': 'Email verification required. Please check your email for a code.',
+                        'verification_required': True,
+                        'verified': False,
+                        'email': user_obj.email
+                    }, status=403)
+
             print(f"Authentication result: {user}")
             if user is not None:
                 print(f"User {user.username} authenticated successfully")
@@ -107,20 +166,76 @@ def api_login(request):
                     from receipt_parser.models import UserProfile
                     profile, created = UserProfile.objects.get_or_create(
                         user=user, 
-                        defaults={'account_type': 'free', 'is_email_verified': True}
+                        defaults={'account_type': 'free', 'is_email_verified': False}
                     )
-                    # Force verification to be true if it was false (temporarily disabled email 2FA)
+                    
+                    # Check if email is verified
                     if not profile.is_email_verified:
-                        profile.is_email_verified = True
-                        profile.save()
+                        print(f"User {user.username} is not verified")
+                        
+                        # Invalidate old tokens and create a new one
+                        from receipt_parser.models import EmailVerificationToken
+                        EmailVerificationToken.objects.filter(user=user, is_used=False).update(is_used=True)
+                        verification_token = EmailVerificationToken.create_token(user)
+                        
+                        # Send verification email with 6-digit code and link
+                        try:
+                            from django.utils.http import urlsafe_base64_encode
+                            from django.utils.encoding import force_bytes
+                            from django.urls import reverse
+                            from django.contrib.sites.shortcuts import get_current_site
+                            
+                            current_site = get_current_site(request)
+                            uid = urlsafe_base64_encode(force_bytes(user.pk))
+                            verification_link = f"{request.scheme}://{current_site.domain}{reverse('verify_email', kwargs={'uidb64': uid, 'token': verification_token.token})}"
+                            
+                            subject = 'Verify your PriceAdjustPro account'
+                            message = f"""
+Hi {user.first_name or user.username},
+
+Please verify your email address to log in to PriceAdjustPro.
+
+Your verification code is:
+{verification_token.code}
+
+Alternatively, you can click the link below to verify your account:
+{verification_link}
+
+Enter the code in the app or click the link to verify your account. This code and link will expire in 30 minutes.
+
+If you didn't request this, you can safely ignore this email.
+
+Best regards,
+The PriceAdjustPro Team
+                            """
+                            
+                            send_mail(
+                                subject,
+                                message,
+                                settings.DEFAULT_FROM_EMAIL,
+                                [user.email],
+                                fail_silently=False,
+                            )
+                            print(f"Verification code sent to {user.email}")
+                        except Exception as email_error:
+                            print(f"Failed to send verification email: {str(email_error)}")
+                        
+                        return JsonResponse({
+                            'message': 'Email verification required. Please check your email for a code.',
+                            'verification_required': True,
+                            'verified': False,
+                            'email': user.email
+                        }, status=403)
+                        
                 except Exception as profile_error:
                     print(f"Error handling profile for {user.username}: {profile_error}")
                     # Fallback if profile creation fails
                     class DummyProfile:
                         is_paid_account = False
+                        is_email_verified = True
                     profile = DummyProfile()
                 
-                # User is verified (2FA disabled), proceed with login
+                # User is verified, proceed with login
                 login(request, user)
                 
                 # Check for new price adjustments on login (runs in background-ish, non-blocking)
@@ -168,6 +283,7 @@ def api_login(request):
                     'last_name': user.last_name,
                     'account_type': account_type,
                     'is_paid_account': is_paid_account,
+                    'is_email_verified': True,  # User must be verified to reach this point
                     'remember_me': remember_me,
                     # Mobile clients can store this and use:
                     # Authorization: Bearer <sessionid>
@@ -317,46 +433,88 @@ def api_register(request):
             
             print(f"User {username} created successfully")
             
-            # Auto-verify user and create profile
+            # Create user profile and verification token
             try:
-                from receipt_parser.models import UserProfile
+                from receipt_parser.models import UserProfile, EmailVerificationToken
                 profile, created = UserProfile.objects.get_or_create(
                     user=user,
-                    defaults={'account_type': 'free', 'is_email_verified': True}
+                    defaults={'account_type': 'free', 'is_email_verified': False}
                 )
+                
+                # Create verification token
+                verification_token = EmailVerificationToken.create_token(user)
+                
+                # Set user as inactive until verified (like in DropShipHQ)
+                user.is_active = False
+                user.save()
+                
+                # Send verification email with 6-digit code and link
+                try:
+                    from django.utils.http import urlsafe_base64_encode
+                    from django.utils.encoding import force_bytes
+                    from django.urls import reverse
+                    from django.contrib.sites.shortcuts import get_current_site
+                    
+                    current_site = get_current_site(request)
+                    uid = urlsafe_base64_encode(force_bytes(user.pk))
+                    # Link points to the web verification view
+                    verification_link = f"{request.scheme}://{current_site.domain}{reverse('verify_email', kwargs={'uidb64': uid, 'token': verification_token.token})}"
+                    
+                    subject = 'Verify your PriceAdjustPro account'
+                    message = f"""
+Hi {user.first_name or user.username},
+
+Welcome to PriceAdjustPro! Please verify your email address to get started.
+
+Your verification code is:
+{verification_token.code}
+
+Alternatively, you can click the link below to verify your account:
+{verification_link}
+
+Enter the code in the app or click the link to verify your account. This code and link will expire in 30 minutes.
+
+If you didn't create an account, you can safely ignore this email.
+
+Best regards,
+The PriceAdjustPro Team
+                    """
+                    
+                    send_mail(
+                        subject,
+                        message,
+                        settings.DEFAULT_FROM_EMAIL,
+                        [user.email],
+                        fail_silently=False,
+                    )
+                    print(f"Verification code sent to {user.email}")
+                except Exception as email_error:
+                    print(f"Failed to send verification email: {str(email_error)}")
+                    # We still continue since the account was created
             except Exception as e:
-                print(f"Error creating user profile: {str(e)}")
+                print(f"Error handling profile/token for {user.username}: {str(e)}")
                 class DummyProfile:
                     is_paid_account = False
                 profile = DummyProfile()
             
-            # Log the user in since verification is disabled
-            login(request, user)
-            
-            # Email verification temporarily disabled
-            # Still creating token in case we want to re-enable it later
-            try:
-                from receipt_parser.models import EmailVerificationToken
-                EmailVerificationToken.create_token(user)
-            except Exception:
-                pass
+            # Don't auto-login since verification is now required
+            # login(request, user)
             
             account_type = 'paid' if getattr(profile, 'is_paid_account', False) else 'free'
             
             return JsonResponse({
-                'message': 'Account created successfully.',
+                'message': 'Account created successfully! Please check your email for your verification code.',
                 'email': user.email,
                 'username': user.username,
-                'verification_required': False,
-                'verified': True,
-                'sessionid': request.session.session_key,
+                'verification_required': True,
+                'verified': False,
                 'user': {
                     'id': user.id,
                     'email': user.email,
                     'username': user.username,
                     'first_name': user.first_name,
                     'last_name': user.last_name,
-                    'is_email_verified': True,
+                    'is_email_verified': False,
                     'account_type': account_type,
                     'receipt_count': 0,
                     'receipt_limit': 5 if account_type == 'free' else 999999,
@@ -526,11 +684,13 @@ def api_user(request):
             profile = UserProfile.objects.get(user=user)
             account_type = 'paid' if profile.is_paid_account else 'free'
             is_paid_account = profile.is_paid_account
+            is_email_verified = profile.is_email_verified
         except UserProfile.DoesNotExist:
             # Create profile if it doesn't exist
-            UserProfile.objects.create(user=user, account_type='free')
+            profile = UserProfile.objects.create(user=user, account_type='free')
             account_type = 'free'
             is_paid_account = False
+            is_email_verified = profile.is_email_verified
         
         user_data = {
             'id': user.id,
@@ -540,6 +700,7 @@ def api_user(request):
             'last_name': user.last_name,
             'account_type': account_type,
             'is_paid_account': is_paid_account,
+            'is_email_verified': is_email_verified,
         }
         print(f"Returning authenticated user data: {user_data}")
         return JsonResponse(user_data)

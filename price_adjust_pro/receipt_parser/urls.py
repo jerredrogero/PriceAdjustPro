@@ -14,6 +14,7 @@ web_urlpatterns = [
     path('login/', auth_views.LoginView.as_view(template_name='receipt_parser/login.html'), name='login'),
     path('logout/', auth_views.LogoutView.as_view(), name='logout'),
     path('register/', views.register, name='register'),
+    path('verify-email/<str:uidb64>/<str:token>/', views.verify_email, name='verify_email'),
     
     # Account Management URLs - handled by React frontend
 ]

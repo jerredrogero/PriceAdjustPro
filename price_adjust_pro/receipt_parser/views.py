@@ -1126,8 +1126,11 @@ def api_verify_email(request, token):
         verification_token.used_at = timezone.now()
         verification_token.save()
         
-        # Mark user's email as verified
+        # Mark user's email as verified and activate account
         user = verification_token.user
+        user.is_active = True
+        user.save()
+        
         profile = user.profile
         profile.is_email_verified = True
         profile.email_verified_at = timezone.now()
@@ -1196,7 +1199,10 @@ def api_verify_code(request):
         verification_token.used_at = timezone.now()
         verification_token.save()
         
-        # Mark user's email as verified
+        # Mark user's email as verified and activate account
+        user.is_active = True
+        user.save()
+        
         profile = user.profile
         profile.is_email_verified = True
         profile.email_verified_at = timezone.now()
@@ -1302,6 +1308,45 @@ The PriceAdjustPro Team
         logger.error(f"Resend verification error: {str(e)}")
         return JsonResponse({'error': 'An error occurred'}, status=500)
 
+def verify_email(request, uidb64, token):
+    """Web view to verify user email with link."""
+    try:
+        from django.utils.http import urlsafe_base64_decode
+        from django.utils.encoding import force_str
+        from django.contrib.auth.models import User
+        
+        uid = force_str(urlsafe_base64_decode(uidb64))
+        user = User.objects.get(pk=uid)
+        token_obj = EmailVerificationToken.objects.get(user=user, token=token)
+        
+        if user.is_active:
+            messages.info(request, "Your account is already verified. Please log in.")
+            return redirect('login')
+        
+        if token_obj.is_valid:
+            user.is_active = True
+            user.save()
+            
+            profile = user.profile
+            profile.is_email_verified = True
+            profile.email_verified_at = timezone.now()
+            profile.save()
+            
+            # Mark token as used
+            token_obj.is_used = True
+            token_obj.used_at = timezone.now()
+            token_obj.save()
+            
+            messages.success(request, "Email verified successfully! You can now log in.")
+            return render(request, 'receipt_parser/login.html')
+        else:
+            messages.error(request, "The verification link has expired. Please request a new one.")
+            return redirect('login')
+            
+    except (TypeError, ValueError, OverflowError, User.DoesNotExist, EmailVerificationToken.DoesNotExist):
+        messages.error(request, "The verification link is invalid.")
+        return redirect('login')
+
 def register(request):
     """Web view for user registration."""
     if request.method == 'POST':
@@ -1309,24 +1354,37 @@ def register(request):
         if form.is_valid():
             user = form.save()
             
+            # Set user as inactive until verified (like in DropShipHQ)
+            user.is_active = False
+            user.save()
+            
             # Create verification token
             verification_token = EmailVerificationToken.create_token(user)
             
-            # Send verification email with 6-digit code
+            # Send verification email with 6-digit code and link
             try:
-                subject = 'Your PriceAdjustPro Verification Code'
+                from django.utils.http import urlsafe_base64_encode
+                from django.utils.encoding import force_bytes
+                from django.urls import reverse
+                from django.contrib.sites.shortcuts import get_current_site
+                
+                current_site = get_current_site(request)
+                uid = urlsafe_base64_encode(force_bytes(user.pk))
+                verification_link = f"{request.scheme}://{current_site.domain}{reverse('verify_email', kwargs={'uidb64': uid, 'token': verification_token.token})}"
+                
+                subject = 'Verify your PriceAdjustPro account'
                 message = f"""
 Hi {user.username},
 
-Thank you for signing up for PriceAdjustPro!
+Thank you for signing up for PriceAdjustPro! Please verify your email address to get started.
 
 Your verification code is:
-
 {verification_token.code}
 
-Enter this code on the website to verify your email address.
+Alternatively, you can click the link below to verify your account:
+{verification_link}
 
-This code will expire in 30 minutes.
+This code and link will expire in 30 minutes.
 
 If you didn't create this account, you can safely ignore this email.
 
