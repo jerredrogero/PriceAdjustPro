@@ -22,7 +22,7 @@ from .models import (
     CostcoPromotion, CostcoPromotionPage, OfficialSaleItem,
     SubscriptionProduct, UserSubscription, SubscriptionEvent,
     UserProfile, AppleSubscription, EmailVerificationToken,
-    PushDevice, PushDelivery,
+    EmailOTP, PushDevice, PushDelivery,
 )
 from django.conf import settings
 from django.utils import timezone
@@ -334,6 +334,24 @@ class EmailVerificationTokenAdmin(admin.ModelAdmin):
         expired.delete()
         self.message_user(request, f'Deleted {count} expired token(s).')
     delete_expired_tokens.short_description = 'Delete expired tokens'
+
+@admin.register(EmailOTP)
+class EmailOTPAdmin(admin.ModelAdmin):
+    list_display = ('user', 'user_email', 'attempts', 'created_at', 'expires_at', 'used_at', 'is_active')
+    list_filter = ('created_at', 'expires_at', 'used_at')
+    search_fields = ('user__username', 'user__email', 'code_hash')
+    readonly_fields = ('user', 'code_hash', 'created_at', 'expires_at', 'used_at', 'attempts', 'last_sent_at', 'is_expired', 'is_used')
+    raw_id_fields = ('user',)
+    ordering = ('-created_at',)
+    
+    def user_email(self, obj):
+        return obj.user.email
+    user_email.short_description = 'Email'
+    
+    def is_active(self, obj):
+        return not obj.is_expired() and not obj.is_used()
+    is_active.boolean = True
+    is_active.short_description = 'Active'
 
 class BaseModelAdmin(admin.ModelAdmin):
     @csrf_protect_m

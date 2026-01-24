@@ -48,6 +48,223 @@ def serve_react_file(request, filename):
 
 @ensure_csrf_cookie
 @csrf_exempt
+def login_start(request):
+    """
+    Step 1 of login: Validate credentials and issue OTP.
+    Stores pre-auth state in session.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+        
+    try:
+        # Clear any existing session to prevent stale state
+        from django.contrib.auth import logout
+        if request.user.is_authenticated:
+            logout(request)
+        
+        # Explicitly clear any old pre-auth keys
+        for k in ["preauth_user_id", "otp_id", "otp_verified", "remember_me"]:
+            request.session.pop(k, None)
+
+        data = json.loads(request.body)
+        email = data.get('email', '').strip().lower()
+        auth_username = data.get('username', email).strip().lower()
+        password = data.get('password', '')
+        
+        # Authenticate user
+        user = authenticate(request, username=auth_username, password=password)
+        if not user:
+            # Try with email if username failed
+            try:
+                from django.contrib.auth.models import User
+                user_obj = User.objects.get(email=email)
+                user = authenticate(request, username=user_obj.username, password=password)
+            except User.DoesNotExist:
+                user = None
+
+        if not user:
+            return JsonResponse({'error': 'Invalid email or password'}, status=400)
+
+        # Issue OTP
+        from receipt_parser.services import issue_email_otp
+        otp, _ = issue_email_otp(user)
+
+        # Store "pre-auth" state in session
+        request.session["preauth_user_id"] = user.id
+        request.session["otp_id"] = otp.id
+        request.session["otp_verified"] = False
+        request.session["remember_me"] = data.get('remember_me', False)
+        request.session.modified = True
+
+        return JsonResponse({
+            "requires_2fa": True,
+            "message": "Verification code sent to your email.",
+            "email": user.email
+        })
+        
+    except Exception as e:
+        print(f"Login start error: {str(e)}")
+        return JsonResponse({'error': 'An error occurred during login'}, status=500)
+
+@csrf_exempt
+def verify_otp(request):
+    """
+    Step 2 of login: Verify OTP and complete login.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+        
+    try:
+        data = json.loads(request.body)
+        code = data.get('code', '').strip()
+        
+        otp_id = request.session.get("otp_id")
+        user_id = request.session.get("preauth_user_id")
+        remember_me = request.session.get("remember_me", False)
+
+        if not otp_id or not user_id:
+            return JsonResponse({'error': 'No pending verification. Please log in again.'}, status=400)
+
+        from receipt_parser.models import EmailOTP
+        otp = EmailOTP.objects.filter(id=otp_id, user_id=user_id, used_at__isnull=True).first()
+        
+        if not otp:
+            return JsonResponse({'error': 'No pending verification found.'}, status=400)
+
+        # 1) Enforce lockout BEFORE hashing
+        if otp.attempts >= 8:
+            return JsonResponse({'error': 'Too many attempts. Please try logging in again.'}, status=429)
+
+        # 2) Check expiration
+        if otp.is_expired:
+            return JsonResponse({'error': 'Code has expired. Please request a new one.'}, status=400)
+
+        # 3) Compare hash
+        if EmailOTP.hash_code(code) != otp.code_hash:
+            # 4) Increment only on failure
+            otp.attempts += 1
+            otp.save(update_fields=["attempts"])
+            return JsonResponse({'error': 'Invalid code'}, status=400)
+
+        # Mark OTP as used
+        otp.used_at = timezone.now()
+        otp.save(update_fields=["used_at"])
+
+        # Complete login
+        from django.contrib.auth.models import User
+        user = User.objects.get(id=user_id)
+        
+        # Mark email as verified if it wasn't already
+        from receipt_parser.models import UserProfile
+        profile, _ = UserProfile.objects.get_or_create(user=user)
+        if not profile.is_email_verified:
+            profile.is_email_verified = True
+            profile.email_verified_at = timezone.now()
+            profile.save()
+            
+        # Activate user if they were inactive
+        if not user.is_active:
+            user.is_active = True
+            user.save()
+
+        login(request, user)
+
+        # PA check logic (copied from old api_login)
+        try:
+            from receipt_parser.models import Receipt
+            from receipt_parser.utils import check_current_user_for_price_adjustments
+            from datetime import timedelta
+            
+            thirty_days_ago = timezone.now() - timedelta(days=30)
+            recent_receipts = Receipt.objects.filter(
+                user=user,
+                transaction_date__gte=thirty_days_ago
+            ).prefetch_related('items')
+            
+            for receipt in recent_receipts:
+                for item in receipt.items.all():
+                    if item.on_sale or (item.instant_savings and item.instant_savings > 0):
+                        continue
+                    check_current_user_for_price_adjustments(item, receipt)
+        except Exception as pa_error:
+            print(f"Login PA check error (non-fatal): {str(pa_error)}")
+
+        # Cleanup session
+        for k in ["preauth_user_id", "otp_id", "otp_verified", "remember_me"]:
+            request.session.pop(k, None)
+        
+        # Set expiry
+        session_duration = settings.SESSION_COOKIE_AGE if remember_me else 0
+        request.session.set_expiry(session_duration)
+        request.session.modified = True
+
+        account_type = 'paid' if profile.is_paid_account else 'free'
+        
+        response_data = {
+            'success': True,
+            'user': {
+                'id': user.id,
+                'username': user.username,
+                'email': user.email,
+                'first_name': user.first_name,
+                'last_name': user.last_name,
+                'account_type': account_type,
+                'is_paid_account': profile.is_paid_account,
+                'is_email_verified': True,
+            }
+        }
+
+        # 5) Return session key only if mobile client asks
+        if request.headers.get('X-Client') == 'ios' or request.GET.get('client') == 'ios':
+            response_data['session_key'] = request.session.session_key
+
+        return JsonResponse(response_data)
+        
+    except Exception as e:
+        print(f"OTP verification error: {str(e)}")
+        return JsonResponse({'error': 'An error occurred during verification'}, status=500)
+
+@csrf_exempt
+def api_resend_otp(request):
+    """
+    Resend OTP for a pending verification session.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+        
+    try:
+        user_id = request.session.get("preauth_user_id")
+        if not user_id:
+            return JsonResponse({'error': 'No pending verification.'}, status=400)
+            
+        from django.contrib.auth.models import User
+        user = User.objects.get(id=user_id)
+        
+        from receipt_parser.models import EmailOTP
+        # Check cooldown (60 seconds)
+        last_otp = EmailOTP.objects.filter(user=user).order_by('-created_at').first()
+        if last_otp:
+            cooldown_seconds = 60
+            time_since_last = (timezone.now() - last_otp.created_at).total_seconds()
+            if time_since_last < cooldown_seconds:
+                remaining = int(cooldown_seconds - time_since_last)
+                return JsonResponse({'error': f'Please wait {remaining} seconds before requesting a new code.'}, status=429)
+
+        # Issue new OTP
+        from receipt_parser.services import issue_email_otp
+        otp, _ = issue_email_otp(user)
+        
+        # Update session
+        request.session["otp_id"] = otp.id
+        request.session.modified = True
+        
+        return JsonResponse({'message': 'A new verification code has been sent to your email.'})
+        
+    except Exception as e:
+        print(f"OTP resend error: {str(e)}")
+        return JsonResponse({'error': 'An error occurred during resend'}, status=500)
+
+@csrf_exempt
 def api_login(request):
     if request.method == 'POST':
         try:
@@ -912,6 +1129,9 @@ def api_admin_hijack(request, user_id):
 
 # API URLs
 api_urlpatterns = [
+    path('auth/login-start/', login_start, name='api_login_start'),
+    path('auth/verify-otp/', verify_otp, name='api_verify_otp'),
+    path('auth/resend-otp/', api_resend_otp, name='api_resend_otp'),
     path('auth/login/', api_login, name='api_login'),
     path('auth/logout/', api_logout, name='api_logout'),
     path('auth/register/', api_register, name='api_register'),

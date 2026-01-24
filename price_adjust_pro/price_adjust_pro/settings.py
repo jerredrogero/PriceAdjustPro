@@ -216,13 +216,13 @@ RECEIPT_TEMP_DIR = '/tmp/receipt_processing'
 # Email configuration - Mailgun via Anymail
 MAILGUN_API_KEY = os.getenv('MAILGUN_API_KEY', '').strip()
 
-DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'no-reply@mail.priceadjustpro.com')
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'no-reply@mg.priceadjustpro.com')
 SERVER_EMAIL = DEFAULT_FROM_EMAIL
 
 # Anymail configuration for Mailgun
 ANYMAIL = {
     "MAILGUN_API_KEY": MAILGUN_API_KEY,
-    "MAILGUN_SENDER_DOMAIN": "mail.priceadjustpro.com",
+    "MAILGUN_SENDER_DOMAIN": "mg.priceadjustpro.com",
 }
 
 # Email backend selection:

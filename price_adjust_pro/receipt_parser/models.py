@@ -124,6 +124,44 @@ class EmailVerificationToken(models.Model):
         """Check if token is valid (not used and not expired)."""
         return not self.is_used and not self.is_expired
 
+class EmailOTP(models.Model):
+    """
+    Stores one-time passwords for email-based 2FA.
+    Uses session-based pre-authentication flow.
+    """
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='otps')
+    code_hash = models.CharField(max_length=64)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    used_at = models.DateTimeField(null=True, blank=True)
+
+    attempts = models.PositiveSmallIntegerField(default=0)
+    last_sent_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Email OTP'
+        verbose_name_plural = 'Email OTPs'
+
+    @staticmethod
+    def hash_code(code: str) -> str:
+        return hashlib.sha256(code.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def generate_code() -> str:
+        return f"{secrets.randbelow(1_000_000):06d}"
+
+    @property
+    def is_expired(self):
+        return timezone.now() > self.expires_at
+
+    @property
+    def is_used(self):
+        return self.used_at is not None
+
+    def __str__(self):
+        return f"OTP for {self.user.email} (Created: {self.created_at})"
+
 class AppleSubscription(models.Model):
     """
     Stores Apple In-App Purchase subscription information.
