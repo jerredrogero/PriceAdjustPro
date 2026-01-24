@@ -9,7 +9,7 @@ web_urlpatterns = [
     path('', views.receipt_list, name='receipt_list'),
     path('upload/', views.upload_receipt, name='upload_receipt'),
     path('receipts/<str:transaction_number>/', views.receipt_detail, name='receipt_detail'),
-    path('settings/', views.settings, name='settings'),
+    path('settings/', views.settings_view, name='settings'),
     
     # Authentication URLs
     path('login/', auth_views.LoginView.as_view(template_name='receipt_parser/login.html'), name='login'),

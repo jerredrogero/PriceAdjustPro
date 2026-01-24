@@ -1422,7 +1422,7 @@ The PriceAdjustPro Team
     return render(request, 'receipt_parser/register.html', {'form': form})
 
 @login_required
-def settings(request):
+def settings_view(request):
     return render(request, 'receipt_parser/settings.html')
 
 @login_required
