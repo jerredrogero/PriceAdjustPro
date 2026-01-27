@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Link as RouterLink, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { Link as RouterLink, useNavigate, useLocation } from 'react-router-dom';
 import {
   Container,
   Card,
@@ -12,21 +12,34 @@ import {
   Alert,
   Checkbox,
   FormControlLabel,
+  Fade,
 } from '@mui/material';
-import { Login as LoginIcon } from '@mui/icons-material';
+import { Login as LoginIcon, CheckCircle as CheckCircleIcon } from '@mui/icons-material';
 import api from '../api/axios';
 
 const Login: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showVerifiedMessage, setShowVerifiedMessage] = useState(false);
   const [rememberMe, setRememberMe] = useState<boolean>(() => {
     if (typeof window === 'undefined') return true;
     const stored = window.localStorage.getItem('rememberMe');
     return stored === null ? true : stored === 'true';
   });
+
+  useEffect(() => {
+    // Check if we just came from a successful verification
+    const params = new URLSearchParams(location.search);
+    if (params.get('verified') === 'true') {
+      setShowVerifiedMessage(true);
+      // Clean up the URL
+      navigate('/login', { replace: true });
+    }
+  }, [location, navigate]);
 
   const persistRememberMe = (value: boolean) => {
     try {
@@ -84,6 +97,21 @@ const Login: React.FC = () => {
               Sign in to continue to PriceAdjustPro
             </Typography>
           </Box>
+
+          {showVerifiedMessage && (
+            <Fade in={showVerifiedMessage} timeout={800}>
+              <Box sx={{ mb: 4, textAlign: 'center' }}>
+                <CheckCircleIcon sx={{ fontSize: 60, color: 'success.main', mb: 1 }} />
+                <Typography variant="h5" color="success.main" gutterBottom sx={{ fontWeight: 'bold' }}>
+                  Email Verified!
+                </Typography>
+                <Typography variant="body1" color="text.secondary">
+                  Congratulations! Your account is now fully active. 
+                  Please sign in below to start saving.
+                </Typography>
+              </Box>
+            </Fade>
+          )}
 
           {error && (
             <Alert severity="error" sx={{ mb: 3 }}>

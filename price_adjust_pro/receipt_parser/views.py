@@ -1243,7 +1243,8 @@ def api_resend_verification(request):
             
             current_site = get_current_site(request)
             uid = urlsafe_base64_encode(force_bytes(user.pk))
-            verification_link = f"{request.scheme}://{current_site.domain}{reverse('verify_email', kwargs={'uidb64': uid, 'token': verification_token.token})}"
+            # Point to the React verification page instead of the Django /web/ view
+            verification_link = f"{request.scheme}://{current_site.domain}/verify-email/{verification_token.token}"
             
             subject = 'Verify your PriceAdjustPro account'
             message = f"""
@@ -1347,7 +1348,8 @@ def register(request):
                 
                 current_site = get_current_site(request)
                 uid = urlsafe_base64_encode(force_bytes(user.pk))
-                verification_link = f"{request.scheme}://{current_site.domain}{reverse('verify_email', kwargs={'uidb64': uid, 'token': verification_token.token})}"
+                # Point to the React verification page instead of the Django /web/ view
+                verification_link = f"{request.scheme}://{current_site.domain}/verify-email/{verification_token.token}"
                 
                 subject = 'Verify your PriceAdjustPro account'
                 message = f"""

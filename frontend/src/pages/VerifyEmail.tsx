@@ -24,9 +24,9 @@ const VerifyEmail: React.FC = () => {
         setStatus('success');
         setMessage(response.data.message || 'Email verified successfully!');
         
-        // Redirect to login after 3 seconds
+        // Redirect to login after 3 seconds with verified flag
         setTimeout(() => {
-          navigate('/login');
+          navigate('/login?verified=true');
         }, 3000);
       } catch (error: any) {
         setStatus('error');

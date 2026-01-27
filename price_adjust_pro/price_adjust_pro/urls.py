@@ -159,43 +159,62 @@ def verify_otp(request):
         code = data.get('code', '').strip()
         
         otp_id = request.session.get("otp_id")
+        verification_token_id = request.session.get("verification_token_id")
         user_id = request.session.get("preauth_user_id")
         remember_me = request.session.get("remember_me", False)
 
-        if not otp_id or not user_id:
+        if not (otp_id or verification_token_id) or not user_id:
             return JsonResponse({'error': 'No pending verification. Please log in again.'}, status=400)
 
-        from receipt_parser.models import EmailOTP
-        otp = EmailOTP.objects.filter(id=otp_id, user_id=user_id, used_at__isnull=True).first()
+        from receipt_parser.models import EmailOTP, EmailVerificationToken, UserProfile
         
-        if not otp:
-            return JsonResponse({'error': 'No pending verification found.'}, status=400)
+        # Check for EmailOTP (2FA login flow)
+        if otp_id:
+            otp = EmailOTP.objects.filter(id=otp_id, user_id=user_id, used_at__isnull=True).first()
+            if not otp:
+                return JsonResponse({'error': 'No pending verification found.'}, status=400)
 
-        # 1) Enforce lockout BEFORE hashing
-        if otp.attempts >= 8:
-            return JsonResponse({'error': 'Too many attempts. Please try logging in again.'}, status=429)
+            # 1) Enforce lockout BEFORE hashing
+            if otp.attempts >= 8:
+                return JsonResponse({'error': 'Too many attempts. Please try logging in again.'}, status=429)
 
-        # 2) Check expiration
-        if otp.is_expired:
-            return JsonResponse({'error': 'Code has expired. Please request a new one.'}, status=400)
+            # 2) Check expiration
+            if otp.is_expired:
+                return JsonResponse({'error': 'Code has expired. Please request a new one.'}, status=400)
 
-        # 3) Compare hash
-        if EmailOTP.hash_code(code) != otp.code_hash:
-            # 4) Increment only on failure
-            otp.attempts += 1
-            otp.save(update_fields=["attempts"])
-            return JsonResponse({'error': 'Invalid code'}, status=400)
+            # 3) Compare hash
+            if EmailOTP.hash_code(code) != otp.code_hash:
+                # 4) Increment only on failure
+                otp.attempts += 1
+                otp.save(update_fields=["attempts"])
+                return JsonResponse({'error': 'Invalid code'}, status=400)
 
-        # Mark OTP as used
-        otp.used_at = timezone.now()
-        otp.save(update_fields=["used_at"])
+            # Mark OTP as used
+            otp.used_at = timezone.now()
+            otp.save(update_fields=["used_at"])
+            
+        # Check for EmailVerificationToken (Registration flow)
+        elif verification_token_id:
+            token_obj = EmailVerificationToken.objects.filter(id=verification_token_id, user_id=user_id, is_used=False).first()
+            if not token_obj:
+                return JsonResponse({'error': 'No pending verification found.'}, status=400)
+                
+            if token_obj.is_expired:
+                return JsonResponse({'error': 'Code has expired. Please request a new one.'}, status=400)
+                
+            if token_obj.code != code:
+                return JsonResponse({'error': 'Invalid code'}, status=400)
+                
+            # Mark token as used
+            token_obj.is_used = True
+            token_obj.used_at = timezone.now()
+            token_obj.save()
 
         # Complete login
         from django.contrib.auth.models import User
         user = User.objects.get(id=user_id)
         
         # Mark email as verified if it wasn't already
-        from receipt_parser.models import UserProfile
         profile, _ = UserProfile.objects.get_or_create(user=user)
         if not profile.is_email_verified:
             profile.is_email_verified = True
@@ -230,7 +249,7 @@ def verify_otp(request):
             print(f"Login PA check error (non-fatal): {str(pa_error)}")
 
         # Cleanup session
-        for k in ["preauth_user_id", "otp_id", "otp_verified", "remember_me"]:
+        for k in ["preauth_user_id", "otp_id", "verification_token_id", "otp_verified", "remember_me"]:
             request.session.pop(k, None)
         
         # Set expiry
@@ -254,7 +273,7 @@ def verify_otp(request):
         }
 
         # 5) Return session key only if mobile client asks
-        if request.headers.get('X-Client') == 'ios' or request.GET.get('client') == 'ios':
+        if request.headers.get('X-Client') == 'ios' or request.GET.get('client') == 'ios' or request.headers.get('User-Agent', '').startswith('PriceAdjustPro'):
             response_data['session_key'] = request.session.session_key
 
         return JsonResponse(response_data)
@@ -359,6 +378,12 @@ def api_login(request):
                     EmailVerificationToken.objects.filter(user=user_obj, is_used=False).update(is_used=True)
                     verification_token = EmailVerificationToken.create_token(user_obj)
                     
+                    # Store "pre-auth" state in session so verify_otp works
+                    request.session["preauth_user_id"] = user_obj.id
+                    request.session["verification_token_id"] = verification_token.id
+                    request.session["remember_me"] = remember_me
+                    request.session.modified = True
+                    
                     # Send verification email with 6-digit code and link
                     try:
                         from django.utils.http import urlsafe_base64_encode
@@ -368,7 +393,8 @@ def api_login(request):
                         
                         current_site = get_current_site(request)
                         uid = urlsafe_base64_encode(force_bytes(user_obj.pk))
-                        verification_link = f"{request.scheme}://{current_site.domain}{reverse('verify_email', kwargs={'uidb64': uid, 'token': verification_token.token})}"
+                        # Point to the React verification page instead of the Django /web/ view
+                        verification_link = f"{request.scheme}://{current_site.domain}/verify-email/{verification_token.token}"
                         
                         subject = 'Verify your PriceAdjustPro account'
                         message = f"""
@@ -429,6 +455,12 @@ The PriceAdjustPro Team
                         EmailVerificationToken.objects.filter(user=user, is_used=False).update(is_used=True)
                         verification_token = EmailVerificationToken.create_token(user)
                         
+                        # Store "pre-auth" state in session so verify_otp works
+                        request.session["preauth_user_id"] = user.id
+                        request.session["verification_token_id"] = verification_token.id
+                        request.session["remember_me"] = remember_me
+                        request.session.modified = True
+                        
                         # Send verification email with 6-digit code and link
                         try:
                             from django.utils.http import urlsafe_base64_encode
@@ -438,7 +470,8 @@ The PriceAdjustPro Team
                             
                             current_site = get_current_site(request)
                             uid = urlsafe_base64_encode(force_bytes(user.pk))
-                            verification_link = f"{request.scheme}://{current_site.domain}{reverse('verify_email', kwargs={'uidb64': uid, 'token': verification_token.token})}"
+                            # Point to the React verification page instead of the Django /web/ view
+                            verification_link = f"{request.scheme}://{current_site.domain}/verify-email/{verification_token.token}"
                             
                             subject = 'Verify your PriceAdjustPro account'
                             message = f"""
@@ -669,6 +702,12 @@ def api_register(request):
                 user.is_active = False
                 user.save()
                 
+                # Store "pre-auth" state in session so verify_otp works
+                request.session["preauth_user_id"] = user.id
+                request.session["verification_token_id"] = verification_token.id
+                request.session["remember_me"] = True  # Default for registration
+                request.session.modified = True
+                
                 # Send verification email with 6-digit code and link
                 try:
                     from django.utils.http import urlsafe_base64_encode
@@ -678,8 +717,9 @@ def api_register(request):
                     
                     current_site = get_current_site(request)
                     uid = urlsafe_base64_encode(force_bytes(user.pk))
+                    # Point to the React verification page instead of the Django /web/ view
                     # Link points to the web verification view
-                    verification_link = f"{request.scheme}://{current_site.domain}{reverse('verify_email', kwargs={'uidb64': uid, 'token': verification_token.token})}"
+                    verification_link = f"{request.scheme}://{current_site.domain}/verify-email/{verification_token.token}"
                     
                     subject = 'Verify your PriceAdjustPro account'
                     message = f"""
