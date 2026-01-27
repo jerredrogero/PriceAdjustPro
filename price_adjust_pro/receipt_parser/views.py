@@ -362,7 +362,7 @@ def api_receipt_list(request):
             receipts = Receipt.objects.filter(user=user).order_by('-transaction_date').prefetch_related('items')
             
             # Debug logging
-            logger.info(f"Found {receipts.count()} receipts for user {user.username}")
+            logger.info(f"Found {receipts.count()} receipts for user {user.email}")
             
             # Get active price adjustments count
             adjustments_count = PriceAdjustmentAlert.objects.filter(
@@ -988,72 +988,41 @@ def api_register(request):
         data = json.loads(request.body)
         
         # Handle both web form format and iOS app format
-        # Web form: username, email, password1, password2
+        # Web form: email, password1, password2
         # iOS app: first_name, last_name, email, password
         
-        # Try iOS app format first
-        first_name = data.get('first_name')
-        last_name = data.get('last_name')
         email = data.get('email')
         password = data.get('password')
+        first_name = data.get('first_name', '')
+        last_name = data.get('last_name', '')
         
         # Fallback to web form format
-        if not first_name:
-            username = data.get('username')
-            password1 = data.get('password1')
+        if not password and 'password1' in data:
+            password = data.get('password1')
             password2 = data.get('password2')
-            
-            # Validate required fields
-            if not all([username, email, password1, password2]):
-                return JsonResponse({'error': 'All fields are required'}, status=400)
-
-            # Check if passwords match
-            if password1 != password2:
+            if password != password2:
                 return JsonResponse({'error': 'Passwords do not match'}, status=400)
 
-            # Check if username exists
-            if User.objects.filter(username=username).exists():
-                return JsonResponse({'error': 'Username already exists. Note: Usernames are case sensitive.'}, status=400)
+        if not email or not password:
+            return JsonResponse({'error': 'Email and password are required'}, status=400)
             
-            # Check if email already exists
-            if User.objects.filter(email=email).exists():
-                return JsonResponse({'error': 'Email already registered. Note: Emails are case sensitive.'}, status=400)
+        # Check if email already exists
+        if User.objects.filter(email=email).exists():
+            return JsonResponse({'error': 'Email already registered. Note: Emails are case sensitive.'}, status=400)
 
-            # Create user
-            user = User.objects.create_user(
-                username=username,
-                email=email,
-                password=password1
-            )
-        else:
-            # iOS app format - create username from first name and email
-            logger.info(f"iOS registration attempt for: {first_name} {last_name}, email: {email}")
-            
-            if not all([first_name, email, password]):
-                return JsonResponse({'error': 'All fields are required'}, status=400)
-            
-            # Check if email already exists
-            if User.objects.filter(email=email).exists():
-                return JsonResponse({'error': 'Email already registered'}, status=400)
-            
-            # Use provided username or derive from first name
-            username = data.get('username') or first_name.lower()
-            
-            # Ensure username is unique instead of auto-incrementing
-            if User.objects.filter(username=username).exists():
-                logger.info(f"Registration error: Username {username} already exists")
-                return JsonResponse({'error': 'This username is already taken. Please choose another.'}, status=400)
-            
-            logger.info(f"Using username: {username}")
-            
-            # Create user
-            user = User.objects.create_user(
-                username=username,
-                email=email,
-                password=password,
-                first_name=first_name,
-                last_name=last_name
-            )
+        # Use email as username
+        username = email
+        
+        logger.info(f"Creating user with email: {email}")
+        
+        # Create user
+        user = User.objects.create_user(
+            username=username,
+            email=email,
+            password=password,
+            first_name=first_name,
+            last_name=last_name
+        )
 
         # Auto-verify user and create profile
         try:
@@ -1091,14 +1060,13 @@ def api_register(request):
             'sessionid': request.session.session_key,
             'user': {
                 'id': user.id,
-                'email': user.email,
-                'username': user.username,
-                'first_name': user.first_name,
-                'last_name': user.last_name,
-                'is_email_verified': True,
-                'account_type': account_type,
-                'receipt_count': 0,
-                'receipt_limit': 5 if account_type == 'free' else 999999,
+            'email': user.email,
+            'first_name': user.first_name,
+            'last_name': user.last_name,
+            'is_email_verified': True,
+            'account_type': account_type,
+            'receipt_count': 0,
+            'receipt_limit': 5 if account_type == 'free' else 999999,
             }
         })
 
@@ -1151,14 +1119,13 @@ def api_verify_email(request, token):
 def api_verify_code(request):
     """
     API endpoint to verify user email with 6-digit code.
-    Supports both web app format (username/email + code) and iOS app format (code only).
+    Supports both web app format (email + code) and iOS app format (code only).
     """
     if request.method != 'POST':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
     
     try:
         data = json.loads(request.body)
-        username = data.get('username')
         email = data.get('email')
         code = data.get('code', '').strip()
         
@@ -1220,7 +1187,6 @@ def api_verify_code(request):
             'user': {
                 'id': user.id,
                 'email': user.email,
-                'username': user.username,
                 'first_name': user.first_name,
                 'last_name': user.last_name,
                 'is_email_verified': True,
@@ -1281,7 +1247,7 @@ def api_resend_verification(request):
             
             subject = 'Verify your PriceAdjustPro account'
             message = f"""
-Hi {user.first_name or user.username},
+Hi {user.first_name or user.email},
 
 Here's your new verification code for PriceAdjustPro:
 
@@ -1385,7 +1351,7 @@ def register(request):
                 
                 subject = 'Verify your PriceAdjustPro account'
                 message = f"""
-Hi {user.username},
+Hi {user.email},
 
 Thank you for signing up for PriceAdjustPro! Please verify your email address to get started.
 
@@ -1462,7 +1428,7 @@ def delete_account(request):
             from .models import PriceAdjustmentAlert
             alerts_count = PriceAdjustmentAlert.objects.filter(user=user).count()
             if alerts_count > 0:
-                logger.info(f"Deleting {alerts_count} price adjustment alerts for user {user.username}")
+                logger.info(f"Deleting {alerts_count} price adjustment alerts for user {user.email}")
             
             # Delete user's files
             user_receipts = Receipt.objects.filter(user=user)
@@ -1597,7 +1563,7 @@ def api_price_adjustments(request):
             return default
     
     try:
-        logger.info(f"Getting price adjustments for user: {request.user.username}")
+        logger.info(f"Getting price adjustments for user: {request.user.email}")
         
         # Get all active alerts for the user
         alerts = PriceAdjustmentAlert.objects.filter(
@@ -1619,7 +1585,7 @@ def api_price_adjustments(request):
             official_sale_item__promotion__sale_end_date__lt=today,
         )
 
-        logger.info(f"Found {alerts.count()} active alerts for user {request.user.username}")
+        logger.info(f"Found {alerts.count()} active alerts for user {request.user.email}")
 
         # Convert to list and sort by price difference
         alert_data = []
@@ -1719,7 +1685,7 @@ def api_dismiss_price_adjustment(request, item_code):
         # Mark alerts as dismissed (this prevents them from reappearing on login)
         dismissed_count = alerts.update(is_dismissed=True)
         
-        logger.info(f"Dismissed {dismissed_count} price adjustment alerts for item {item_code} for user {request.user.username}")
+        logger.info(f"Dismissed {dismissed_count} price adjustment alerts for item {item_code} for user {request.user.email}")
         
         return JsonResponse({
             'message': f'Successfully removed {dismissed_count} alert(s)',
@@ -2290,7 +2256,7 @@ def debug_alerts(request):
         )
         
         debug_data = {
-            'user': request.user.username,
+            'user': request.user.email,
             'total_alerts': all_alerts.count(),
             'active_alerts': active_alerts.count(),
             'alerts': []
@@ -2676,7 +2642,7 @@ def api_subscription_create(request):
         try:
             customer = stripe.Customer.create(
                 email=request.user.email,
-                name=f"{request.user.first_name} {request.user.last_name}".strip() or request.user.username,
+                name=f"{request.user.first_name} {request.user.last_name}".strip() or request.user.email,
                 metadata={'user_id': request.user.id}
             )
         except stripe.error.StripeError as e:
@@ -2885,7 +2851,7 @@ def api_subscription_create_payment_intent(request):
             try:
                 customer = stripe.Customer.create(
                     email=request.user.email,
-                    name=f"{request.user.first_name} {request.user.last_name}".strip() or request.user.username,
+                    name=f"{request.user.first_name} {request.user.last_name}".strip() or request.user.email,
                     metadata={'user_id': request.user.id}
                 )
                 customer_id = customer.id
@@ -3284,7 +3250,7 @@ def api_apple_purchase(request):
     from .models import AppleSubscription, UserProfile
     from dateutil import parser as date_parser
     
-    logger.info(f"Apple purchase request from user: {request.user.username}")
+    logger.info(f"Apple purchase request from user: {request.user.email}")
     
     # Validate request data
     serializer = ApplePurchaseRequestSerializer(data=request.data)
@@ -3311,7 +3277,7 @@ def api_apple_purchase(request):
     is_valid, validation_response, is_sandbox = validate_apple_receipt(receipt_data, shared_secret)
     
     if not is_valid:
-        logger.warning(f"Invalid Apple receipt for user {request.user.username}")
+        logger.warning(f"Invalid Apple receipt for user {request.user.email}")
         return Response(
             {
                 'success': False,
@@ -3386,7 +3352,7 @@ def api_apple_purchase(request):
             profile.account_type = 'paid'
             profile.save()
             
-            logger.info(f"Apple subscription {'created' if created else 'updated'} for user {request.user.username}")
+            logger.info(f"Apple subscription {'created' if created else 'updated'} for user {request.user.email}")
             
             return Response({
                 'success': True,
@@ -3430,7 +3396,7 @@ def api_apple_validate(request):
     from .serializers import AppleSubscriptionSerializer
     from .models import AppleSubscription, UserProfile
     
-    logger.info(f"Apple subscription validation request from user: {request.user.username}")
+    logger.info(f"Apple subscription validation request from user: {request.user.email}")
     
     # Get user's active Apple subscriptions
     subscriptions = AppleSubscription.objects.filter(
@@ -3439,7 +3405,7 @@ def api_apple_validate(request):
     ).order_by('-created_at')
     
     if not subscriptions.exists():
-        logger.info(f"No active Apple subscriptions found for user {request.user.username}")
+        logger.info(f"No active Apple subscriptions found for user {request.user.email}")
         return Response({
             'has_subscription': False,
             'is_active': False,
@@ -3451,7 +3417,7 @@ def api_apple_validate(request):
     
     # Check if subscription is expired
     if subscription.is_expired:
-        logger.info(f"Apple subscription expired for user {request.user.username}")
+        logger.info(f"Apple subscription expired for user {request.user.email}")
         subscription.is_active = False
         subscription.save()
         
@@ -3476,7 +3442,7 @@ def api_apple_validate(request):
     revalidated = False
     
     if should_revalidate and receipt_data:
-        logger.info(f"Revalidating Apple subscription for user {request.user.username}")
+        logger.info(f"Revalidating Apple subscription for user {request.user.email}")
         
         shared_secret = settings.APPLE_SHARED_SECRET
         if shared_secret:
@@ -3503,12 +3469,12 @@ def api_apple_validate(request):
                     subscription.save()
                     revalidated = True
                     
-                    logger.info(f"Apple subscription revalidated successfully for user {request.user.username}")
+                    logger.info(f"Apple subscription revalidated successfully for user {request.user.email}")
                     
                 except Exception as e:
                     logger.error(f"Error updating subscription after revalidation: {str(e)}")
             else:
-                logger.warning(f"Apple subscription revalidation failed for user {request.user.username}")
+                logger.warning(f"Apple subscription revalidation failed for user {request.user.email}")
     
     return Response({
         'has_subscription': True,

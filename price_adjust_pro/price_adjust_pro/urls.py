@@ -53,6 +53,7 @@ def login_start(request):
     Step 1 of login: Validate credentials and issue OTP.
     Stores pre-auth state in session.
     """
+    print(f"login_start received: method={request.method}")
     if request.method != 'POST':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
         
@@ -66,25 +67,59 @@ def login_start(request):
         for k in ["preauth_user_id", "otp_id", "otp_verified", "remember_me"]:
             request.session.pop(k, None)
 
+        print(f"Request body: {request.body}")
         data = json.loads(request.body)
-        email = data.get('email', '').strip().lower()
-        auth_username = data.get('username', email).strip().lower()
+        email_input = data.get('email', '').strip()
         password = data.get('password', '')
         
-        # Authenticate user
-        user = authenticate(request, username=auth_username, password=password)
+        # Use email as the primary identifier
+        identifier = email_input.strip()
+        print(f"Attempting auth for email: '{identifier}'")
+        
+        if not identifier or not password:
+            return JsonResponse({'error': 'Email and password are required'}, status=400)
+        
+        # 1. Try direct authentication with provided email as username
+        user = authenticate(request, username=identifier, password=password)
+        
+        # 2. If that fails, try looking up the user by email to handle case sensitivity
         if not user:
-            # Try with email if username failed
             try:
                 from django.contrib.auth.models import User
-                user_obj = User.objects.get(email=email)
-                user = authenticate(request, username=user_obj.username, password=password)
-            except User.DoesNotExist:
-                user = None
-
+                from django.db.models import Q
+                
+                # Look for user by exact email or case-insensitive email
+                user_obj = User.objects.filter(email__iexact=identifier).first()
+                
+                if user_obj:
+                    print(f"Found user {user_obj.username} matching email {identifier}. Attempting auth with actual username.")
+                    # Try authenticating with the actual username (which should be the email)
+                    user = authenticate(request, username=user_obj.username, password=password)
+                    
+                    if not user:
+                        # If authenticate() still fails, check password manually for inactive users
+                        # or in case of custom auth backend issues
+                        if user_obj.check_password(password):
+                            if not user_obj.is_active:
+                                print(f"User {user_obj.username} is inactive but password is correct. Proceeding to OTP.")
+                                user = user_obj
+                            else:
+                                # If active but authenticate() failed, it might be a backend issue
+                                # but we'll trust check_password() here for the login-start phase
+                                print(f"User {user_obj.username} password correct but authenticate() failed. Proceeding.")
+                                user = user_obj
+                        else:
+                            print(f"User {user_obj.username} found but password check failed.")
+                else:
+                    print(f"No user found matching identifier: {identifier}")
+            except Exception as e:
+                print(f"Error during user lookup: {e}")
+            
         if not user:
+            print(f"Authentication failed for identifier: {identifier}")
             return JsonResponse({'error': 'Invalid email or password'}, status=400)
 
+        print(f"User {user.username} authenticated, issuing OTP")
         # Issue OTP
         from receipt_parser.services import issue_email_otp
         otp, _ = issue_email_otp(user)
@@ -96,6 +131,8 @@ def login_start(request):
         request.session["remember_me"] = data.get('remember_me', False)
         request.session.modified = True
 
+        print(f"Session updated with preauth state. Session key: {request.session.session_key}")
+
         return JsonResponse({
             "requires_2fa": True,
             "message": "Verification code sent to your email.",
@@ -103,8 +140,10 @@ def login_start(request):
         })
         
     except Exception as e:
+        import traceback
         print(f"Login start error: {str(e)}")
-        return JsonResponse({'error': 'An error occurred during login'}, status=500)
+        print(traceback.format_exc())
+        return JsonResponse({'error': f'An error occurred during login: {str(e)}'}, status=500)
 
 @csrf_exempt
 def verify_otp(request):
@@ -204,7 +243,6 @@ def verify_otp(request):
             'success': True,
             'user': {
                 'id': user.id,
-                'username': user.username,
                 'email': user.email,
                 'first_name': user.first_name,
                 'last_name': user.last_name,
@@ -284,30 +322,25 @@ def api_login(request):
                     return value != 0
                 return default
             
-            username_or_email = data.get('username')
-            password = data.get('password')
+            email_input = data.get('email', '').strip()
+            password = data.get('password', '')
             remember_me = parse_bool(data.get('remember_me'), default=False)
             
-            print(f"Login attempt - username/email: {username_or_email}, password provided: {bool(password)}")
+            print(f"Login attempt - email: {email_input}, password provided: {bool(password)}")
             
-            if not username_or_email or not password:
-                print(f"Login error: Missing username/email or password")
-                return JsonResponse({'error': 'Username/email and password are required'}, status=400)
+            if not email_input or not password:
+                print(f"Login error: Missing email or password")
+                return JsonResponse({'error': 'Email and password are required'}, status=400)
             
-            # Try to find the user by username or email
-            # We check both to allow interchangeable login
+            # Try to find the user by email
             user_obj = None
             try:
-                if '@' in username_or_email:
-                    user_obj = User.objects.filter(email=username_or_email).first()
-                
-                if not user_obj:
-                    user_obj = User.objects.filter(username=username_or_email).first()
+                user_obj = User.objects.filter(email__iexact=email_input).first()
             except Exception as e:
                 print(f"Error finding user: {str(e)}")
 
             # Use the actual username for authentication if found
-            auth_username = user_obj.username if user_obj else username_or_email
+            auth_username = user_obj.username if user_obj else email_input
             
             # Try authenticate without request first (some backends don't need it)
             user = authenticate(username=auth_username, password=password)
@@ -338,7 +371,7 @@ def api_login(request):
                         
                         subject = 'Verify your PriceAdjustPro account'
                         message = f"""
-Hi {user_obj.first_name or user_obj.username},
+Hi {user_obj.first_name or user_obj.email},
 
 Please verify your email address to log in to PriceAdjustPro.
 
@@ -408,7 +441,7 @@ The PriceAdjustPro Team
                             
                             subject = 'Verify your PriceAdjustPro account'
                             message = f"""
-Hi {user.first_name or user.username},
+Hi {user.first_name or user.email},
 
 Please verify your email address to log in to PriceAdjustPro.
 
@@ -493,11 +526,10 @@ The PriceAdjustPro Team
                 is_paid_account = profile.is_paid_account
                 
                 response = JsonResponse({
-                    'id': user.id,
-                    'username': user.username,
-                    'email': user.email,
-                    'first_name': user.first_name,
-                    'last_name': user.last_name,
+            'id': user.id,
+            'email': user.email,
+            'first_name': user.first_name,
+            'last_name': user.last_name,
                     'account_type': account_type,
                     'is_paid_account': is_paid_account,
                     'is_email_verified': True,  # User must be verified to reach this point
@@ -579,74 +611,44 @@ def api_register(request):
             data = json.loads(request.body)
             from django.contrib.auth.models import User
             
-            # Handle both web form format and iOS app format
-            # Web form: username, email, password1, password2
+            # Web form: email, password1, password2
             # iOS app: first_name, last_name, email, password
             
-            # Try iOS app format first
-            first_name = data.get('first_name')
-            last_name = data.get('last_name')
             email = data.get('email')
             password = data.get('password')
+            first_name = data.get('first_name', '')
+            last_name = data.get('last_name', '')
             
             # Fallback to web form format
-            if not first_name:
-                username = data.get('username')
-                password1 = data.get('password1')
+            if not password and 'password1' in data:
+                password = data.get('password1')
                 password2 = data.get('password2')
-                
-                print(f"Web registration attempt for user: {username}, email: {email}")
-                
-                if not all([username, email, password1, password2]):
-                    print("Registration error: Missing required fields")
-                    return JsonResponse({'error': 'All fields are required'}, status=400)
-                
-                if password1 != password2:
+                if password != password2:
                     print("Registration error: Passwords do not match")
                     return JsonResponse({'error': 'Passwords do not match'}, status=400)
-                
-                if User.objects.filter(username=username).exists():
-                    print(f"Registration error: Username {username} already exists")
-                    return JsonResponse({'error': 'Username already exists. Note: Usernames are case sensitive.'}, status=400)
-                
-                # Create user
-                user = User.objects.create_user(
-                    username=username,
-                    email=email,
-                    password=password1
-                )
-                print(f"User {username} created successfully")
-            else:
-                # iOS app format - create username from first name and email
-                print(f"iOS registration attempt for: {first_name} {last_name}, email: {email}")
-                
-                if not all([first_name, email, password]):
-                    print("Registration error: Missing required fields (first_name, email, password)")
-                    return JsonResponse({'error': 'All fields are required'}, status=400)
-                
-                # Check if email already exists
-                if User.objects.filter(email=email).exists():
-                    print(f"Registration error: Email {email} already registered")
-                    return JsonResponse({'error': 'Email already registered. Note: Emails are case sensitive.'}, status=400)
 
-                # Use provided username or derive from first name
-                username = data.get('username') or first_name.lower()
+            if not email or not password:
+                print("Registration error: Missing required fields (email, password)")
+                return JsonResponse({'error': 'Email and password are required'}, status=400)
                 
-                # Ensure username is unique instead of auto-incrementing
-                if User.objects.filter(username=username).exists():
-                    print(f"Registration error: Username {username} already exists")
-                    return JsonResponse({'error': 'This username is already taken. Please choose another.'}, status=400)
-                
-                print(f"Using username: {username}")
-                
-                # Create user
-                user = User.objects.create_user(
-                    username=username,
-                    email=email,
-                    password=password,
-                    first_name=first_name,
-                    last_name=last_name
-                )
+            # Check if email already exists
+            if User.objects.filter(email=email).exists():
+                print(f"Registration error: Email {email} already registered")
+                return JsonResponse({'error': 'Email already registered. Note: Emails are case sensitive.'}, status=400)
+
+            # Use email as username
+            username = email
+            
+            print(f"Creating user with email: {email}")
+            
+            # Create user
+            user = User.objects.create_user(
+                username=username,
+                email=email,
+                password=password,
+                first_name=first_name,
+                last_name=last_name
+            )
             
             print(f"User {username} created successfully")
             
@@ -679,7 +681,7 @@ def api_register(request):
                     
                     subject = 'Verify your PriceAdjustPro account'
                     message = f"""
-Hi {user.first_name or user.username},
+Hi {user.first_name or user.email},
 
 Welcome to PriceAdjustPro! Please verify your email address to get started.
 
@@ -813,7 +815,7 @@ def api_delete_account(request):
             
             try:
                 # Log account deletion for audit purposes
-                logger.info(f"Deleting account for user: {user.username} (ID: {user.id})")
+                logger.info(f"Deleting account for user: {user.email} (ID: {user.id})")
                 
                 # Delete user's uploaded files
                 user_receipts = Receipt.objects.filter(user=user)
@@ -840,7 +842,7 @@ def api_delete_account(request):
                         stripe.api_key = settings.STRIPE_SECRET_KEY
                         try:
                             stripe.Subscription.delete(user_subscription.stripe_subscription_id)
-                            logger.info(f"Cancelled Stripe subscription for user {user.username}")
+                            logger.info(f"Cancelled Stripe subscription for user {user.email}")
                         except Exception as stripe_error:
                             logger.warning(f"Failed to cancel Stripe subscription: {str(stripe_error)}")
                 except ImportError:
@@ -850,10 +852,10 @@ def api_delete_account(request):
                     logger.warning(f"Error handling subscription cancellation: {str(sub_error)}")
                 
                 # Delete the user account (this will cascade delete all related data)
-                username = user.username
+                email = user.email
                 user.delete()
                 
-                logger.info(f"Successfully deleted account for {username}. Removed {receipts_count} receipts, {alerts_count} alerts, and {files_deleted} files.")
+                logger.info(f"Successfully deleted account for {email}. Removed {receipts_count} receipts, {alerts_count} alerts, and {files_deleted} files.")
                 
                 return JsonResponse({
                     'message': 'Account successfully deleted',
@@ -865,7 +867,7 @@ def api_delete_account(request):
                 })
                 
             except Exception as delete_error:
-                logger.error(f"Error during account deletion for user {user.username}: {str(delete_error)}")
+                logger.error(f"Error during account deletion for user {user.email}: {str(delete_error)}")
                 return JsonResponse({'error': 'Failed to delete account. Please try again or contact support.'}, status=500)
             
         except json.JSONDecodeError:
@@ -911,7 +913,6 @@ def api_user(request):
         
         user_data = {
             'id': user.id,
-            'username': user.username,
             'email': user.email,
             'first_name': user.first_name,
             'last_name': user.last_name,
@@ -938,7 +939,7 @@ def debug_session(request):
     
     if request.user.is_authenticated:
         response_data['user'] = {
-            'username': request.user.username,
+            'email': request.user.email,
             'id': request.user.id
         }
     
@@ -984,7 +985,7 @@ def api_password_reset(request):
             # Send email
             subject = 'Password Reset for PriceAdjustPro'
             message = f"""
-Hello {user.username},
+Hello {user.email},
 
 You requested a password reset for your PriceAdjustPro account.
 

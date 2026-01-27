@@ -480,7 +480,7 @@ def check_for_price_adjustments(item: LineItem, receipt: Receipt, is_user_edited
             return
 
         logger.info(f"=== OFFICIAL SALES PRICE CHECK for {item.description} (${item.price}) ===")
-        logger.info(f"Item code: {item.item_code}, Receipt date: {receipt.transaction_date}, User: {receipt.user.username}")
+        logger.info(f"Item code: {item.item_code}, Receipt date: {receipt.transaction_date}, User: {receipt.user.email}")
 
         # Skip if this item was bought on sale - user already got the discount
         if item.on_sale or (item.instant_savings and item.instant_savings > 0):
@@ -552,7 +552,7 @@ def check_for_price_adjustments(item: LineItem, receipt: Receipt, is_user_edited
                         existing_alert.cheaper_store_city = 'All Costco Locations'
                         existing_alert.cheaper_store_number = 'ALL'
                         existing_alert.save()
-                        logger.info(f"Updated official promotion alert for {receipt.user.username} on {item.description}")
+                        logger.info(f"Updated official promotion alert for {receipt.user.email} on {item.description}")
                 else:
                     # Create new alert
                     PriceAdjustmentAlert.objects.create(
@@ -573,7 +573,7 @@ def check_for_price_adjustments(item: LineItem, receipt: Receipt, is_user_edited
                     )
                     
                     logger.info(
-                        f"Official promotion alert created for {receipt.user.username} "
+                        f"Official promotion alert created for {receipt.user.email} "
                         f"on {promotion_item.description} (${item.price} -> ${final_price})"
                     )
 
@@ -1305,7 +1305,7 @@ def create_official_price_alerts(official_sale_item) -> int:
                         existing_alert.dedupe_key = existing_alert.dedupe_key or dedupe_key
                         existing_alert.save()
                         alerts_created += 1
-                        logger.info(f"Updated price alert for {purchase.receipt.user.username} on {official_sale_item.description}")
+                        logger.info(f"Updated price alert for {purchase.receipt.user.email} on {official_sale_item.description}")
                 else:
                     # Create new alert (deduped)
                     _alert, created = PriceAdjustmentAlert.objects.get_or_create(
@@ -1331,7 +1331,7 @@ def create_official_price_alerts(official_sale_item) -> int:
                         alerts_created += 1
                     
                     logger.info(
-                        f"Official price alert created for user {purchase.receipt.user.username} "
+                        f"Official price alert created for user {purchase.receipt.user.email} "
                         f"on {official_sale_item.description} (${purchase.price} -> ${final_price}, saved ${savings})"
                     )
         
@@ -1440,7 +1440,7 @@ def check_current_user_for_price_adjustments(item: LineItem, receipt: Receipt) -
                         existing_alert.dedupe_key = existing_alert.dedupe_key or dedupe_key
                         existing_alert.save()
                         alerts_created += 1
-                        logger.info(f"Updated official promotion alert for {receipt.user.username} on {item.description}")
+                        logger.info(f"Updated official promotion alert for {receipt.user.email} on {item.description}")
                 else:
                     # Create new alert (deduped)
                     _alert, created = PriceAdjustmentAlert.objects.get_or_create(
@@ -1466,7 +1466,7 @@ def check_current_user_for_price_adjustments(item: LineItem, receipt: Receipt) -
                         alerts_created += 1
                     
                     logger.info(
-                        f"Official promotion alert created for current user {receipt.user.username} "
+                        f"Official promotion alert created for current user {receipt.user.email} "
                         f"on {promotion_item.description} (${item.price} -> ${final_price})"
                     )
         

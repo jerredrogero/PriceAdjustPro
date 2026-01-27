@@ -18,7 +18,7 @@ import api from '../api/axios';
 
 const Login: React.FC = () => {
   const navigate = useNavigate();
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -43,7 +43,7 @@ const Login: React.FC = () => {
 
     try {
       await api.post('/api/auth/login/', {
-        username,
+        email,
         password,
         remember_me: rememberMe,
       });
@@ -59,7 +59,7 @@ const Login: React.FC = () => {
       console.error('Login error:', err);
       
       // Handle other errors
-      let message = 'Invalid username or password';
+      let message = 'Invalid email or password';
       if (err.response?.data?.message) {
         message = err.response.data.message;
       } else if (err.response?.data?.error) {
@@ -94,11 +94,12 @@ const Login: React.FC = () => {
           <form onSubmit={handleSubmit}>
             <TextField
               fullWidth
-              label="Username or Email"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
+              label="Email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               required
-              helperText="Note: Usernames and emails are case sensitive"
+              helperText="Note: Emails are case sensitive"
               sx={{ mb: 2 }}
             />
             <TextField

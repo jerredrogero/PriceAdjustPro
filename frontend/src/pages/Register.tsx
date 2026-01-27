@@ -19,8 +19,9 @@ import axios from 'axios';
 const Register: React.FC = () => {
   const navigate = useNavigate();
   const { login } = useAuth();
-  const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
@@ -42,10 +43,10 @@ const Register: React.FC = () => {
       
       // Use api instance to ensure CSRF and cookies are handled properly
       const response = await api.post('/api/auth/register/', {
-        username,
         email,
-        password1: password,
-        password2: confirmPassword,
+        first_name: firstName,
+        last_name: lastName,
+        password,
       });
       
       console.log('Registration successful:', response.data);
@@ -53,7 +54,7 @@ const Register: React.FC = () => {
       // Auto-login after successful registration
       try {
         await api.post('/api/auth/login/', {
-          username,
+          email,
           password,
           remember_me: true,
         });
@@ -100,11 +101,18 @@ const Register: React.FC = () => {
           <form onSubmit={handleSubmit}>
             <TextField
               fullWidth
-              label="Username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
+              label="First Name"
+              value={firstName}
+              onChange={(e) => setFirstName(e.target.value)}
               required
-              helperText="Usernames are case sensitive"
+              sx={{ mb: 2 }}
+            />
+            <TextField
+              fullWidth
+              label="Last Name"
+              value={lastName}
+              onChange={(e) => setLastName(e.target.value)}
+              required
               sx={{ mb: 2 }}
             />
             <TextField

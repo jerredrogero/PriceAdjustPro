@@ -60,7 +60,7 @@ class UserProfile(models.Model):
         verbose_name_plural = 'User Profiles'
         
     def __str__(self):
-        return f"{self.user.username} ({self.get_account_type_display()})"
+        return f"{self.user.email} ({self.get_account_type_display()})"
     
     @property
     def is_paid_account(self):
@@ -212,7 +212,7 @@ class AppleSubscription(models.Model):
         verbose_name_plural = 'Apple Subscriptions'
 
     def __str__(self):
-        return f"{self.user.username} - {self.product_id} ({'Active' if self.is_active else 'Inactive'})"
+        return f"{self.user.email} - {self.product_id} ({'Active' if self.is_active else 'Inactive'})"
 
     @property
     def is_expired(self):
@@ -894,7 +894,7 @@ class PushDevice(models.Model):
         verbose_name_plural = 'Push Devices'
 
     def __str__(self):
-        return f"{self.user.username} - {self.platform} ({self.device_id})"
+        return f"{self.user.email} - {self.platform} ({self.device_id})"
 
 
 class PushDelivery(models.Model):
@@ -1094,7 +1094,7 @@ class UserSubscription(models.Model):
         verbose_name_plural = 'User Subscriptions'
 
     def __str__(self):
-        return f"{self.user.username} - {self.product.name} ({self.status})"
+        return f"{self.user.email} - {self.product.name} ({self.status})"
 
     @property
     def is_active(self):

@@ -17,7 +17,7 @@ class Command(BaseCommand):
             )
             if created:
                 created_count += 1
-                self.stdout.write(f'Created profile for user: {user.username}')
+                self.stdout.write(f'Created profile for user: {user.email}')
         
         if created_count == 0:
             self.stdout.write(

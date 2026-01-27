@@ -11,7 +11,7 @@ from receipt_parser.notifications.push import send_price_adjustment_summary_to_u
 
 class PushDeviceUpsertTests(TestCase):
     def setUp(self):
-        self.user = User.objects.create_user(username="u1", password="pw", email="u1@example.com")
+        self.user = User.objects.create_user(username="u1@example.com", password="pw", email="u1@example.com")
 
     def test_requires_auth(self):
         resp = self.client.post(
@@ -90,7 +90,7 @@ class PushDeviceUpsertTests(TestCase):
 
 class AlertDedupeTests(TestCase):
     def setUp(self):
-        self.user = User.objects.create_user(username="u2", password="pw", email="u2@example.com")
+        self.user = User.objects.create_user(username="u2@example.com", password="pw", email="u2@example.com")
 
     def test_alert_dedupe_key_unique(self):
         purchase_date = timezone.now()
@@ -137,7 +137,7 @@ class AlertDedupeTests(TestCase):
 
 class PushDeliveryDedupeTests(TestCase):
     def setUp(self):
-        self.user = User.objects.create_user(username="u3", password="pw", email="u3@example.com")
+        self.user = User.objects.create_user(username="u3@example.com", password="pw", email="u3@example.com")
         self.device = PushDevice.objects.create(
             user=self.user,
             device_id="d1",

@@ -65,7 +65,7 @@ def send_admin_verification_email(user, initiated_by=None):
     EmailVerificationToken.objects.filter(user=user, is_used=False).update(is_used=True)
 
     verification_token = EmailVerificationToken.create_token(user)
-    greeting_name = user.first_name or user.username or 'there'
+    greeting_name = user.first_name or user.email or 'there'
 
     intro_line = (
         "A member of the PriceAdjustPro support team just sent you a new verification code "
@@ -115,25 +115,25 @@ def resend_codes_for_users(request, admin_obj, users):
         if profile.is_email_verified:
             admin_obj.message_user(
                 request,
-                f'{user.username} is already verified; skipped.',
+                f'{user.email} is already verified; skipped.',
                 level=messages.INFO,
             )
             continue
 
         try:
-            send_admin_verification_email(user, initiated_by=request.user.username)
+            send_admin_verification_email(user, initiated_by=request.user.email)
             sent += 1
         except ValueError as exc:
             admin_obj.message_user(
                 request,
-                f'{user.username}: {exc}',
+                f'{user.email}: {exc}',
                 level=messages.WARNING,
             )
         except Exception as exc:
             logger.error("Failed to send verification email to %s: %s", user.email, exc)
             admin_obj.message_user(
                 request,
-                f'{user.username}: Failed to send verification email.',
+                f'{user.email}: Failed to send verification email.',
                 level=messages.ERROR,
             )
 
@@ -157,7 +157,7 @@ admin.site.unregister(Group)
 # Custom User admin with limited fields and hijack functionality
 @admin.register(User)
 class CustomUserAdmin(HijackUserAdminMixin, UserAdmin):
-    list_display = ('username', 'email', 'date_joined', 'last_login', 'is_active', 'is_staff', 'account_type_display')
+    list_display = ('email', 'first_name', 'last_name', 'date_joined', 'last_login', 'is_active', 'is_staff', 'account_type_display')
     list_filter = ('is_active', 'is_staff', 'date_joined')
     readonly_fields = ('date_joined', 'last_login')
     ordering = ('-date_joined',)
@@ -165,7 +165,8 @@ class CustomUserAdmin(HijackUserAdminMixin, UserAdmin):
     
     # Limit what fields can be changed
     fieldsets = (
-        (None, {'fields': ('username', 'email', 'password')}),
+        (None, {'fields': ('email', 'password')}),
+        ('Personal info', {'fields': ('first_name', 'last_name')}),
         ('Permissions', {'fields': ('is_active', 'is_staff')}),
         ('Important dates', {'fields': ('last_login', 'date_joined')}),
     )
@@ -174,7 +175,7 @@ class CustomUserAdmin(HijackUserAdminMixin, UserAdmin):
     add_fieldsets = (
         (None, {
             'classes': ('wide',),
-            'fields': ('username', 'email', 'password1', 'password2'),
+            'fields': ('email', 'password1', 'password2'),
         }),
     )
     
@@ -200,13 +201,13 @@ class CustomUserAdmin(HijackUserAdminMixin, UserAdmin):
         for user in queryset:
             profile = get_or_create_user_profile(user)
             if profile.is_paid_account:
-                messages.info(request, f'{user.username} already has a paid account.')
+                messages.info(request, f'{user.email} already has a paid account.')
                 continue
             
             profile.account_type = 'paid'
             profile.save()
             upgraded_count += 1
-            messages.success(request, f'{user.username}: Upgraded to paid account.')
+            messages.success(request, f'{user.email}: Upgraded to paid account.')
         
         if upgraded_count > 0:
             messages.success(request, f'Successfully upgraded {upgraded_count} user(s) to paid accounts.')
@@ -224,13 +225,13 @@ class CustomUserAdmin(HijackUserAdminMixin, UserAdmin):
         for user in queryset:
             profile = get_or_create_user_profile(user)
             if profile.is_free_account:
-                messages.info(request, f'{user.username} already has a free account.')
+                messages.info(request, f'{user.email} already has a free account.')
                 continue
             
             profile.account_type = 'free'
             profile.save()
             downgraded_count += 1
-            messages.success(request, f'{user.username}: Downgraded to free account.')
+            messages.success(request, f'{user.email}: Downgraded to free account.')
         
         if downgraded_count > 0:
             messages.success(request, f'Successfully downgraded {downgraded_count} user(s) to free accounts.')
@@ -266,7 +267,7 @@ class CustomUserAdmin(HijackUserAdminMixin, UserAdmin):
                     user.delete()
                     
             except Exception as e:
-                messages.error(request, f'Error deleting user {user.username}: {str(e)}')
+                messages.error(request, f'Error deleting user {user.email}: {str(e)}')
                 continue
         
         messages.success(request, f'Successfully deleted {len(queryset)} user(s) and all related data.')
@@ -282,7 +283,7 @@ csrf_protect_m = method_decorator(csrf_protect)
 class UserProfileAdmin(admin.ModelAdmin):
     list_display = ('user', 'account_type', 'is_premium', 'subscription_type', 'is_email_verified', 'created_at', 'updated_at')
     list_filter = ('account_type', 'is_premium', 'subscription_type', 'is_email_verified', 'created_at')
-    search_fields = ('user__username', 'user__email')
+    search_fields = ('user__email',)
     readonly_fields = ('created_at', 'updated_at', 'email_verified_at')
     raw_id_fields = ('user',)
     ordering = ('-created_at',)
@@ -310,7 +311,7 @@ class UserProfileAdmin(admin.ModelAdmin):
 class EmailVerificationTokenAdmin(admin.ModelAdmin):
     list_display = ('user', 'user_email', 'is_used', 'is_expired', 'created_at', 'expires_at')
     list_filter = ('is_used', 'created_at', 'expires_at')
-    search_fields = ('user__username', 'user__email', 'token')
+    search_fields = ('user__email', 'token')
     readonly_fields = ('token', 'created_at', 'expires_at', 'used_at', 'is_expired', 'is_valid')
     raw_id_fields = ('user',)
     ordering = ('-created_at',)
@@ -339,7 +340,7 @@ class EmailVerificationTokenAdmin(admin.ModelAdmin):
 class EmailOTPAdmin(admin.ModelAdmin):
     list_display = ('user', 'user_email', 'attempts', 'created_at', 'expires_at', 'used_at', 'is_active')
     list_filter = ('created_at', 'expires_at', 'used_at')
-    search_fields = ('user__username', 'user__email', 'code_hash')
+    search_fields = ('user__email', 'code_hash')
     readonly_fields = ('user', 'code_hash', 'created_at', 'expires_at', 'used_at', 'attempts', 'last_sent_at', 'is_expired', 'is_used')
     raw_id_fields = ('user',)
     ordering = ('-created_at',)
@@ -405,7 +406,7 @@ class ReceiptAdmin(BaseModelAdmin):
         ('user', admin.RelatedOnlyFieldListFilter),
         ('instant_savings', admin.EmptyFieldListFilter),
     )
-    search_fields = ('transaction_number', 'store_location', 'store_city', 'user__username', 'items__description')
+    search_fields = ('transaction_number', 'store_location', 'store_city', 'user__email', 'items__description')
     inlines = [LineItemInline]
     readonly_fields = ('created_at', 'store_city', 'items_count', 'total_savings_display', 'parse_status', 'parse_error')
     date_hierarchy = 'transaction_date'
@@ -456,7 +457,7 @@ class ReceiptAdmin(BaseModelAdmin):
     instant_savings_display.short_description = 'Savings'
 
     def user_link(self, obj):
-        return format_html('<a href="/admin/auth/user/{}/">{}</a>', obj.user.id, obj.user.username)
+        return format_html('<a href="/admin/auth/user/{}/">{}</a>', obj.user.id, obj.user.email)
     user_link.short_description = 'User'
 
     def parse_status(self, obj):
@@ -490,7 +491,7 @@ class ReceiptAdmin(BaseModelAdmin):
         meta = self.model._meta
         field_names = ['transaction_number', 'store_location', 'store_city', 'store_number',
                       'transaction_date', 'total', 'subtotal', 'tax', 'instant_savings',
-                      'parsed_successfully', 'user__username']
+                      'parsed_successfully', 'user__email']
 
         response = HttpResponse(content_type='text/csv')
         response['Content-Disposition'] = f'attachment; filename=receipts_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
@@ -503,8 +504,8 @@ class ReceiptAdmin(BaseModelAdmin):
         for obj in queryset:
             row = []
             for field in field_names:
-                if field == 'user__username':
-                    row.append(obj.user.username)
+                if field == 'user__email':
+                    row.append(obj.user.email)
                 else:
                     value = getattr(obj, field)
                     if isinstance(value, datetime):
@@ -529,7 +530,7 @@ class ReceiptAdmin(BaseModelAdmin):
                 'tax': str(receipt.tax),
                 'instant_savings': str(receipt.instant_savings) if receipt.instant_savings else None,
                 'parsed_successfully': receipt.parsed_successfully,
-                'user': receipt.user.username,
+                'user': receipt.user.email,
                 'items': [{
                     'item_code': item.item_code,
                     'description': item.description,
@@ -557,11 +558,11 @@ class PriceAdjustmentAlertAdmin(BaseModelAdmin):
         'is_dismissed', 
         'original_store_city', 
         'cheaper_store_city',
-        'user__username',
+        'user__email',
         'created_at',
         ('official_sale_item', admin.EmptyFieldListFilter),
     )
-    search_fields = ('item_description', 'item_code', 'user__username', 
+    search_fields = ('item_description', 'item_code', 'user__email', 
                     'original_store_city', 'cheaper_store_city', 'official_sale_item__promotion__title')
     readonly_fields = ('price_difference', 'days_remaining', 'is_expired', 'created_at', 
                       'data_source', 'official_sale_item')
@@ -816,7 +817,7 @@ class PriceAdjustmentAlertAdmin(BaseModelAdmin):
         meta = self.model._meta
         field_names = ['item_code', 'item_description', 'original_price', 'lower_price',
                       'original_store_city', 'cheaper_store_city', 'purchase_date',
-                      'days_remaining', 'is_active', 'is_dismissed', 'user__username',
+                      'days_remaining', 'is_active', 'is_dismissed', 'user__email',
                       'data_source', 'trigger_description', 'original_transaction', 'promotion_title']
 
         response = HttpResponse(content_type='text/csv')
@@ -830,8 +831,8 @@ class PriceAdjustmentAlertAdmin(BaseModelAdmin):
         for obj in queryset:
             row = []
             for field in field_names:
-                if field == 'user__username':
-                    row.append(obj.user.username)
+                if field == 'user__email':
+                    row.append(obj.user.email)
                 elif field == 'data_source':
                     row.append(obj.get_data_source_display())
                 elif field == 'trigger_description':
@@ -873,7 +874,7 @@ class PriceAdjustmentAlertAdmin(BaseModelAdmin):
                 'days_remaining': alert.days_remaining,
                 'is_active': alert.is_active,
                 'is_dismissed': alert.is_dismissed,
-                'user': alert.user.username,
+                'user': alert.user.email,
                 'data_source': alert.get_data_source_display(),
                 'trigger_info': {
                     'source_type': alert.data_source,
@@ -914,7 +915,7 @@ class PushDeviceAdmin(BaseModelAdmin):
         "receipt_processing_alerts_enabled",
         "price_drop_alerts_enabled",
     )
-    search_fields = ("user__username", "user__email", "device_id", "apns_token")
+    search_fields = ("user__email", "device_id", "apns_token")
     readonly_fields = ("created_at", "updated_at", "last_seen_at")
     raw_id_fields = ("user",)
     ordering = ("-updated_at",)
@@ -924,7 +925,7 @@ class PushDeviceAdmin(BaseModelAdmin):
 class PushDeliveryAdmin(BaseModelAdmin):
     list_display = ("device", "kind", "dedupe_key", "created_at")
     list_filter = ("kind", "created_at")
-    search_fields = ("device__user__username", "device__device_id", "dedupe_key")
+    search_fields = ("device__user__email", "device__device_id", "dedupe_key")
     readonly_fields = ("created_at",)
     raw_id_fields = ("device",)
     ordering = ("-created_at",)
@@ -932,17 +933,17 @@ class PushDeliveryAdmin(BaseModelAdmin):
 @admin.register(LineItem)
 class LineItemAdmin(BaseModelAdmin):
     list_display = ('item_code', 'description', 'price', 'quantity', 'total_price', 
-                   'instant_savings_display', 'username', 'receipt_link', 'created_at', 'updated_at')
+                   'instant_savings_display', 'email', 'receipt_link', 'created_at', 'updated_at')
     list_filter = (
         'receipt__store_location',
-        'receipt__user__username',
+        'receipt__user__email',
         'is_taxable',
         ('instant_savings', admin.EmptyFieldListFilter),
         'receipt__transaction_date',
         'created_at',
         'updated_at'
     )
-    search_fields = ('item_code', 'description', 'receipt__transaction_number', 'receipt__user__username')
+    search_fields = ('item_code', 'description', 'receipt__transaction_number', 'receipt__user__email')
     readonly_fields = ('total_price', 'updated_at')  # created_at is now editable
     raw_id_fields = ('receipt',)
     list_per_page = 100
@@ -971,6 +972,12 @@ class LineItemAdmin(BaseModelAdmin):
         return '-'
     username.short_description = 'User'
 
+    def email(self, obj):
+        if obj.receipt and obj.receipt.user:
+            return obj.receipt.user.email
+        return '-'
+    email.short_description = 'User Email'
+
     def receipt_link(self, obj):
         return format_html('<a href="/admin/receipt_parser/receipt/{}/">{}</a>', 
                          obj.receipt.id, obj.receipt.transaction_number)
@@ -978,7 +985,7 @@ class LineItemAdmin(BaseModelAdmin):
 
     def export_as_csv(self, request, queryset):
         field_names = ['item_code', 'description', 'price', 'quantity', 'discount',
-                      'is_taxable', 'instant_savings', 'original_price', 'username', 'receipt__transaction_number',
+                      'is_taxable', 'instant_savings', 'original_price', 'email', 'receipt__transaction_number',
                       'created_at', 'updated_at']
 
         response = HttpResponse(content_type='text/csv')
@@ -986,15 +993,15 @@ class LineItemAdmin(BaseModelAdmin):
         writer = csv.writer(response)
 
         writer.writerow(['item_code', 'description', 'price', 'quantity', 'discount',
-                        'is_taxable', 'instant_savings', 'original_price', 'username', 'receipt_transaction_number',
+                        'is_taxable', 'instant_savings', 'original_price', 'email', 'receipt_transaction_number',
                         'created_at', 'updated_at'])
         for obj in queryset:
             row = []
             for field in field_names:
                 if field == 'receipt__transaction_number':
                     row.append(obj.receipt.transaction_number)
-                elif field == 'username':
-                    row.append(obj.receipt.user.username if obj.receipt and obj.receipt.user else '')
+                elif field == 'email':
+                    row.append(obj.receipt.user.email if obj.receipt and obj.receipt.user else '')
                 elif field in ['created_at', 'updated_at']:
                     value = getattr(obj, field)
                     row.append(value.strftime('%Y-%m-%d %H:%M:%S') if value else '')
@@ -1934,7 +1941,7 @@ class SubscriptionProductAdmin(BaseModelAdmin):
 class UserSubscriptionAdmin(BaseModelAdmin):
     list_display = ('user', 'product', 'status', 'is_active', 'current_period_end', 'cancel_at_period_end', 'days_until_renewal', 'created_at')
     list_filter = ('status', 'cancel_at_period_end', 'product', 'created_at')
-    search_fields = ('user__username', 'user__email', 'product__name', 'stripe_subscription_id', 'stripe_customer_id')
+    search_fields = ('user__email', 'product__name', 'stripe_subscription_id', 'stripe_customer_id')
     readonly_fields = ('stripe_subscription_id', 'stripe_customer_id', 'is_active', 'days_until_renewal', 'created_at', 'updated_at')
     raw_id_fields = ('user', 'product')
     date_hierarchy = 'created_at'
@@ -1975,7 +1982,7 @@ class UserSubscriptionAdmin(BaseModelAdmin):
         
         for subscription in queryset:
             writer.writerow([
-                subscription.user.username,
+                subscription.user.email,
                 subscription.user.email,
                 subscription.product.name,
                 subscription.status,
@@ -1991,7 +1998,7 @@ class UserSubscriptionAdmin(BaseModelAdmin):
 class SubscriptionEventAdmin(BaseModelAdmin):
     list_display = ('stripe_event_id', 'event_type', 'subscription', 'processed', 'created_at')
     list_filter = ('event_type', 'processed', 'created_at')
-    search_fields = ('stripe_event_id', 'event_type', 'subscription__user__username')
+    search_fields = ('stripe_event_id', 'event_type', 'subscription__user__email')
     readonly_fields = ('stripe_event_id', 'event_type', 'event_data', 'created_at')
     raw_id_fields = ('subscription',)
     date_hierarchy = 'created_at'
@@ -2044,7 +2051,7 @@ class SubscriptionEventAdmin(BaseModelAdmin):
 class AppleSubscriptionAdmin(BaseModelAdmin):
     list_display = ('user', 'product_id', 'status_display', 'is_sandbox', 'purchase_date', 'expiration_date', 'days_remaining', 'created_at')
     list_filter = ('is_active', 'is_sandbox', 'product_id', 'purchase_date', 'expiration_date')
-    search_fields = ('user__username', 'user__email', 'transaction_id', 'original_transaction_id', 'product_id')
+    search_fields = ('user__email', 'transaction_id', 'original_transaction_id', 'product_id')
     readonly_fields = ('transaction_id', 'original_transaction_id', 'is_expired', 'days_remaining', 
                       'last_validation_response', 'last_validated_at', 'created_at', 'updated_at')
     raw_id_fields = ('user',)
@@ -2108,7 +2115,7 @@ class AppleSubscriptionAdmin(BaseModelAdmin):
         
         for subscription in queryset:
             writer.writerow([
-                subscription.user.username,
+                subscription.user.email,
                 subscription.user.email,
                 subscription.product_id,
                 subscription.transaction_id,
