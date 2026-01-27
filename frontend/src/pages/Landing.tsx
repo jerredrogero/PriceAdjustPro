@@ -43,7 +43,7 @@ const Landing: React.FC = () => {
     {
       icon: <ReceiptIcon fontSize="large" color="primary" />,
       title: 'AI Receipt Parsing',
-      description: 'Snap a photo or upload a PDF. Our Gemini AI automatically extracts every item, price, and date with 99% accuracy.',
+      description: 'Snap a photo or upload a PDF. Our software automatically extracts every item, price, and date with 99% accuracy.',
     },
     {
       icon: <SavingsIcon fontSize="large" color="success" />,

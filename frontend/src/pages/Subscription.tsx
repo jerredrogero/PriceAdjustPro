@@ -40,7 +40,6 @@ interface SubscriptionProduct {
   id: number;
   stripe_price_id: string;
   name: string;
-  description: string;
   price: string;
   currency: string;
   billing_interval: string;
@@ -74,8 +73,7 @@ const Subscription: React.FC = () => {
     {
       id: 1,
       stripe_price_id: 'price_1RhL3xCBOzePXFXgP8SfgJb4',
-      name: 'PriceAdjustPro Monthly',
-      description: 'The standard for savvy Costco shoppers',
+      name: 'Premium Monthly',
       price: '4.99',
       currency: 'usd',
       billing_interval: 'month'
@@ -83,8 +81,7 @@ const Subscription: React.FC = () => {
     {
       id: 2,
       stripe_price_id: 'price_1RhL67CBOzePXFXgetw6nh0K',
-      name: 'PriceAdjustPro Yearly',
-      description: 'The best value for families',
+      name: 'Premium Yearly',
       price: '49.99',
       currency: 'usd',
       billing_interval: 'year'
@@ -199,17 +196,12 @@ const Subscription: React.FC = () => {
             Go Premium. <br /> Save More.
           </Typography>
           <Typography variant="h5" sx={{ opacity: 0.9, maxWidth: 700, mx: 'auto', mb: 4 }}>
-            Join thousands of Costco members who use PriceAdjustPro to 
-            never miss a refund again.
+            Join Costco members who use PriceAdjustPro to 
+            save even more.
           </Typography>
           <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2 }}>
             <Chip 
-              icon={<VerifiedIcon sx={{ color: 'secondary.light !important' }} />} 
-              label="Money-back guarantee" 
-              sx={{ color: 'white', border: '1px solid rgba(255,255,255,0.3)', bgcolor: 'rgba(255,255,255,0.1)' }} 
-            />
-            <Chip 
-              icon={<VerifiedIcon sx={{ color: 'secondary.light !important' }} />} 
+              icon={<VerifiedIcon sx={{ color: 'white !important' }} />} 
               label="Cancel anytime" 
               sx={{ color: 'white', border: '1px solid rgba(255,255,255,0.3)', bgcolor: 'rgba(255,255,255,0.1)' }} 
             />
@@ -346,7 +338,7 @@ const Subscription: React.FC = () => {
                             zIndex: 1
                           }}
                         >
-                          SAVE 20%
+                          Best Value
                         </Box>
                       )}
                       <CardContent sx={{ p: 4, flexGrow: 1 }}>
@@ -359,9 +351,6 @@ const Subscription: React.FC = () => {
                             /{product.billing_interval}
                           </Typography>
                         </Box>
-                        <Typography variant="body2" color="text.secondary" sx={{ mb: 4 }}>
-                          {product.description}
-                        </Typography>
                         <Divider sx={{ my: 3 }} />
                         <List dense>
                           <ListItem sx={{ px: 0 }}>
