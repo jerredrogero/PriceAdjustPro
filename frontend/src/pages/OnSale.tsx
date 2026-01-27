@@ -415,7 +415,7 @@ const OnSale: React.FC = () => {
           </Button>
           
           <Typography variant="body2" color="text.secondary" sx={{ mt: 3 }}>
-            Starting at just $2.99/month
+            Starting at just $4.99/month
           </Typography>
         </Paper>
       </Container>

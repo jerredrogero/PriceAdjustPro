@@ -15,7 +15,7 @@ class Command(BaseCommand):
                 'stripe_price_id': 'price_1QR5AQLpUWBjzjCjqpfNUvNr',  # You'll need to get this from Stripe
                 'name': 'PriceAdjustPro Monthly',
                 'description': 'Monthly subscription to PriceAdjustPro - Track your Costco receipts and never miss a price adjustment again!',
-                'price': Decimal('1.99'),
+                'price': Decimal('4.99'),
                 'currency': 'usd',
                 'billing_interval': 'month',
                 'is_active': True,
@@ -27,8 +27,11 @@ class Command(BaseCommand):
                 self.style.SUCCESS(f'Created monthly subscription product: {monthly_product.name}')
             )
         else:
+            # Update price if it exists
+            monthly_product.price = Decimal('4.99')
+            monthly_product.save()
             self.stdout.write(
-                self.style.WARNING(f'Monthly subscription product already exists: {monthly_product.name}')
+                self.style.WARNING(f'Monthly subscription product already exists: {monthly_product.name} (Price updated to 4.99)')
             )
 
         # Yearly subscription
@@ -38,7 +41,7 @@ class Command(BaseCommand):
                 'stripe_price_id': 'price_1QR5AQLpUWBjzjCjqpfNUvNs',  # You'll need to get this from Stripe
                 'name': 'PriceAdjustPro Yearly',
                 'description': 'Yearly subscription to PriceAdjustPro - Save with our annual plan!',
-                'price': Decimal('19.99'),
+                'price': Decimal('49.99'),
                 'currency': 'usd',
                 'billing_interval': 'year',
                 'is_active': True,
@@ -50,8 +53,11 @@ class Command(BaseCommand):
                 self.style.SUCCESS(f'Created yearly subscription product: {yearly_product.name}')
             )
         else:
+            # Update price if it exists
+            yearly_product.price = Decimal('49.99')
+            yearly_product.save()
             self.stdout.write(
-                self.style.WARNING(f'Yearly subscription product already exists: {yearly_product.name}')
+                self.style.WARNING(f'Yearly subscription product already exists: {yearly_product.name} (Price updated to 49.99)')
             )
 
         self.stdout.write(

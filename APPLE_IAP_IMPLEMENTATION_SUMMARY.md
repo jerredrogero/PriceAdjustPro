@@ -181,8 +181,8 @@ APPLE_SANDBOX_URL = 'https://sandbox.itunes.apple.com/verifyReceipt'
 ## Supported Product IDs
 
 Your iOS app should send one of these product IDs:
-- `com.priceadjustpro.monthly` - $2.99/month
-- `com.priceadjustpro.yearly` - $29.99/year
+- `com.priceadjustpro.monthly` - $4.99/month
+- `com.priceadjustpro.yearly` - $49.99/year
 
 ## Next Steps for Deployment
 

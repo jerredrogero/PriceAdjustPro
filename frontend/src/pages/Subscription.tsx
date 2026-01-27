@@ -70,7 +70,7 @@ const Subscription: React.FC = () => {
       stripe_price_id: 'price_1RhL3xCBOzePXFXgP8SfgJb4',
       name: 'PriceAdjustPro Monthly',
       description: 'Full access to all features',
-      price: '2.99',
+      price: '4.99',
       currency: 'usd',
       billing_interval: 'month'
     },
@@ -79,7 +79,7 @@ const Subscription: React.FC = () => {
       stripe_price_id: 'price_1RhL67CBOzePXFXgetw6nh0K',
       name: 'PriceAdjustPro Yearly',
       description: 'Full access to all features',
-      price: '29.99',
+      price: '49.99',
       currency: 'usd',
       billing_interval: 'year'
     }
