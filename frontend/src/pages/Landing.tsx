@@ -321,7 +321,7 @@ const Landing: React.FC = () => {
       </Box>
 
       {/* Pricing Section */}
-      <Box sx={{ py: 12, bgcolor: alpha(theme.palette.primary.main, 0.02) }}>
+      <Box id="pricing" sx={{ py: 12, bgcolor: alpha(theme.palette.primary.main, 0.02) }}>
         <Container maxWidth="lg">
           <Box sx={{ textAlign: 'center', mb: 8 }}>
             <Typography variant="h2" gutterBottom fontWeight="bold">
@@ -354,11 +354,11 @@ const Landing: React.FC = () => {
                 <List sx={{ mb: 4, flexGrow: 1 }}>
                   <ListItem sx={{ px: 0 }}>
                     <ListItemIcon sx={{ minWidth: 36 }}><CheckIcon color="success" fontSize="small" /></ListItemIcon>
-                    <ListItemText primary="3 Receipt Uploads" />
+                    <ListItemText primary="3 Receipt Upload Limit" />
                   </ListItem>
                   <ListItem sx={{ px: 0 }}>
                     <ListItemIcon sx={{ minWidth: 36 }}><CheckIcon color="success" fontSize="small" /></ListItemIcon>
-                    <ListItemText primary="Advanced Spending Analytics" />
+                    <ListItemText primary="Spending Analytics" />
                   </ListItem>
                   <ListItem sx={{ px: 0 }}>
                     <ListItemIcon sx={{ minWidth: 36 }}><CheckIcon color="success" fontSize="small" /></ListItemIcon>

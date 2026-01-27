@@ -124,7 +124,7 @@ const AppContent: React.FC = () => {
 
   const PublicPageLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => (
     <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
-      <Box component="main" sx={{ pt: 8, pb: 4, flexGrow: 1 }}>
+      <Box component="main" sx={{ pt: location.pathname === '/' ? 0 : 8, pb: 4, flexGrow: 1 }}>
         {children}
       </Box>
       <Footer />

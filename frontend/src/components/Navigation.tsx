@@ -208,6 +208,22 @@ const Navigation: React.FC<NavigationProps> = ({ user }) => {
 
         {!isAuthenticated ? (
           <Box sx={{ display: 'flex', alignItems: 'center' }}>
+            <Button color="inherit" component={RouterLink} to="/" sx={{ mr: 1 }}>
+              Home
+            </Button>
+            <Button 
+              color="inherit" 
+              onClick={() => {
+                if (location.pathname === '/') {
+                  document.getElementById('pricing')?.scrollIntoView({ behavior: 'smooth' });
+                } else {
+                  window.location.href = '/#pricing';
+                }
+              }}
+              sx={{ mr: 1 }}
+            >
+              Pricing
+            </Button>
             <Button color="inherit" component={RouterLink} to="/login">
               Login
             </Button>
@@ -279,6 +295,24 @@ const Navigation: React.FC<NavigationProps> = ({ user }) => {
           open={Boolean(menuAnchor)}
           onClose={handleMenuClose}
         >
+          {!isAuthenticated && [
+            <MenuItem key="home" component={RouterLink} to="/" onClick={handleMenuClose}>
+              Home
+            </MenuItem>,
+            <MenuItem 
+              key="pricing" 
+              onClick={() => {
+                handleMenuClose();
+                if (location.pathname === '/') {
+                  document.getElementById('pricing')?.scrollIntoView({ behavior: 'smooth' });
+                } else {
+                  window.location.href = '/#pricing';
+                }
+              }}
+            >
+              Pricing
+            </MenuItem>
+          ]}
           {[...primaryItems, ...secondaryItems].map((item) => (
             <MenuItem
               key={item.path}
