@@ -1066,7 +1066,7 @@ def api_register(request):
             'is_email_verified': True,
             'account_type': account_type,
             'receipt_count': 0,
-            'receipt_limit': 5 if account_type == 'free' else 999999,
+            'receipt_limit': 3 if account_type == 'free' else 999999,
             }
         })
 
@@ -1192,7 +1192,7 @@ def api_verify_code(request):
                 'is_email_verified': True,
                 'account_type': account_type,
                 'receipt_count': user.receipts.count(),
-                'receipt_limit': 5 if account_type == 'free' else 999999,
+                'receipt_limit': 3 if account_type == 'free' else 999999,
             }
         })
         
@@ -2468,7 +2468,21 @@ class ReceiptUpdateAPIView(APIView):
 # On-Sale API View
 @api_view(['GET'])
 def api_on_sale(request):
-    """Get current on-sale items from active promotions (public endpoint)."""
+    """Get current on-sale items from active promotions (Premium only)."""
+    # Check if user is authenticated and premium
+    user, err = _api_user_or_401(request)
+    if err:
+        return err
+    
+    if not user_has_paid_account(user):
+        return JsonResponse({
+            'error': 'Premium feature',
+            'details': 'The On Sale directory is exclusive to PriceAdjustPro Premium members.',
+            'sales': [],
+            'total_count': 0,
+            'active_promotions': []
+        }, status=403)
+
     try:
         from django.db.models import Q, Count
         from .serializers import OnSaleItemSerializer, PromotionSerializer, OnSaleResponseSerializer

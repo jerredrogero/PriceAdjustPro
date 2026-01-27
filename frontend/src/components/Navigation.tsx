@@ -42,6 +42,7 @@ interface User {
   email?: string;
   is_staff?: boolean;
   is_superuser?: boolean;
+  account_type?: 'free' | 'paid';
 }
 
 // Define the NavigationItem interface
@@ -50,6 +51,7 @@ interface NavigationItem {
   icon: React.ReactElement;
   path: string;
   badge?: number;
+  isPremium?: boolean;
 }
 
 // Define props for the Navigation component
@@ -138,7 +140,7 @@ const Navigation: React.FC<NavigationProps> = ({ user }) => {
   // Secondary navigation items (in dropdown menu)
   const secondaryItems: NavigationItem[] = [
     { text: 'Analytics', icon: <AnalyticsIcon />, path: '/analytics' },
-    { text: 'On Sale', icon: <SaleIcon />, path: '/on-sale' },
+    { text: 'On Sale', icon: <SaleIcon />, path: '/on-sale', isPremium: true },
     { text: 'Upgrade', icon: <UpgradeIcon />, path: '/subscription' },
     { text: 'Settings', icon: <SettingsIcon />, path: '/settings' },
   ];
@@ -284,7 +286,7 @@ const Navigation: React.FC<NavigationProps> = ({ user }) => {
               to={item.path}
               onClick={handleMenuClose}
             >
-              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
                 {item.badge ? (
                   <Badge badgeContent={item.badge} color="error">
                     {item.icon}
@@ -292,7 +294,16 @@ const Navigation: React.FC<NavigationProps> = ({ user }) => {
                 ) : (
                   item.icon
                 )}
-                <Typography sx={{ ml: 1 }}>{item.text}</Typography>
+                <Typography sx={{ ml: 1, flexGrow: 1 }}>{item.text}</Typography>
+                {item.isPremium && user?.account_type !== 'paid' && (
+                  <Chip 
+                    label="Premium" 
+                    size="small" 
+                    color="primary" 
+                    variant="outlined"
+                    sx={{ ml: 1, height: 20, fontSize: '0.65rem', fontWeight: 'bold' }} 
+                  />
+                )}
               </Box>
             </MenuItem>
           ))}
@@ -320,9 +331,18 @@ const Navigation: React.FC<NavigationProps> = ({ user }) => {
               to={item.path}
               onClick={handleMoreMenuClose}
             >
-              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
                 {item.icon}
-                <Typography sx={{ ml: 1 }}>{item.text}</Typography>
+                <Typography sx={{ ml: 1, flexGrow: 1 }}>{item.text}</Typography>
+                {item.isPremium && user?.account_type !== 'paid' && (
+                  <Chip 
+                    label="Premium" 
+                    size="small" 
+                    color="primary" 
+                    variant="outlined"
+                    sx={{ ml: 1, height: 20, fontSize: '0.65rem', fontWeight: 'bold' }} 
+                  />
+                )}
               </Box>
             </MenuItem>
           ))}

@@ -332,14 +332,6 @@ const ReceiptList: React.FC = () => {
         >
           {error}
         </Alert>
-        {debugInfo && (
-          <Box sx={{ mt: 2, p: 2, bgcolor: 'grey.100', borderRadius: 1 }}>
-            <Typography variant="subtitle2" gutterBottom>Debug Information:</Typography>
-            <pre style={{ overflow: 'auto', maxHeight: '200px' }}>
-              {debugInfo}
-            </pre>
-          </Box>
-        )}
       </Container>
     );
   }

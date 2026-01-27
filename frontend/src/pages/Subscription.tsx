@@ -25,6 +25,7 @@ import {
   Notifications as NotificationsIcon,
   Analytics as AnalyticsIcon,
   Security as SecurityIcon,
+  LocalOffer as SaleIcon,
 } from '@mui/icons-material';
 import { UserContext } from '../components/Layout';
 import api from '../api/axios';
@@ -289,6 +290,7 @@ const Subscription: React.FC = () => {
 
   const features = [
     { icon: <ReceiptIcon />, text: 'Unlimited receipt uploads' },
+    { icon: <SaleIcon />, text: 'Searchable Costco sale directory' },
     { icon: <NotificationsIcon />, text: 'Real-time price adjustment alerts' },
     { icon: <AnalyticsIcon />, text: 'Advanced analytics and insights' },
     { icon: <SecurityIcon />, text: 'Priority customer support' },
@@ -304,11 +306,6 @@ const Subscription: React.FC = () => {
         <Typography variant="h6" sx={{ mt: 2 }}>
           Loading subscription information...
         </Typography>
-        {debugInfo && (
-          <Typography variant="body2" sx={{ mt: 1, color: 'text.secondary' }}>
-            Debug: {debugInfo}
-          </Typography>
-        )}
         <Button 
           variant="outlined" 
           onClick={retryFetch}
@@ -349,13 +346,6 @@ const Subscription: React.FC = () => {
       {success && (
         <Alert severity="success" sx={{ mb: 3 }} onClose={() => setSuccess('')}>
           {success}
-        </Alert>
-      )}
-
-      {/* Debug info for troubleshooting */}
-      {debugInfo && (
-        <Alert severity="info" sx={{ mb: 3 }} onClose={() => setDebugInfo('')}>
-          Debug: {debugInfo}
         </Alert>
       )}
 

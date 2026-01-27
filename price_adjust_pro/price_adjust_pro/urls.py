@@ -778,7 +778,7 @@ The PriceAdjustPro Team
                     'is_email_verified': False,
                     'account_type': account_type,
                     'receipt_count': 0,
-                    'receipt_limit': 5 if account_type == 'free' else 999999,
+                    'receipt_limit': 3 if account_type == 'free' else 999999,
                 }
             })
         except Exception as e:

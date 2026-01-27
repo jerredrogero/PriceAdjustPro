@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useContext } from 'react';
 import {
   Box,
   Typography,
@@ -19,6 +19,7 @@ import {
   MenuItem,
   SelectChangeEvent,
   Fade,
+  Button,
 } from '@mui/material';
 import {
   LocalOffer as SaleIcon,
@@ -26,9 +27,12 @@ import {
   Schedule as TimeIcon,
   TrendingDown as SavingsIcon,
   Store as StoreIcon,
+  Star as StarIcon,
+  Upgrade as UpgradeIcon,
 } from '@mui/icons-material';
-import { useTheme } from '@mui/material/styles';
-import { useLocation, useSearchParams } from 'react-router-dom';
+import { useTheme, alpha } from '@mui/material/styles';
+import { useLocation, useSearchParams, Link as RouterLink } from 'react-router-dom';
+import { UserContext } from '../components/Layout';
 
 interface SaleItem {
   id: number;
@@ -65,6 +69,7 @@ interface SalesData {
 const OnSale: React.FC = () => {
   const theme = useTheme();
   const location = useLocation();
+  const user = useContext(UserContext);
   const [searchParams] = useSearchParams();
   const [salesData, setSalesData] = useState<SalesData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -74,16 +79,22 @@ const OnSale: React.FC = () => {
   const [highlightedItemCode, setHighlightedItemCode] = useState<string | null>(null);
   const highlightedItemRef = useRef<HTMLDivElement>(null);
 
+  const isPremium = user?.account_type === 'paid';
+
   useEffect(() => {
-    fetchCurrentSales();
-    
-    // Auto-refresh every hour to catch new promotions
-    const interval = setInterval(() => {
+    if (isPremium) {
       fetchCurrentSales();
-    }, 60 * 60 * 1000); // 1 hour
-    
-    return () => clearInterval(interval);
-  }, []);
+      
+      // Auto-refresh every hour to catch new promotions
+      const interval = setInterval(() => {
+        fetchCurrentSales();
+      }, 60 * 60 * 1000); // 1 hour
+      
+      return () => clearInterval(interval);
+    } else {
+      setLoading(false);
+    }
+  }, [isPremium]);
 
   // Check for item parameter in URL and handle highlighting
   useEffect(() => {
@@ -314,6 +325,99 @@ const OnSale: React.FC = () => {
         <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
           <CircularProgress size={60} />
         </Box>
+      </Container>
+    );
+  }
+
+  if (!isPremium) {
+    return (
+      <Container maxWidth="md" sx={{ py: 8 }}>
+        <Paper 
+          elevation={3} 
+          sx={{ 
+            p: 6, 
+            textAlign: 'center',
+            borderRadius: 4,
+            background: `linear-gradient(135deg, ${theme.palette.background.paper} 0%, ${alpha(theme.palette.primary.main, 0.05)} 100%)`,
+            border: `1px solid ${alpha(theme.palette.primary.main, 0.1)}`,
+          }}
+        >
+          <Box sx={{ mb: 4 }}>
+            <Box 
+              sx={{ 
+                width: 80, 
+                height: 80, 
+                borderRadius: '50%', 
+                backgroundColor: alpha(theme.palette.primary.main, 0.1), 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center',
+                margin: '0 auto',
+                mb: 2
+              }}
+            >
+              <StarIcon sx={{ fontSize: 48, color: 'primary.main' }} />
+            </Box>
+            <Typography variant="h3" gutterBottom fontWeight="bold">
+              Premium Feature
+            </Typography>
+            <Typography variant="h6" color="text.secondary" paragraph>
+              The "On Sale" directory is exclusive to PriceAdjustPro Premium members.
+            </Typography>
+          </Box>
+
+          <Grid container spacing={3} sx={{ mb: 6, textAlign: 'left' }}>
+            <Grid item xs={12} md={6}>
+              <Card variant="outlined" sx={{ height: '100%', backgroundColor: 'transparent' }}>
+                <CardContent>
+                  <Typography variant="subtitle1" fontWeight="bold" gutterBottom display="flex" alignItems="center">
+                    <SaleIcon sx={{ mr: 1, color: 'success.main' }} />
+                    Live Sale Directory
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Browse all current Costco promotions and markdowns in one searchable list.
+                  </Typography>
+                </CardContent>
+              </Card>
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <Card variant="outlined" sx={{ height: '100%', backgroundColor: 'transparent' }}>
+                <CardContent>
+                  <Typography variant="subtitle1" fontWeight="bold" gutterBottom display="flex" alignItems="center">
+                    <SavingsIcon sx={{ mr: 1, color: 'primary.main' }} />
+                    Price Drop Tracking
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Get alerted the moment items you've already purchased go on sale.
+                  </Typography>
+                </CardContent>
+              </Card>
+            </Grid>
+          </Grid>
+
+          <Button
+            variant="contained"
+            size="large"
+            component={RouterLink}
+            to="/subscription"
+            startIcon={<UpgradeIcon />}
+            sx={{ 
+              px: 6, 
+              py: 1.5, 
+              fontSize: '1.1rem',
+              borderRadius: 3,
+              textTransform: 'none',
+              fontWeight: 'bold',
+              boxShadow: theme.shadows[4],
+            }}
+          >
+            Upgrade to Premium
+          </Button>
+          
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 3 }}>
+            Starting at just $2.99/month
+          </Typography>
+        </Paper>
       </Container>
     );
   }

@@ -4,4 +4,5 @@ export interface User {
   email?: string;
   is_staff?: boolean;
   is_superuser?: boolean;
+  account_type?: 'free' | 'paid';
 } 

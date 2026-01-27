@@ -107,7 +107,7 @@ const VerificationPending: React.FC = () => {
                 {verifyMessage}
               </Alert>
               <Typography variant="body2" color="text.secondary">
-                Redirecting to login...
+                Logging in...
               </Typography>
             </>
           ) : (

@@ -32,6 +32,7 @@ import {
   Apple as AppleIcon,
   Restore as RestoreIcon,
   Settings as SettingsIcon,
+  LocalOffer as SaleIcon,
 } from '@mui/icons-material';
 import { UserContext } from '../Layout';
 import StoreKitManager, { StoreKitProduct, SubscriptionStatus } from './StoreKitManager';
@@ -144,6 +145,7 @@ const iOSSubscription: React.FC = () => {
 
   const features = [
     { icon: <ReceiptIcon />, text: 'Unlimited receipt uploads' },
+    { icon: <SaleIcon />, text: 'Searchable Costco sale directory' },
     { icon: <NotificationsIcon />, text: 'Real-time price adjustment alerts' },
     { icon: <AnalyticsIcon />, text: 'Advanced analytics and insights' },
     { icon: <SecurityIcon />, text: 'Priority customer support' },

@@ -35,6 +35,7 @@ interface User {
   email?: string;
   is_staff?: boolean;
   is_superuser?: boolean;
+  account_type?: 'free' | 'paid';
 }
 
 // Wrapper component to handle auth check

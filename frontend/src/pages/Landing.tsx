@@ -24,6 +24,7 @@ import {
   ArrowForward as ArrowForwardIcon,
   ShoppingCart as CartIcon,
   Check as CheckIcon,
+  LocalOffer as SaleIcon,
 } from '@mui/icons-material';
 
 const Landing: React.FC = () => {
@@ -44,6 +45,11 @@ const Landing: React.FC = () => {
       icon: <NotificationsIcon fontSize="large" />,
       title: 'Official Sale Alerts',
       description: 'Receive alerts when items you bought go on sale or have official Costco promotions within 30 days.',
+    },
+    {
+      icon: <SaleIcon fontSize="large" />,
+      title: 'Searchable Sale Directory',
+      description: 'See, search, and filter through all items currently on sale at Costco warehouses nationwide.',
     },
     {
       icon: <AnalyticsIcon fontSize="large" />,
