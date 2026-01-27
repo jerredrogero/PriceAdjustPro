@@ -86,11 +86,15 @@ instance.interceptors.response.use(
 
     // Handle specific error cases
     if (error.response?.status === 401) {
-      // Don't redirect if on auth-related pages (login, register, password reset)
-      const authPages = ['/login', '/register', '/reset-password'];
-      const isOnAuthPage = authPages.some(page => window.location.pathname.includes(page));
+      // Don't redirect if on public pages (home, login, register, password reset)
+      const publicPages = ['/', '/login', '/register', '/reset-password', '/privacy-policy', '/terms-of-service', '/support'];
+      const isPublicPage = publicPages.some(page => 
+        window.location.pathname === page || 
+        window.location.pathname.startsWith('/reset-password/') ||
+        window.location.pathname.startsWith('/verify-email/')
+      );
       
-      if (!isOnAuthPage) {
+      if (!isPublicPage) {
         window.location.href = '/login';
       }
     }

@@ -4,7 +4,7 @@ import { Box, CircularProgress } from '@mui/material';
 import { ThemeContextProvider } from './contexts/ThemeContext';
 import Layout from './components/Layout';
 import PrivateRoute from './components/PrivateRoute';
-import Login from './components/Login';
+import Login from './pages/Login';
 import Register from './pages/Register';
 import PasswordReset from './components/PasswordReset';
 import PasswordResetConfirm from './components/PasswordResetConfirm';
