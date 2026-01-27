@@ -483,6 +483,13 @@ The PriceAdjustPro Team
                         user=user, 
                         defaults={'account_type': 'free', 'is_email_verified': False}
                     )
+                except Exception as profile_error:
+                    print(f"Error handling profile for {user.username}: {profile_error}")
+                    # Fallback if profile creation fails
+                    class DummyProfile:
+                        is_paid_account = False
+                        is_email_verified = True
+                    profile = DummyProfile()
                     
                 # User is verified, proceed with login
                 login(request, user)
