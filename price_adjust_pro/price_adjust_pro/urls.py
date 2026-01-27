@@ -69,7 +69,8 @@ def login_start(request):
 
         print(f"Request body: {request.body}")
         data = json.loads(request.body)
-        email_input = data.get('email', '').strip()
+        # Handle both 'email' and 'username' for backward compatibility with iOS app
+        email_input = (data.get('email') or data.get('username') or '').strip()
         password = data.get('password', '')
         
         # Use email as the primary identifier
@@ -322,7 +323,7 @@ def api_login(request):
                     return value != 0
                 return default
             
-            email_input = data.get('email', '').strip()
+            email_input = (data.get('email') or data.get('username') or '').strip()
             password = data.get('password', '')
             remember_me = parse_bool(data.get('remember_me'), default=False)
             
@@ -614,7 +615,8 @@ def api_register(request):
             # Web form: email, password1, password2
             # iOS app: first_name, last_name, email, password
             
-            email = data.get('email')
+            # Handle both 'email' and 'username' for backward compatibility
+            email = (data.get('email') or data.get('username') or '').strip()
             password = data.get('password')
             first_name = data.get('first_name', '')
             last_name = data.get('last_name', '')
