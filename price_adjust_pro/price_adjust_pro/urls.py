@@ -120,7 +120,45 @@ def login_start(request):
             print(f"Authentication failed for identifier: {identifier}")
             return JsonResponse({'error': 'Invalid email or password'}, status=400)
 
-        print(f"User {user.username} authenticated, issuing OTP")
+        print(f"User {user.username} authenticated, checking verification status")
+        
+        # Check if user is already verified
+        from receipt_parser.models import UserProfile
+        profile, _ = UserProfile.objects.get_or_create(user=user)
+        
+        if profile.is_email_verified and user.is_active:
+            print(f"User {user.username} is already verified, skipping OTP")
+            login(request, user)
+            
+            # Set expiry
+            remember_me = data.get('remember_me', False)
+            session_duration = settings.SESSION_COOKIE_AGE if remember_me else 0
+            request.session.set_expiry(session_duration)
+            request.session.modified = True
+            
+            account_type = 'paid' if profile.is_paid_account else 'free'
+            
+            response_data = {
+                "requires_2fa": False,
+                "message": "Login successful",
+                "user": {
+                    "id": user.id,
+                    "email": user.email,
+                    "first_name": user.first_name,
+                    "last_name": user.last_name,
+                    "account_type": account_type,
+                    "is_paid_account": profile.is_paid_account,
+                    "is_email_verified": True,
+                }
+            }
+            
+            # Return session key for mobile clients
+            if request.headers.get('X-Client') == 'ios' or request.GET.get('client') == 'ios' or request.headers.get('User-Agent', '').startswith('PriceAdjustPro'):
+                response_data['session_key'] = request.session.session_key
+                
+            return JsonResponse(response_data)
+
+        print(f"User {user.username} authenticated but verification required, issuing OTP")
         # Issue OTP
         from receipt_parser.services import issue_email_otp
         otp, _ = issue_email_otp(user)
@@ -446,79 +484,6 @@ The PriceAdjustPro Team
                         defaults={'account_type': 'free', 'is_email_verified': False}
                     )
                     
-                    # Check if email is verified
-                    if not profile.is_email_verified:
-                        print(f"User {user.username} is not verified")
-                        
-                        # Invalidate old tokens and create a new one
-                        from receipt_parser.models import EmailVerificationToken
-                        EmailVerificationToken.objects.filter(user=user, is_used=False).update(is_used=True)
-                        verification_token = EmailVerificationToken.create_token(user)
-                        
-                        # Store "pre-auth" state in session so verify_otp works
-                        request.session["preauth_user_id"] = user.id
-                        request.session["verification_token_id"] = verification_token.id
-                        request.session["remember_me"] = remember_me
-                        request.session.modified = True
-                        
-                        # Send verification email with 6-digit code and link
-                        try:
-                            from django.utils.http import urlsafe_base64_encode
-                            from django.utils.encoding import force_bytes
-                            from django.urls import reverse
-                            from django.contrib.sites.shortcuts import get_current_site
-                            
-                            current_site = get_current_site(request)
-                            uid = urlsafe_base64_encode(force_bytes(user.pk))
-                            # Point to the React verification page instead of the Django /web/ view
-                            verification_link = f"{request.scheme}://{current_site.domain}/verify-email/{verification_token.token}"
-                            
-                            subject = 'Verify your PriceAdjustPro account'
-                            message = f"""
-Hi {user.first_name or user.email},
-
-Please verify your email address to log in to PriceAdjustPro.
-
-Your verification code is:
-{verification_token.code}
-
-Alternatively, you can click the link below to verify your account:
-{verification_link}
-
-Enter the code in the app or click the link to verify your account. This code and link will expire in 30 minutes.
-
-If you didn't request this, you can safely ignore this email.
-
-Best regards,
-The PriceAdjustPro Team
-                            """
-                            
-                            send_mail(
-                                subject,
-                                message,
-                                settings.DEFAULT_FROM_EMAIL,
-                                [user.email],
-                                fail_silently=False,
-                            )
-                            print(f"Verification code sent to {user.email}")
-                        except Exception as email_error:
-                            print(f"Failed to send verification email: {str(email_error)}")
-                        
-                        return JsonResponse({
-                            'message': 'Email verification required. Please check your email for a code.',
-                            'verification_required': True,
-                            'verified': False,
-                            'email': user.email
-                        }, status=403)
-                        
-                except Exception as profile_error:
-                    print(f"Error handling profile for {user.username}: {profile_error}")
-                    # Fallback if profile creation fails
-                    class DummyProfile:
-                        is_paid_account = False
-                        is_email_verified = True
-                    profile = DummyProfile()
-                
                 # User is verified, proceed with login
                 login(request, user)
                 
