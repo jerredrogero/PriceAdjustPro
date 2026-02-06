@@ -1304,7 +1304,95 @@ class CostcoPromotionAdmin(admin.ModelAdmin):
     readonly_fields = ('upload_date', 'processed_date', 'uploaded_by', 'pages_count', 'items_count', 'alerts_count')
     inlines = [CostcoPromotionPageInline, OfficialSaleItemInline]
     
-    actions = ['process_next_batch', 'export_promotion_data_csv']
+    actions = ['process_next_batch', 'process_full_promotion', 'run_price_adjustment_check', 'export_promotion_data_csv']
+    
+    def run_price_adjustment_check(self, request, queryset):
+        """
+        Manually trigger a price adjustment check for all items in the selected promotions.
+        This is useful if you've already processed the pages but want to re-scan user receipts
+        (e.g., after new users have signed up or uploaded more receipts).
+        """
+        from .utils import create_official_price_alerts
+        from receipt_parser.notifications.services import push_summaries_for_official_sale_item
+        
+        total_alerts_created = 0
+        promotions_checked = 0
+        
+        for promotion in queryset:
+            promo_alerts = 0
+            sale_items = promotion.sale_items.all()
+            
+            if not sale_items.exists():
+                messages.warning(request, f"'{promotion.title}' has no extracted sale items. Process the pages first.")
+                continue
+                
+            for item in sale_items:
+                try:
+                    # Run the check against all user receipts
+                    new_alerts = create_official_price_alerts(item)
+                    if new_alerts > 0:
+                        item.alerts_created = (item.alerts_created or 0) + new_alerts
+                        item.save()
+                        promo_alerts += new_alerts
+                        
+                        # Trigger push notifications for the new alerts
+                        try:
+                            push_summaries_for_official_sale_item(official_sale_item_id=item.id)
+                        except Exception as e:
+                            logger.error(f"Push fanout failed for sale item {item.id}: {str(e)}")
+                except Exception as e:
+                    logger.error(f"Error checking alerts for item {item.item_code}: {str(e)}")
+            
+            if promo_alerts > 0:
+                messages.success(request, f"Found {promo_alerts} new price adjustment opportunities for '{promotion.title}'.")
+                total_alerts_created += promo_alerts
+            else:
+                messages.info(request, f"Checked '{promotion.title}' - no new matches found.")
+            
+            promotions_checked += 1
+            
+        if total_alerts_created > 0:
+            messages.success(request, f"Successfully created {total_alerts_created} total new alerts across {promotions_checked} promotion(s).")
+        elif promotions_checked > 0:
+            messages.info(request, "Check complete. No new price adjustment opportunities were found for the selected promotions.")
+
+    run_price_adjustment_check.short_description = "🔍 Run Price Adjustment Check (New Users/Receipts)"
+
+    def process_full_promotion(self, request, queryset):
+        """Process all unprocessed pages for the selected promotions."""
+        processed_count = 0
+        for promotion in queryset:
+            try:
+                unprocessed_pages = promotion.pages.filter(is_processed=False).count()
+                
+                if unprocessed_pages == 0:
+                    messages.info(request, f"'{promotion.title}' - All pages already processed.")
+                    continue
+                
+                messages.info(
+                    request,
+                    f"Processing all {unprocessed_pages} remaining pages of '{promotion.title}'..."
+                )
+                
+                # We pass max_pages=None to process everything
+                results = process_official_promotion(promotion.id, max_pages=None)
+                
+                if 'error' not in results:
+                    processed_count += 1
+                    messages.success(
+                        request, 
+                        f"Successfully processed '{promotion.title}': {results['pages_processed']} pages, "
+                        f"{results['items_extracted']} items, {results['alerts_created']} alerts created"
+                    )
+                else:
+                    messages.error(request, f"Failed to process '{promotion.title}': {results['error']}")
+            except Exception as e:
+                messages.error(request, f"Error processing '{promotion.title}': {str(e)}")
+        
+        if processed_count > 0:
+            messages.success(request, f"Successfully processed {processed_count} promotion(s) completely.")
+    
+    process_full_promotion.short_description = "🚀 Process FULL promotion (all pages)"
     
     def get_urls(self):
         urls = super().get_urls()
