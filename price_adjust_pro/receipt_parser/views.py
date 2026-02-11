@@ -2907,46 +2907,59 @@ def api_subscription_create_payment_intent(request):
         )
 
 @csrf_exempt
-@api_view(['POST'])
 def api_subscription_webhook(request):
     """Handle Stripe webhook events."""
+    if request.method != "POST":
+        return HttpResponse(status=405)
+
+    payload = request.body
+    sig_header = request.META.get("HTTP_STRIPE_SIGNATURE", "")
+    endpoint_secret = getattr(settings, 'STRIPE_WEBHOOK_SECRET', '')
+
+    if not endpoint_secret:
+        logger.warning("Stripe webhook secret not configured")
+        return HttpResponse("Webhook secret not configured", status=400)
+
     try:
-        from .models import UserSubscription, SubscriptionEvent
-        
-        payload = request.body
-        sig_header = request.META.get('HTTP_STRIPE_SIGNATURE')
-        endpoint_secret = getattr(settings, 'STRIPE_WEBHOOK_SECRET', '')
-        
-        if not endpoint_secret:
-            logger.warning("Stripe webhook secret not configured")
-            return Response({'error': 'Webhook not configured'}, status=400)
-        
-        try:
-            event = stripe.Webhook.construct_event(
-                payload, sig_header, endpoint_secret
-            )
-        except ValueError:
-            logger.error("Invalid payload in webhook")
-            return Response({'error': 'Invalid payload'}, status=400)
-        except stripe.error.SignatureVerificationError:
-            logger.error("Invalid signature in webhook")
-            return Response({'error': 'Invalid signature'}, status=400)
-        
-        # Store the event
-        try:
-            event_record = SubscriptionEvent.objects.create(
-                stripe_event_id=event['id'],
-                event_type=event['type'],
-                event_data=event['data']
-            )
-        except Exception as e:
-            logger.error(f"Error storing webhook event: {str(e)}")
-            # Continue processing even if we can't store the event
-        
-        # Handle the event
-        if event['type'] == 'customer.subscription.created':
+        event = stripe.Webhook.construct_event(
+            payload=payload,
+            sig_header=sig_header,
+            secret=endpoint_secret,
+        )
+    except ValueError:
+        logger.error("Stripe webhook: invalid payload")
+        return HttpResponse("Invalid payload", status=400)
+    except stripe.error.SignatureVerificationError:
+        logger.error("Stripe webhook: invalid signature")
+        # Log the first ~200 bytes of payload and the signature header for debugging
+        logger.error(f"Signature header: {sig_header}")
+        logger.error(f"Payload start: {payload[:200]!r}")
+        return HttpResponse("Invalid signature", status=400)
+    except Exception as e:
+        logger.exception(f"Stripe webhook: construct_event failed: {str(e)}")
+        return HttpResponse("Webhook construction failed", status=400)
+
+    etype = event.get("type")
+    
+    # Store the event
+    try:
+        from .models import SubscriptionEvent
+        SubscriptionEvent.objects.create(
+            stripe_event_id=event['id'],
+            event_type=etype,
+            event_data=event['data']
+        )
+    except Exception as e:
+        logger.error(f"Error storing webhook event: {str(e)}")
+        # Continue processing even if we can't store the event
+
+    try:
+        from .models import UserSubscription
+        from datetime import datetime
+        from django.utils import timezone
+
+        if etype == 'customer.subscription.created':
             subscription_data = event['data']['object']
-            # Update UserSubscription if it exists
             try:
                 user_subscription = UserSubscription.objects.get(
                     stripe_subscription_id=subscription_data['id']
@@ -2959,15 +2972,10 @@ def api_subscription_webhook(request):
                     subscription_data['current_period_end'], tz=timezone.utc
                 )
                 user_subscription.save()
-                
-                if 'event_record' in locals():
-                    event_record.subscription = user_subscription
-                    event_record.processed = True
-                    event_record.save()
             except UserSubscription.DoesNotExist:
                 logger.warning(f"UserSubscription not found for Stripe subscription {subscription_data['id']}")
         
-        elif event['type'] == 'customer.subscription.updated':
+        elif etype == 'customer.subscription.updated':
             subscription_data = event['data']['object']
             try:
                 user_subscription = UserSubscription.objects.get(
@@ -2982,15 +2990,10 @@ def api_subscription_webhook(request):
                 )
                 user_subscription.cancel_at_period_end = subscription_data.get('cancel_at_period_end', False)
                 user_subscription.save()
-                
-                if 'event_record' in locals():
-                    event_record.subscription = user_subscription
-                    event_record.processed = True
-                    event_record.save()
             except UserSubscription.DoesNotExist:
                 logger.warning(f"UserSubscription not found for Stripe subscription {subscription_data['id']}")
         
-        elif event['type'] == 'customer.subscription.deleted':
+        elif etype == 'customer.subscription.deleted':
             subscription_data = event['data']['object']
             try:
                 user_subscription = UserSubscription.objects.get(
@@ -2999,16 +3002,10 @@ def api_subscription_webhook(request):
                 user_subscription.status = 'canceled'
                 user_subscription.canceled_at = timezone.now()
                 user_subscription.save()
-                
-                if 'event_record' in locals():
-                    event_record.subscription = user_subscription
-                    event_record.processed = True
-                    event_record.save()
             except UserSubscription.DoesNotExist:
                 logger.warning(f"UserSubscription not found for Stripe subscription {subscription_data['id']}")
         
-        elif event['type'] == 'invoice.payment_succeeded':
-            # Handle successful payment
+        elif etype == 'invoice.payment_succeeded':
             invoice_data = event['data']['object']
             subscription_id = invoice_data.get('subscription')
             if subscription_id:
@@ -3016,20 +3013,13 @@ def api_subscription_webhook(request):
                     user_subscription = UserSubscription.objects.get(
                         stripe_subscription_id=subscription_id
                     )
-                    # Update subscription status to active if it was incomplete
                     if user_subscription.status in ['incomplete', 'past_due']:
                         user_subscription.status = 'active'
                         user_subscription.save()
-                        
-                    if 'event_record' in locals():
-                        event_record.subscription = user_subscription
-                        event_record.processed = True
-                        event_record.save()
                 except UserSubscription.DoesNotExist:
                     logger.warning(f"UserSubscription not found for Stripe subscription {subscription_id}")
         
-        elif event['type'] == 'invoice.payment_failed':
-            # Handle failed payment
+        elif etype == 'invoice.payment_failed':
             invoice_data = event['data']['object']
             subscription_id = invoice_data.get('subscription')
             if subscription_id:
@@ -3039,20 +3029,17 @@ def api_subscription_webhook(request):
                     )
                     user_subscription.status = 'past_due'
                     user_subscription.save()
-                    
-                    if 'event_record' in locals():
-                        event_record.subscription = user_subscription
-                        event_record.processed = True
-                        event_record.save()
                 except UserSubscription.DoesNotExist:
                     logger.warning(f"UserSubscription not found for Stripe subscription {subscription_id}")
         
-        logger.info(f"Handled webhook event: {event['type']}")
-        return Response({'status': 'success'})
-    
+        logger.info(f"Handled webhook event: {etype}")
+        
     except Exception as e:
-        logger.error(f"Error processing webhook: {str(e)}")
-        return Response({'error': 'Webhook processing failed'}, status=500)
+        logger.exception(f"Stripe webhook: processing failed for {etype}: {str(e)}")
+        # Return 200 to acknowledge receipt even if processing failed
+        return HttpResponse(status=200)
+
+    return HttpResponse(status=200)
 
 
 @api_view(['GET'])

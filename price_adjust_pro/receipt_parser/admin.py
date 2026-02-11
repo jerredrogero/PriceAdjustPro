@@ -180,6 +180,25 @@ class CustomUserAdmin(HijackUserAdminMixin, UserAdmin):
     )
     
     # HijackUserAdminMixin will add a "hijack user" button column automatically
+
+    def get_inline_instances(self, request, obj=None):
+        """Add UserProfileInline to UserAdmin."""
+        if not obj:
+            return []
+        
+        # Define inline here to avoid circular dependencies or early registration issues
+        class UserProfileInline(admin.StackedInline):
+            model = UserProfile
+            can_delete = False
+            verbose_name_plural = 'Subscription Profile'
+            fk_name = 'user'
+            fields = ('account_type', 'is_premium', 'subscription_type', 'is_email_verified', 'email_verified_at')
+            readonly_fields = ('email_verified_at',)
+
+        inline_instances = []
+        inline = UserProfileInline(self.model, self.admin_site)
+        inline_instances.append(inline)
+        return inline_instances
     
     def account_type_display(self, obj):
         """Display user's account type."""
