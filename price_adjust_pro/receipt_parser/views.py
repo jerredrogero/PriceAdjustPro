@@ -2585,8 +2585,6 @@ def api_subscription_status(request):
                 # If no sessions found by email, try searching by client_reference_id
                 if not sessions.data:
                     logger.info(f"No sessions found for email {request.user.email}, trying client_reference_id {request.user.id}")
-                    # Stripe doesn't support direct filtering by client_reference_id in list(), 
-                    # so we fetch recent sessions and filter manually
                     sessions = stripe.checkout.Session.list(limit=50)
                 
                 found_session = False
@@ -2602,10 +2600,33 @@ def api_subscription_status(request):
                         subscription_id = session.get('subscription')
                         customer_id = session.get('customer')
                         
+                        logger.info(f"Found successful session {session.id} for user {request.user.email}. Sub ID: {subscription_id}")
+                        
                         if subscription_id:
                             from .models import SubscriptionProduct
+                            
+                            # Try to get the product from session metadata or line items
+                            product = None
+                            product_id = session.get('metadata', {}).get('product_id')
+                            if product_id:
+                                product = SubscriptionProduct.objects.filter(id=product_id).first()
+                            
+                            if not product:
+                                # Try to find by price ID from line items
+                                try:
+                                    line_items = stripe.checkout.Session.list_line_items(session.id, limit=1)
+                                    if line_items.data:
+                                        price_id = line_items.data[0].price.id
+                                        product = SubscriptionProduct.objects.filter(stripe_price_id=price_id).first()
+                                except Exception as e:
+                                    logger.error(f"Error fetching line items: {str(e)}")
+                            
+                            if not product:
+                                # Fallback to first active product
+                                product = SubscriptionProduct.objects.filter(is_active=True, is_test_mode=getattr(settings, 'STRIPE_TEST_MODE', False)).first()
+
                             # Find or create the subscription record
-                            user_sub, _ = UserSubscription.objects.update_or_create(
+                            user_sub, created = UserSubscription.objects.update_or_create(
                                 user=request.user,
                                 defaults={
                                     'stripe_subscription_id': subscription_id,
@@ -2613,7 +2634,7 @@ def api_subscription_status(request):
                                     'status': 'active',
                                     'current_period_start': timezone.now(),
                                     'current_period_end': timezone.now() + timezone.timedelta(days=30),
-                                    'product': SubscriptionProduct.objects.filter(is_active=True, is_test_mode=getattr(settings, 'STRIPE_TEST_MODE', False)).first()
+                                    'product': product
                                 }
                             )
                             

@@ -89,6 +89,14 @@ const Subscription: React.FC = () => {
   ];
 
   useEffect(() => {
+    // Check if we just returned from a successful checkout
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('success') === 'true') {
+      setSuccess('Your subscription has been activated! Welcome to Premium.');
+      // Refresh user context or data
+      fetchSubscriptionData();
+    }
+    
     fetchSubscriptionData();
   }, []);
 
