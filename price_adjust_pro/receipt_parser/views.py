@@ -2596,8 +2596,12 @@ def api_subscription_products(request):
     """Get available subscription products."""
     try:
         from .models import SubscriptionProduct
+        from django.conf import settings
         
-        products = SubscriptionProduct.objects.filter(is_active=True)
+        # Filter products based on current Stripe mode (Test vs Live)
+        is_test_mode = getattr(settings, 'STRIPE_TEST_MODE', False)
+        products = SubscriptionProduct.objects.filter(is_active=True, is_test_mode=is_test_mode)
+        
         product_data = []
         
         for product in products:

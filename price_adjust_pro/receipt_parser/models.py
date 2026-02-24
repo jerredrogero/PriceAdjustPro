@@ -1035,7 +1035,7 @@ class SubscriptionProduct(models.Model):
     """
     Stores subscription product information from Stripe.
     """
-    stripe_product_id = models.CharField(max_length=255, unique=True)
+    stripe_product_id = models.CharField(max_length=255)
     stripe_price_id = models.CharField(max_length=255, unique=True)
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True)
@@ -1050,6 +1050,7 @@ class SubscriptionProduct(models.Model):
         default='month'
     )
     is_active = models.BooleanField(default=True)
+    is_test_mode = models.BooleanField(default=False, help_text="Whether this is a test mode product/price")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -1057,6 +1058,7 @@ class SubscriptionProduct(models.Model):
         ordering = ['price']
         verbose_name = 'Subscription Product'
         verbose_name_plural = 'Subscription Products'
+        unique_together = ['stripe_price_id', 'is_test_mode']
 
     def __str__(self):
         return f"{self.name} - ${self.price}/{self.billing_interval}"
