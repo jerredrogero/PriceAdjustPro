@@ -2714,6 +2714,14 @@ def api_subscription_create(request):
             current_period_end=datetime.fromtimestamp(subscription.current_period_end, tz=timezone.utc),
         )
         
+        # Update user profile to premium
+        from .models import UserProfile
+        profile, _ = UserProfile.objects.get_or_create(user=request.user)
+        profile.is_premium = True
+        profile.subscription_type = 'stripe'
+        profile.account_type = 'paid'
+        profile.save()
+        
         return Response({
             'subscription_id': subscription.id,
             'client_secret': subscription.latest_invoice.payment_intent.client_secret,
@@ -2755,6 +2763,14 @@ def api_subscription_cancel(request):
                 user_subscription.status = 'canceled'
                 user_subscription.canceled_at = timezone.now()
                 user_subscription.cancel_at_period_end = True
+                
+                # Update user profile to free
+                from .models import UserProfile
+                profile, _ = UserProfile.objects.get_or_create(user=request.user)
+                profile.is_premium = False
+                profile.subscription_type = 'free'
+                profile.account_type = 'free'
+                profile.save()
             else:
                 # Cancel at period end
                 stripe.Subscription.modify(
@@ -2958,7 +2974,54 @@ def api_subscription_webhook(request):
         from datetime import datetime
         from django.utils import timezone
 
-        if etype == 'customer.subscription.created':
+        if etype == 'checkout.session.completed':
+            session = event['data']['object']
+            client_reference_id = session.get('client_reference_id')
+            subscription_id = session.get('subscription')
+            customer_id = session.get('customer')
+            
+            if client_reference_id and subscription_id:
+                try:
+                    from .models import UserSubscription, SubscriptionProduct
+                    user = User.objects.get(id=int(client_reference_id))
+                    
+                    # Try to find existing pending subscription
+                    try:
+                        user_subscription = UserSubscription.objects.get(
+                            stripe_subscription_id=f"pending_{session['id']}"
+                        )
+                    except UserSubscription.DoesNotExist:
+                        # Fallback to user if session ID doesn't match
+                        user_subscription, _ = UserSubscription.objects.get_or_create(
+                            user=user,
+                            defaults={
+                                'stripe_subscription_id': subscription_id,
+                                'stripe_customer_id': customer_id or '',
+                                'status': 'active',
+                                'current_period_start': timezone.now(),
+                                'current_period_end': timezone.now() + timezone.timedelta(days=30),
+                                'product': SubscriptionProduct.objects.filter(is_active=True).first()
+                            }
+                        )
+                    
+                    user_subscription.stripe_subscription_id = subscription_id
+                    user_subscription.stripe_customer_id = customer_id or user_subscription.stripe_customer_id
+                    user_subscription.status = 'active'
+                    user_subscription.save()
+                    
+                    # Update user profile to premium
+                    from .models import UserProfile
+                    profile, _ = UserProfile.objects.get_or_create(user=user)
+                    profile.is_premium = True
+                    profile.subscription_type = 'stripe'
+                    profile.account_type = 'paid'
+                    profile.save()
+                    
+                    logger.info(f"Updated subscription for user {user.email} from checkout session")
+                except Exception as e:
+                    logger.error(f"Error processing checkout.session.completed: {str(e)}")
+
+        elif etype == 'customer.subscription.created':
             subscription_data = event['data']['object']
             try:
                 user_subscription = UserSubscription.objects.get(
@@ -2972,6 +3035,14 @@ def api_subscription_webhook(request):
                     subscription_data['current_period_end'], tz=timezone.utc
                 )
                 user_subscription.save()
+
+                # Update user profile to premium
+                from .models import UserProfile
+                profile, _ = UserProfile.objects.get_or_create(user=user_subscription.user)
+                profile.is_premium = True
+                profile.subscription_type = 'stripe'
+                profile.account_type = 'paid'
+                profile.save()
             except UserSubscription.DoesNotExist:
                 logger.warning(f"UserSubscription not found for Stripe subscription {subscription_data['id']}")
         
@@ -2990,6 +3061,15 @@ def api_subscription_webhook(request):
                 )
                 user_subscription.cancel_at_period_end = subscription_data.get('cancel_at_period_end', False)
                 user_subscription.save()
+
+                # Update user profile to premium if active
+                if user_subscription.status == 'active':
+                    from .models import UserProfile
+                    profile, _ = UserProfile.objects.get_or_create(user=user_subscription.user)
+                    profile.is_premium = True
+                    profile.subscription_type = 'stripe'
+                    profile.account_type = 'paid'
+                    profile.save()
             except UserSubscription.DoesNotExist:
                 logger.warning(f"UserSubscription not found for Stripe subscription {subscription_data['id']}")
         
@@ -3002,6 +3082,14 @@ def api_subscription_webhook(request):
                 user_subscription.status = 'canceled'
                 user_subscription.canceled_at = timezone.now()
                 user_subscription.save()
+
+                # Update user profile to free
+                from .models import UserProfile
+                profile, _ = UserProfile.objects.get_or_create(user=user_subscription.user)
+                profile.is_premium = False
+                profile.subscription_type = 'free'
+                profile.account_type = 'free'
+                profile.save()
             except UserSubscription.DoesNotExist:
                 logger.warning(f"UserSubscription not found for Stripe subscription {subscription_data['id']}")
         
@@ -3016,6 +3104,14 @@ def api_subscription_webhook(request):
                     if user_subscription.status in ['incomplete', 'past_due']:
                         user_subscription.status = 'active'
                         user_subscription.save()
+
+                    # Update user profile to premium
+                    from .models import UserProfile
+                    profile, _ = UserProfile.objects.get_or_create(user=user_subscription.user)
+                    profile.is_premium = True
+                    profile.subscription_type = 'stripe'
+                    profile.account_type = 'paid'
+                    profile.save()
                 except UserSubscription.DoesNotExist:
                     logger.warning(f"UserSubscription not found for Stripe subscription {subscription_id}")
         
@@ -3029,6 +3125,9 @@ def api_subscription_webhook(request):
                     )
                     user_subscription.status = 'past_due'
                     user_subscription.save()
+
+                    # Optionally update user profile if payment failed (e.g., if it's no longer active)
+                    # For now, we keep it as is, but Stripe will eventually send customer.subscription.deleted
                 except UserSubscription.DoesNotExist:
                     logger.warning(f"UserSubscription not found for Stripe subscription {subscription_id}")
         
@@ -3137,6 +3236,30 @@ class CreateCheckoutSessionView(APIView):
                 )
                 
                 logger.info(f"Successfully created checkout session: {checkout_session.id}")
+
+                # Create or update UserSubscription record
+                from .models import UserSubscription, SubscriptionProduct
+                try:
+                    product = SubscriptionProduct.objects.get(id=product_id)
+                    # We don't have the subscription ID yet, but we can create the record
+                    # It will be updated by the webhook once the payment is successful
+                    user_subscription, created = UserSubscription.objects.get_or_create(
+                        user=request.user,
+                        defaults={
+                            'product': product,
+                            'stripe_subscription_id': f"pending_{checkout_session.id}",
+                            'stripe_customer_id': '',
+                            'status': 'incomplete',
+                            'current_period_start': timezone.now(),
+                            'current_period_end': timezone.now() + timezone.timedelta(days=30),
+                        }
+                    )
+                    if not created:
+                        user_subscription.product = product
+                        user_subscription.status = 'incomplete'
+                        user_subscription.save()
+                except Exception as e:
+                    logger.error(f"Error creating pending UserSubscription: {str(e)}")
                 
                 return Response({
                     'checkout_url': checkout_session.url,
