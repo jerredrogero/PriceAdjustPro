@@ -2576,12 +2576,28 @@ def api_subscription_status(request):
             
             # Look for recent checkout sessions for this customer
             try:
+                # Use customer email to find sessions
                 sessions = stripe.checkout.Session.list(
                     customer_details={'email': request.user.email},
-                    limit=5
+                    limit=10
                 )
+                
+                # If no sessions found by email, try searching by client_reference_id
+                if not sessions.data:
+                    logger.info(f"No sessions found for email {request.user.email}, trying client_reference_id {request.user.id}")
+                    # Stripe doesn't support direct filtering by client_reference_id in list(), 
+                    # so we fetch recent sessions and filter manually
+                    sessions = stripe.checkout.Session.list(limit=50)
+                
+                found_session = False
                 for session in sessions.data:
-                    if session.payment_status == 'paid' and session.status == 'complete':
+                    # Match by email OR client_reference_id
+                    is_user_session = (
+                        (session.get('customer_details') and session['customer_details'].get('email') == request.user.email) or
+                        (session.get('client_reference_id') == str(request.user.id))
+                    )
+                    
+                    if is_user_session and session.payment_status == 'paid' and session.status == 'complete':
                         # Found a successful session! Upgrade the user.
                         subscription_id = session.get('subscription')
                         customer_id = session.get('customer')
@@ -2607,7 +2623,11 @@ def api_subscription_status(request):
                             profile.subscription_type = 'stripe'
                             profile.save()
                             logger.info(f"Successfully upgraded user {request.user.email} via session verification")
+                            found_session = True
                             break
+                
+                if not found_session:
+                    logger.warning(f"No successful Stripe session found for user {request.user.email} after checkout")
             except Exception as stripe_err:
                 logger.error(f"Error verifying Stripe session: {str(stripe_err)}")
 
@@ -3037,7 +3057,7 @@ def api_subscription_webhook(request):
             
             if client_reference_id and subscription_id:
                 try:
-                    from .models import UserSubscription, SubscriptionProduct
+                    from .models import UserSubscription, SubscriptionProduct, User
                     user = User.objects.get(id=int(client_reference_id))
                     
                     # Try to find existing pending subscription
