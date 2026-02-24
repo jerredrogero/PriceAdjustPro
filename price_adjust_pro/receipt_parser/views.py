@@ -2978,7 +2978,7 @@ def api_subscription_webhook(request):
         # Continue processing even if we can't store the event
 
     try:
-        from .models import UserSubscription
+        from .models import UserSubscription, User
         from datetime import datetime
         from django.utils import timezone
 
@@ -3222,6 +3222,14 @@ class CreateCheckoutSessionView(APIView):
                     status=status.HTTP_400_BAD_REQUEST
                 )
             
+            # Try to find the product in our DB
+            from .models import SubscriptionProduct
+            product = None
+            if product_id:
+                product = SubscriptionProduct.objects.filter(id=product_id).first()
+            if not product:
+                product = SubscriptionProduct.objects.filter(stripe_price_id=price_id).first()
+            
             # Determine success and cancel URLs
             success_url = f"{request.scheme}://{request.get_host()}/subscription?success=true"
             cancel_url = f"{request.scheme}://{request.get_host()}/subscription?canceled=true"
@@ -3241,7 +3249,7 @@ class CreateCheckoutSessionView(APIView):
                     client_reference_id=str(request.user.id),
                     metadata={
                         'user_id': request.user.id,
-                        'product_id': product_id,
+                        'product_id': product.id if product else product_id,
                     },
                     allow_promotion_codes=True,
                     billing_address_collection='auto',
@@ -3250,28 +3258,30 @@ class CreateCheckoutSessionView(APIView):
                 logger.info(f"Successfully created checkout session: {checkout_session.id}")
 
                 # Create or update UserSubscription record
-                from .models import UserSubscription, SubscriptionProduct
-                try:
-                    product = SubscriptionProduct.objects.get(id=product_id)
-                    # We don't have the subscription ID yet, but we can create the record
-                    # It will be updated by the webhook once the payment is successful
-                    user_subscription, created = UserSubscription.objects.get_or_create(
-                        user=request.user,
-                        defaults={
-                            'product': product,
-                            'stripe_subscription_id': f"pending_{checkout_session.id}",
-                            'stripe_customer_id': '',
-                            'status': 'incomplete',
-                            'current_period_start': timezone.now(),
-                            'current_period_end': timezone.now() + timezone.timedelta(days=30),
-                        }
-                    )
-                    if not created:
-                        user_subscription.product = product
-                        user_subscription.status = 'incomplete'
-                        user_subscription.save()
-                except Exception as e:
-                    logger.error(f"Error creating pending UserSubscription: {str(e)}")
+                if product:
+                    from .models import UserSubscription
+                    try:
+                        # We don't have the subscription ID yet, but we can create the record
+                        # It will be updated by the webhook once the payment is successful
+                        user_subscription, created = UserSubscription.objects.get_or_create(
+                            user=request.user,
+                            defaults={
+                                'product': product,
+                                'stripe_subscription_id': f"pending_{checkout_session.id}",
+                                'stripe_customer_id': '',
+                                'status': 'incomplete',
+                                'current_period_start': timezone.now(),
+                                'current_period_end': timezone.now() + timezone.timedelta(days=30),
+                            }
+                        )
+                        if not created:
+                            user_subscription.product = product
+                            user_subscription.status = 'incomplete'
+                            user_subscription.save()
+                    except Exception as e:
+                        logger.error(f"Error creating pending UserSubscription: {str(e)}")
+                else:
+                    logger.warning(f"Could not find SubscriptionProduct for price_id {price_id}. Pending record not created.")
                 
                 return Response({
                     'checkout_url': checkout_session.url,
