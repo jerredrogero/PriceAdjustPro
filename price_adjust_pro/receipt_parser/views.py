@@ -2559,6 +2559,7 @@ def api_subscription_status(request):
     try:
         from .models import UserProfile, UserSubscription
         from django.conf import settings
+        import stripe
         
         # Get or create user profile
         try:
@@ -2566,6 +2567,50 @@ def api_subscription_status(request):
         except UserProfile.DoesNotExist:
             profile = UserProfile.objects.create(user=request.user, account_type='free')
         
+        # If user just returned from a successful checkout but isn't premium yet,
+        # try to verify with Stripe directly since we don't have a webhook.
+        success_param = request.GET.get('success') == 'true'
+        if success_param and not profile.is_premium:
+            logger.info(f"User {request.user.email} returned with success=true. Verifying with Stripe...")
+            stripe.api_key = getattr(settings, 'STRIPE_SECRET_KEY', '')
+            
+            # Look for recent checkout sessions for this customer
+            try:
+                sessions = stripe.checkout.Session.list(
+                    customer_details={'email': request.user.email},
+                    limit=5
+                )
+                for session in sessions.data:
+                    if session.payment_status == 'paid' and session.status == 'complete':
+                        # Found a successful session! Upgrade the user.
+                        subscription_id = session.get('subscription')
+                        customer_id = session.get('customer')
+                        
+                        if subscription_id:
+                            from .models import SubscriptionProduct
+                            # Find or create the subscription record
+                            user_sub, _ = UserSubscription.objects.update_or_create(
+                                user=request.user,
+                                defaults={
+                                    'stripe_subscription_id': subscription_id,
+                                    'stripe_customer_id': customer_id or '',
+                                    'status': 'active',
+                                    'current_period_start': timezone.now(),
+                                    'current_period_end': timezone.now() + timezone.timedelta(days=30),
+                                    'product': SubscriptionProduct.objects.filter(is_active=True, is_test_mode=getattr(settings, 'STRIPE_TEST_MODE', False)).first()
+                                }
+                            )
+                            
+                            # Upgrade profile
+                            profile.is_premium = True
+                            profile.account_type = 'paid'
+                            profile.subscription_type = 'stripe'
+                            profile.save()
+                            logger.info(f"Successfully upgraded user {request.user.email} via session verification")
+                            break
+            except Exception as stripe_err:
+                logger.error(f"Error verifying Stripe session: {str(stripe_err)}")
+
         is_paid = profile.is_premium or profile.account_type == 'paid'
         
         # Try to get detailed subscription info if it exists

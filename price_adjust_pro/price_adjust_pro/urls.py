@@ -253,11 +253,23 @@ def verify_otp(request):
         user = User.objects.get(id=user_id)
         
         # Mark email as verified if it wasn't already
+        from receipt_parser.models import UserProfile, UserSubscription
         profile, _ = UserProfile.objects.get_or_create(user=user)
         if not profile.is_email_verified:
             profile.is_email_verified = True
             profile.email_verified_at = timezone.now()
             profile.save()
+            
+        # If user is not premium but has an active Stripe subscription, sync it now
+        # (Useful if we don't have webhooks)
+        if not profile.is_premium:
+            user_sub = UserSubscription.objects.filter(user=user, status='active').first()
+            if user_sub:
+                profile.is_premium = True
+                profile.account_type = 'paid'
+                profile.subscription_type = 'stripe'
+                profile.save()
+                print(f"Synced premium status for {user.email} during login")
             
         # Activate user if they were inactive
         if not user.is_active:
@@ -528,6 +540,19 @@ The PriceAdjustPro Team
                 csrf_token = get_token(request)
                 
                 # Get account type from user profile
+                from receipt_parser.models import UserProfile, UserSubscription
+                profile, _ = UserProfile.objects.get_or_create(user=user)
+                
+                # If user is not premium but has an active Stripe subscription, sync it now
+                if not profile.is_premium:
+                    user_sub = UserSubscription.objects.filter(user=user, status='active').first()
+                    if user_sub:
+                        profile.is_premium = True
+                        profile.account_type = 'paid'
+                        profile.subscription_type = 'stripe'
+                        profile.save()
+                        print(f"Synced premium status for {user.email} during login")
+
                 account_type = 'paid' if profile.is_paid_account else 'free'
                 is_paid_account = profile.is_paid_account
                 
