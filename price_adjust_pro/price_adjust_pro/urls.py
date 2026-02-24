@@ -913,17 +913,25 @@ def api_user(request):
     if user is not None:
         # Get account type from user profile
         try:
-            from receipt_parser.models import UserProfile
-            profile = UserProfile.objects.get(user=user)
+            from receipt_parser.models import UserProfile, UserSubscription
+            profile, _ = UserProfile.objects.get_or_create(user=user)
+            
+            # Sync profile with subscription if needed
+            user_sub = UserSubscription.objects.filter(user=user, status='active').first()
+            if user_sub and not profile.is_premium:
+                profile.is_premium = True
+                profile.account_type = 'paid'
+                profile.subscription_type = 'stripe'
+                profile.save()
+            
             account_type = 'paid' if profile.is_paid_account else 'free'
             is_paid_account = profile.is_paid_account
             is_email_verified = profile.is_email_verified
-        except UserProfile.DoesNotExist:
-            # Create profile if it doesn't exist
-            profile = UserProfile.objects.create(user=user, account_type='free')
+        except Exception as e:
+            print(f"Error in api_user profile check: {str(e)}")
             account_type = 'free'
             is_paid_account = False
-            is_email_verified = profile.is_email_verified
+            is_email_verified = False
         
         user_data = {
             'id': user.id,

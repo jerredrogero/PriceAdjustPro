@@ -2557,7 +2557,8 @@ from datetime import datetime
 def api_subscription_status(request):
     """Get user's current account status using simple account type system."""
     try:
-        from .models import UserProfile
+        from .models import UserProfile, UserSubscription
+        from django.conf import settings
         
         # Get or create user profile
         try:
@@ -2565,21 +2566,24 @@ def api_subscription_status(request):
         except UserProfile.DoesNotExist:
             profile = UserProfile.objects.create(user=request.user, account_type='free')
         
-        is_paid = profile.is_paid_account
+        is_paid = profile.is_premium or profile.account_type == 'paid'
+        
+        # Try to get detailed subscription info if it exists
+        user_sub = UserSubscription.objects.filter(user=request.user).first()
         
         return Response({
             'has_subscription': is_paid,
-            'status': 'active' if is_paid else 'free',
+            'status': user_sub.status if user_sub else ('active' if is_paid else 'free'),
             'is_active': is_paid,
             'account_type': profile.account_type,
             'account_type_display': profile.get_account_type_display(),
-            'current_period_end': None,  # Not applicable for simple system
-            'cancel_at_period_end': False,
-            'days_until_renewal': None,
+            'current_period_end': user_sub.current_period_end.isoformat() if user_sub and user_sub.current_period_end else None,
+            'cancel_at_period_end': user_sub.cancel_at_period_end if user_sub else False,
+            'days_until_renewal': user_sub.days_until_renewal if user_sub else None,
             'product': {
-                'name': 'Paid Account' if is_paid else 'Free Account',
-                'price': '9.99' if is_paid else '0.00',
-                'billing_interval': 'month' if is_paid else 'free',
+                'name': user_sub.product.name if user_sub else ('Paid Account' if is_paid else 'Free Account'),
+                'price': str(user_sub.product.price) if user_sub else ('9.99' if is_paid else '0.00'),
+                'billing_interval': user_sub.product.billing_interval if user_sub else ('month' if is_paid else 'free'),
             } if is_paid else None
         })
         
@@ -2978,11 +2982,13 @@ def api_subscription_webhook(request):
         from datetime import datetime
         from django.utils import timezone
 
-        if etype == 'checkout.session.completed':
+        elif etype == 'checkout.session.completed':
             session = event['data']['object']
             client_reference_id = session.get('client_reference_id')
             subscription_id = session.get('subscription')
             customer_id = session.get('customer')
+            
+            logger.info(f"Processing checkout.session.completed for session {session.get('id')}")
             
             if client_reference_id and subscription_id:
                 try:
@@ -2990,11 +2996,11 @@ def api_subscription_webhook(request):
                     user = User.objects.get(id=int(client_reference_id))
                     
                     # Try to find existing pending subscription
-                    try:
-                        user_subscription = UserSubscription.objects.get(
-                            stripe_subscription_id=f"pending_{session['id']}"
-                        )
-                    except UserSubscription.DoesNotExist:
+                    user_subscription = UserSubscription.objects.filter(
+                        stripe_subscription_id=f"pending_{session['id']}"
+                    ).first()
+                    
+                    if not user_subscription:
                         # Fallback to user if session ID doesn't match
                         user_subscription, _ = UserSubscription.objects.get_or_create(
                             user=user,
@@ -3004,13 +3010,15 @@ def api_subscription_webhook(request):
                                 'status': 'active',
                                 'current_period_start': timezone.now(),
                                 'current_period_end': timezone.now() + timezone.timedelta(days=30),
-                                'product': SubscriptionProduct.objects.filter(is_active=True).first()
+                                'product': SubscriptionProduct.objects.filter(is_active=True, is_test_mode=getattr(settings, 'STRIPE_TEST_MODE', False)).first()
                             }
                         )
                     
                     user_subscription.stripe_subscription_id = subscription_id
                     user_subscription.stripe_customer_id = customer_id or user_subscription.stripe_customer_id
                     user_subscription.status = 'active'
+                    
+                    # Update billing periods if available in session (though usually we'd wait for sub created/updated)
                     user_subscription.save()
                     
                     # Update user profile to premium
@@ -3021,7 +3029,7 @@ def api_subscription_webhook(request):
                     profile.account_type = 'paid'
                     profile.save()
                     
-                    logger.info(f"Updated subscription for user {user.email} from checkout session")
+                    logger.info(f"Successfully upgraded user {user.email} to premium via webhook")
                 except Exception as e:
                     logger.error(f"Error processing checkout.session.completed: {str(e)}")
 
