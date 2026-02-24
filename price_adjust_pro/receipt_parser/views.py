@@ -2982,7 +2982,7 @@ def api_subscription_webhook(request):
         from datetime import datetime
         from django.utils import timezone
 
-        elif etype == 'checkout.session.completed':
+        if etype == 'checkout.session.completed':
             session = event['data']['object']
             client_reference_id = session.get('client_reference_id')
             subscription_id = session.get('subscription')
