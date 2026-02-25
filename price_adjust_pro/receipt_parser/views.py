@@ -2607,9 +2607,11 @@ def api_subscription_status(request):
                             
                             # Try to get the product from session metadata or line items
                             product = None
-                            product_id = session.get('metadata', {}).get('product_id')
-                            if product_id:
-                                product = SubscriptionProduct.objects.filter(id=product_id).first()
+                            product_id_from_meta = session.get('metadata', {}).get('product_id')
+                            is_test_mode = getattr(settings, 'STRIPE_TEST_MODE', False)
+
+                            if product_id_from_meta:
+                                product = SubscriptionProduct.objects.filter(id=product_id_from_meta, is_test_mode=is_test_mode).first()
                             
                             if not product:
                                 # Try to find by price ID from line items
@@ -2617,13 +2619,16 @@ def api_subscription_status(request):
                                     line_items = stripe.checkout.Session.list_line_items(session.id, limit=1)
                                     if line_items.data:
                                         price_id = line_items.data[0].price.id
-                                        product = SubscriptionProduct.objects.filter(stripe_price_id=price_id).first()
+                                        product = SubscriptionProduct.objects.filter(stripe_price_id=price_id, is_test_mode=is_test_mode).first()
                                 except Exception as e:
                                     logger.error(f"Error fetching line items: {str(e)}")
                             
                             if not product:
-                                # Fallback to first active product
-                                product = SubscriptionProduct.objects.filter(is_active=True, is_test_mode=getattr(settings, 'STRIPE_TEST_MODE', False)).first()
+                                # Fallback to any mode if not found in current mode
+                                if product_id_from_meta:
+                                    product = SubscriptionProduct.objects.filter(id=product_id_from_meta).first()
+                                if not product:
+                                    product = SubscriptionProduct.objects.filter(is_active=True, is_test_mode=is_test_mode).first()
 
                             # Find or create the subscription record
                             user_sub, created = UserSubscription.objects.update_or_create(
@@ -3087,6 +3092,15 @@ def api_subscription_webhook(request):
                     ).first()
                     
                     if not user_subscription:
+                        # Try to get product from metadata
+                        product = None
+                        product_id_from_meta = session.get('metadata', {}).get('product_id')
+                        if product_id_from_meta:
+                            product = SubscriptionProduct.objects.filter(id=product_id_from_meta, is_test_mode=is_test_mode).first()
+                        
+                        if not product:
+                            product = SubscriptionProduct.objects.filter(is_active=True, is_test_mode=is_test_mode).first()
+
                         # Fallback to user if session ID doesn't match
                         user_subscription, _ = UserSubscription.objects.get_or_create(
                             user=user,
@@ -3096,15 +3110,13 @@ def api_subscription_webhook(request):
                                 'status': 'active',
                                 'current_period_start': timezone.now(),
                                 'current_period_end': timezone.now() + timezone.timedelta(days=30),
-                                'product': SubscriptionProduct.objects.filter(is_active=True, is_test_mode=getattr(settings, 'STRIPE_TEST_MODE', False)).first()
+                                'product': product
                             }
                         )
                     
                     user_subscription.stripe_subscription_id = subscription_id
                     user_subscription.stripe_customer_id = customer_id or user_subscription.stripe_customer_id
                     user_subscription.status = 'active'
-                    
-                    # Update billing periods if available in session (though usually we'd wait for sub created/updated)
                     user_subscription.save()
                     
                     # Update user profile to premium
@@ -3310,11 +3322,21 @@ class CreateCheckoutSessionView(APIView):
             
             # Try to find the product in our DB
             from .models import SubscriptionProduct
+            from django.conf import settings
             product = None
+            is_test_mode = getattr(settings, 'STRIPE_TEST_MODE', False)
+            
             if product_id:
-                product = SubscriptionProduct.objects.filter(id=product_id).first()
+                product = SubscriptionProduct.objects.filter(id=product_id, is_test_mode=is_test_mode).first()
             if not product:
-                product = SubscriptionProduct.objects.filter(stripe_price_id=price_id).first()
+                product = SubscriptionProduct.objects.filter(stripe_price_id=price_id, is_test_mode=is_test_mode).first()
+            
+            # Fallback to any mode if not found in current mode (to be safe)
+            if not product:
+                if product_id:
+                    product = SubscriptionProduct.objects.filter(id=product_id).first()
+                if not product:
+                    product = SubscriptionProduct.objects.filter(stripe_price_id=price_id).first()
             
             # Determine success and cancel URLs
             success_url = f"{request.scheme}://{request.get_host()}/subscription?success=true"
