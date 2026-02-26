@@ -12,6 +12,7 @@ interface User {
   is_staff?: boolean;
   is_superuser?: boolean;
   account_type?: 'free' | 'paid';
+  is_paid_account?: boolean;
 }
 
 // Create a context for user data
