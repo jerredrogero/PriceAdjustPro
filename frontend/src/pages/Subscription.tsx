@@ -91,7 +91,7 @@ const Subscription: React.FC = () => {
   useEffect(() => {
     // Check if we just returned from a successful checkout
     const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get('success') === 'true') {
+    if (urlParams.get('success') === 'true' || urlParams.get('activated') === 'true') {
       setSuccess('Your subscription has been activated! Welcome to Premium.');
       // Refresh user context or data
       fetchSubscriptionData();
@@ -123,7 +123,15 @@ const Subscription: React.FC = () => {
       ]);
 
       if (statusResponse.status === 'fulfilled') {
-        setSubscription(statusResponse.value.data);
+        const subData = statusResponse.value.data;
+        setSubscription(subData);
+        
+        // If we just got upgraded, trigger a full page reload to refresh the UserContext
+        if (successParam === 'true' && subData.is_active) {
+          setTimeout(() => {
+            window.location.href = '/subscription?activated=true';
+          }, 2000);
+        }
       }
 
       let fetchedProducts = [];
@@ -224,13 +232,13 @@ const Subscription: React.FC = () => {
 
       <Container maxWidth="lg" sx={{ mt: -8 }}>
         {error && (
-          <Alert severity="error" sx={{ mb: 4, borderRadius: 3, boxShadow: 2 }} onClose={() => setError('')}>
+          <Alert severity="error" sx={{ mb: 4, borderRadius: 3, boxShadow: 2, position: 'relative', zIndex: 10 }} onClose={() => setError('')}>
             {error}
           </Alert>
         )}
 
         {success && (
-          <Alert severity="success" sx={{ mb: 4, borderRadius: 3, boxShadow: 2 }} onClose={() => setSuccess('')}>
+          <Alert severity="success" sx={{ mb: 4, borderRadius: 3, boxShadow: 2, position: 'relative', zIndex: 10 }} onClose={() => setSuccess('')}>
             {success}
           </Alert>
         )}

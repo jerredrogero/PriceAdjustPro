@@ -79,7 +79,7 @@ const OnSale: React.FC = () => {
   const [highlightedItemCode, setHighlightedItemCode] = useState<string | null>(null);
   const highlightedItemRef = useRef<HTMLDivElement>(null);
 
-  const isPremium = user?.account_type === 'paid';
+  const isPremium = user?.account_type === 'paid' || user?.is_paid_account;
 
   useEffect(() => {
     if (isPremium) {
