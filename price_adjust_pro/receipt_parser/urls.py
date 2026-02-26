@@ -55,6 +55,7 @@ api_urlpatterns = [
     path('subscriptions/update/', views.api_subscription_update, name='api_subscription_update'),
     path('subscriptions/create-payment-intent/', views.api_subscription_create_payment_intent, name='api_subscription_create_payment_intent'),
     path('subscriptions/create-checkout-session/', views.api_create_checkout_session, name='api_create_checkout_session'),
+    path('subscriptions/customer-portal/', views.api_subscription_customer_portal, name='api_subscription_customer_portal'),
     path('subscriptions/webhook/', views.api_subscription_webhook, name='api_subscription_webhook'),
     
     # Apple In-App Purchase API endpoints

@@ -2891,6 +2891,57 @@ def api_subscription_create(request):
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def api_subscription_customer_portal(request):
+    """Create a Stripe customer portal session."""
+    try:
+        from .models import UserSubscription
+        import stripe
+        from django.conf import settings
+        
+        # Configure Stripe API key
+        stripe.api_key = getattr(settings, 'STRIPE_SECRET_KEY', '')
+        
+        try:
+            user_subscription = UserSubscription.objects.get(user=request.user)
+            customer_id = user_subscription.stripe_customer_id
+        except UserSubscription.DoesNotExist:
+            return Response(
+                {'error': 'No active subscription found. Please subscribe first.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+            
+        if not customer_id:
+            return Response(
+                {'error': 'No Stripe customer ID found for your account.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        try:
+            # Create portal session
+            return_url = f"{request.scheme}://{request.get_host()}/subscription"
+            portal_session = stripe.billing_portal.Session.create(
+                customer=customer_id,
+                return_url=return_url,
+            )
+            
+            return redirect(portal_session.url)
+            
+        except stripe.error.StripeError as e:
+            logger.error(f"Stripe portal error: {str(e)}")
+            return Response(
+                {'error': 'Failed to create portal session'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+            
+    except Exception as e:
+        logger.error(f"Error in customer portal view: {str(e)}")
+        return Response(
+            {'error': 'An unexpected error occurred'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def api_subscription_cancel(request):
