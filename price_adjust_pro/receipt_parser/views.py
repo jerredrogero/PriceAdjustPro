@@ -2627,38 +2627,60 @@ def api_subscription_status(request):
                                 # Fallback to any mode if not found in current mode
                                 if product_id_from_meta:
                                     product = SubscriptionProduct.objects.filter(id=product_id_from_meta).first()
-                                if not product:
-                                    # Final fallback: find by price ID in ANY mode
-                                    try:
-                                        line_items = stripe.checkout.Session.list_line_items(session.id, limit=1)
-                                        if line_items.data:
-                                            price_id = line_items.data[0].price.id
-                                            product = SubscriptionProduct.objects.filter(stripe_price_id=price_id).first()
-                                    except: pass
-                                if not product:
-                                    product = SubscriptionProduct.objects.filter(is_active=True, is_test_mode=is_test_mode).first()
-
-                            # Find or create the subscription record
-                            user_sub, created = UserSubscription.objects.update_or_create(
-                                user=request.user,
-                                defaults={
-                                    'stripe_subscription_id': subscription_id,
-                                    'stripe_customer_id': customer_id or '',
-                                    'status': 'active',
-                                    'current_period_start': timezone.now(),
-                                    'current_period_end': timezone.now() + timezone.timedelta(days=30),
-                                    'product': product
-                                }
-                            )
+                            if not product:
+                                # Final fallback: find by price ID in ANY mode
+                                try:
+                                    line_items = stripe.checkout.Session.list_line_items(session.id, limit=1)
+                                    if line_items.data:
+                                        price_id = line_items.data[0].price.id
+                                        product = SubscriptionProduct.objects.filter(stripe_price_id=price_id).first()
+                                except: pass
                             
-                            # Upgrade profile
-                            profile.is_premium = True
-                            profile.account_type = 'paid'
-                            profile.subscription_type = 'stripe'
-                            profile.save()
-                            logger.info(f"Successfully upgraded user {request.user.email} via session verification")
-                            found_session = True
-                            break
+                            # CRITICAL FIX: If we STILL don't have a product, we MUST create one 
+                            # or the database will reject the UserSubscription record (not-null constraint)
+                            if not product:
+                                logger.warning(f"Product still missing for session {session.id}. Creating emergency product record.")
+                                try:
+                                    # Try to get price ID one last time from line items
+                                    line_items = stripe.checkout.Session.list_line_items(session.id, limit=1)
+                                    price_id = line_items.data[0].price.id if line_items.data else "unknown"
+                                    
+                                    product = SubscriptionProduct.objects.create(
+                                        stripe_product_id=f"auto_{session.id}",
+                                        stripe_price_id=price_id,
+                                        name="Premium Subscription",
+                                        price=4.99,
+                                        billing_interval='month',
+                                        is_test_mode=is_test_mode,
+                                        is_active=True
+                                    )
+                                except Exception as e:
+                                    logger.error(f"Failed to create emergency product: {str(e)}")
+
+                            if product:
+                                # Find or create the subscription record
+                                user_sub, created = UserSubscription.objects.update_or_create(
+                                    user=request.user,
+                                    defaults={
+                                        'stripe_subscription_id': subscription_id,
+                                        'stripe_customer_id': customer_id or '',
+                                        'status': 'active',
+                                        'current_period_start': timezone.now(),
+                                        'current_period_end': timezone.now() + timezone.timedelta(days=30),
+                                        'product': product
+                                    }
+                                )
+                                
+                                # Upgrade profile
+                                profile.is_premium = True
+                                profile.account_type = 'paid'
+                                profile.subscription_type = 'stripe'
+                                profile.save()
+                                logger.info(f"Successfully upgraded user {request.user.email} via session verification")
+                                found_session = True
+                                break
+                            else:
+                                logger.error(f"Could not create or find product for session {session.id}. Upgrade failed.")
                 
                 if not found_session:
                     logger.warning(f"No successful Stripe session found for user {request.user.email} after checkout")
