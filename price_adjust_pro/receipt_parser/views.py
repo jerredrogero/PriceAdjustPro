@@ -2628,6 +2628,14 @@ def api_subscription_status(request):
                                 if product_id_from_meta:
                                     product = SubscriptionProduct.objects.filter(id=product_id_from_meta).first()
                                 if not product:
+                                    # Final fallback: find by price ID in ANY mode
+                                    try:
+                                        line_items = stripe.checkout.Session.list_line_items(session.id, limit=1)
+                                        if line_items.data:
+                                            price_id = line_items.data[0].price.id
+                                            product = SubscriptionProduct.objects.filter(stripe_price_id=price_id).first()
+                                    except: pass
+                                if not product:
                                     product = SubscriptionProduct.objects.filter(is_active=True, is_test_mode=is_test_mode).first()
 
                             # Find or create the subscription record
@@ -3096,9 +3104,12 @@ def api_subscription_webhook(request):
         # Continue processing even if we can't store the event
 
     try:
-        from .models import UserSubscription, User
+        from .models import UserSubscription, User, SubscriptionProduct
         from datetime import datetime
         from django.utils import timezone
+        from django.conf import settings
+
+        is_test_mode = getattr(settings, 'STRIPE_TEST_MODE', False)
 
         if etype == 'checkout.session.completed':
             session = event['data']['object']

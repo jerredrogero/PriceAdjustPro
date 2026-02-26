@@ -112,8 +112,13 @@ const Subscription: React.FC = () => {
 
       const apiTimeout = 5000;
       
+      // Pass success parameter to status endpoint if present in URL
+      const urlParams = new URLSearchParams(window.location.search);
+      const successParam = urlParams.get('success');
+      const statusUrl = successParam ? `/subscriptions/status/?success=${successParam}` : '/subscriptions/status/';
+
       const [statusResponse, productsResponse] = await Promise.allSettled([
-        api.get('/subscriptions/status/', { timeout: apiTimeout }),
+        api.get(statusUrl, { timeout: apiTimeout }),
         api.get('/subscriptions/products/', { timeout: apiTimeout }),
       ]);
 
