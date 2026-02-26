@@ -2697,6 +2697,33 @@ def api_subscription_products(request):
         is_test_mode = getattr(settings, 'STRIPE_TEST_MODE', False)
         products = SubscriptionProduct.objects.filter(is_active=True, is_test_mode=is_test_mode)
         
+        # If no products found in database for current mode, provide defaults
+        if not products.exists():
+            if is_test_mode:
+                # Auto-seed test products if none exist
+                products = [
+                    SubscriptionProduct.objects.create(
+                        stripe_product_id='prod_test_monthly',
+                        stripe_price_id='price_1T4OHjCBOzePXFXgdFkskMkE',
+                        name='Premium Monthly',
+                        price=4.99,
+                        billing_interval='month',
+                        is_test_mode=True
+                    ),
+                    SubscriptionProduct.objects.create(
+                        stripe_product_id='prod_test_yearly',
+                        stripe_price_id='price_1T4OI1CBOzePXFXgm6GxGlgd',
+                        name='Premium Yearly',
+                        price=49.99,
+                        billing_interval='year',
+                        is_test_mode=True
+                    )
+                ]
+            else:
+                # For live mode, we don't auto-seed, but we can return the live IDs as a fallback
+                # if they exist in the DB. If not, the admin needs to add them.
+                pass
+
         product_data = []
         
         for product in products:
