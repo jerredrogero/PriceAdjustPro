@@ -113,7 +113,7 @@ TOTAL INSTANT SAVINGS 3.00
             raise Exception("Gemini API key not configured")
         
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-2.0-flash')
+        model = genai.GenerativeModel('gemini-2.5-flash')
         
         # Create the prompt for text extraction
         prompt = """This is a Costco receipt. Please extract all the text from this receipt, preserving the exact format and numbers. Pay special attention to:
@@ -242,7 +242,7 @@ Parse this receipt:
 
         # Configure Gemini
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-2.0-flash')
+        model = genai.GenerativeModel('gemini-2.5-flash')
 
         # Generate response with retry logic for rate limits
         response = call_gemini_with_retry(model, prompt.format(text=text))
@@ -727,7 +727,7 @@ def extract_text_from_image(image_path: str) -> str:
             raise Exception("Gemini API key not configured")
         
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-2.0-flash')
+        model = genai.GenerativeModel('gemini-2.5-flash')
         
         # Enhanced prompt for photo receipt processing
         prompt = """This is a photo of a Costco receipt. Please extract all the text from this receipt with high accuracy. Pay special attention to:
@@ -881,7 +881,7 @@ def extract_promo_data_from_image(image_path: str) -> str:
             raise Exception("Gemini API key not configured")
         
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-2.0-flash')
+        model = genai.GenerativeModel('gemini-2.5-flash')
         
         # Specialized prompt for promotional booklet processing
         prompt = """This is a page from an official Costco promotional booklet showing monthly member deals and instant rebates. 
