@@ -219,11 +219,9 @@ class CustomUserAdmin(HijackUserAdminMixin, UserAdmin):
         
         for user in queryset:
             profile = get_or_create_user_profile(user)
-            if profile.is_paid_account:
-                messages.info(request, f'{user.email} already has a paid account.')
-                continue
-            
             profile.account_type = 'paid'
+            profile.is_premium = True
+            profile.subscription_type = 'stripe' # Default to stripe for manual paid
             profile.save()
             upgraded_count += 1
             messages.success(request, f'{user.email}: Upgraded to paid account.')
@@ -243,11 +241,9 @@ class CustomUserAdmin(HijackUserAdminMixin, UserAdmin):
         
         for user in queryset:
             profile = get_or_create_user_profile(user)
-            if profile.is_free_account:
-                messages.info(request, f'{user.email} already has a free account.')
-                continue
-            
             profile.account_type = 'free'
+            profile.is_premium = False
+            profile.subscription_type = 'free'
             profile.save()
             downgraded_count += 1
             messages.success(request, f'{user.email}: Downgraded to free account.')
