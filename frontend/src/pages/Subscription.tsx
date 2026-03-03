@@ -72,7 +72,8 @@ const Subscription: React.FC = () => {
   const fallbackProducts = [
     {
       id: 1,
-      stripe_price_id: 'price_1T4OHjCBOzePXFXgdFkskMkE',
+      stripe_price_id: 'price_1SuFfcCBOzePXFXgnR1w3wQc', // Live Monthly
+      // stripe_price_id: 'price_1T4OHjCBOzePXFXgdFkskMkE', // Test Monthly
       name: 'Premium Monthly',
       price: '4.99',
       currency: 'usd',
@@ -80,7 +81,8 @@ const Subscription: React.FC = () => {
     },
     {
       id: 2,
-      stripe_price_id: 'price_1T4OI1CBOzePXFXgm6GxGlgd',
+      stripe_price_id: 'price_1SuFfcCBOzePXFXgnR1w3wQc', // Live Yearly (Update with actual live yearly ID if different)
+      // stripe_price_id: 'price_1T4OI1CBOzePXFXgm6GxGlgd', // Test Yearly
       name: 'Premium Yearly',
       price: '49.99',
       currency: 'usd',
