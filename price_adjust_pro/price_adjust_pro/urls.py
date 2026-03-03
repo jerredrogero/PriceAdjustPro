@@ -262,7 +262,8 @@ def verify_otp(request):
             
         # If user is not premium but has an active Stripe subscription, sync it now
         # (Useful if we don't have webhooks)
-        if not profile.is_premium:
+        # ONLY sync if the profile isn't already explicitly set to free manually
+        if not profile.is_premium and profile.subscription_type not in ['free', 'none']:
             user_sub = UserSubscription.objects.filter(user=user, status='active').first()
             if user_sub:
                 profile.is_premium = True
@@ -271,7 +272,12 @@ def verify_otp(request):
                 profile.save()
                 print(f"Synced premium status for {user.email} during login")
             
-        # Activate user if they were inactive
+        # CRITICAL: If the user has been manually set to free, ensure is_premium is False
+        if profile.subscription_type in ['free', 'none'] and profile.is_premium:
+            profile.is_premium = False
+            profile.account_type = 'free'
+            profile.save()
+            print(f"Ensured free status for {user.email} during login (manual override)")
         if not user.is_active:
             user.is_active = True
             user.save()
@@ -942,11 +948,21 @@ def api_user(request):
             profile, _ = UserProfile.objects.get_or_create(user=user)
             
             # Sync profile with subscription if needed
+            # ONLY sync if the profile isn't already explicitly set to free manually
             user_sub = UserSubscription.objects.filter(user=user, status='active').first()
-            if user_sub and not profile.is_premium:
+            
+            # If they have an active sub but profile is free, and it's NOT a manual override, sync it.
+            if user_sub and not profile.is_premium and profile.subscription_type not in ['free', 'none']:
                 profile.is_premium = True
                 profile.account_type = 'paid'
                 profile.subscription_type = 'stripe'
+                profile.save()
+            
+            # CRITICAL: If the user has been manually set to free, ensure is_premium is False
+            # This allows manual downgrades in the admin panel to "stick"
+            if profile.subscription_type in ['free', 'none'] and profile.is_premium:
+                profile.is_premium = False
+                profile.account_type = 'free'
                 profile.save()
             
             account_type = 'paid' if profile.is_paid_account else 'free'
