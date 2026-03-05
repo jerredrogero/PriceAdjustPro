@@ -40,6 +40,9 @@ import {
   Image as ImageIcon,
   PhotoCamera as PhotoCameraIcon,
   Warning as WarningIcon,
+  Language as LanguageIcon,
+  Print as PrintIcon,
+  SaveAlt as SaveAltIcon,
 } from '@mui/icons-material';
 import api from '../api/axios';
 import { LineItem } from '../types';
@@ -474,35 +477,62 @@ const ReceiptUpload: React.FC = () => {
 
           {/* Instructions */}
           <Box sx={{ mt: 4 }}>
-            <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-              Tips for better results:
-            </Typography>
-            <List dense>
-              <ListItem>
-                <ListItemIcon>
-                  <InfoIcon color="primary" />
-                </ListItemIcon>
-                <ListItemText primary="Take photos in good lighting with minimal shadows" />
-              </ListItem>
-              <ListItem>
-                <ListItemIcon>
-                  <InfoIcon color="primary" />
-                </ListItemIcon>
-                <ListItemText primary="Keep the receipt flat and avoid creases when possible" />
-              </ListItem>
-              <ListItem>
-                <ListItemIcon>
-                  <InfoIcon color="primary" />
-                </ListItemIcon>
-                <ListItemText primary="Don't worry about strikethrough marks - the system can read through them" />
-              </ListItem>
-              <ListItem>
-                <ListItemIcon>
-                  <WarningIcon color="warning" />
-                </ListItemIcon>
-                <ListItemText primary="Photo uploads will require manual review for accuracy" />
-              </ListItem>
-            </List>
+            <Grid container spacing={4}>
+              <Grid item xs={12} md={6}>
+                <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <InfoIcon fontSize="small" color="primary" /> Tips for better results:
+                </Typography>
+                <List dense>
+                  <ListItem sx={{ px: 1 }}>
+                    <ListItemText primary="Take photos in good lighting with minimal shadows" />
+                  </ListItem>
+                  <ListItem sx={{ px: 1 }}>
+                    <ListItemText primary="Keep the receipt flat and avoid creases when possible" />
+                  </ListItem>
+                  <ListItem sx={{ px: 1 }}>
+                    <ListItemText primary="Don't worry about strikethrough marks - the system can read through them" />
+                  </ListItem>
+                  <ListItem sx={{ px: 1 }}>
+                    <ListItemText 
+                      primary="Photo uploads will require manual review for accuracy" 
+                      primaryTypographyProps={{ color: 'warning.main', variant: 'body2' }}
+                    />
+                  </ListItem>
+                </List>
+              </Grid>
+              
+              <Grid item xs={12} md={6}>
+                <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <LanguageIcon fontSize="small" color="primary" /> Get PDF from Costco.com:
+                </Typography>
+                <List dense>
+                  <ListItem sx={{ px: 1 }}>
+                    <ListItemText 
+                      primary="1. Go to costco.com/myaccount" 
+                      secondary="Log in to your account"
+                    />
+                  </ListItem>
+                  <ListItem sx={{ px: 1 }}>
+                    <ListItemText 
+                      primary="2. Click the 'Warehouse' tab" 
+                      secondary="View your in-warehouse purchases"
+                    />
+                  </ListItem>
+                  <ListItem sx={{ px: 1 }}>
+                    <ListItemText 
+                      primary="3. View and Print Receipt" 
+                      secondary="Select the receipt you want to upload"
+                    />
+                  </ListItem>
+                  <ListItem sx={{ px: 1 }}>
+                    <ListItemText 
+                      primary="4. Save as PDF" 
+                      secondary="Change destination to 'Save as PDF' in print dialog"
+                    />
+                  </ListItem>
+                </List>
+              </Grid>
+            </Grid>
           </Box>
         </CardContent>
       </Card>
